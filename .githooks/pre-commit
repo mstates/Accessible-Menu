@@ -1,0 +1,5 @@
+#!/bin/sh
+# Runs before every commit. The copy guard is part of npm test (CLAUDE.md).
+# npm install runs the "prepare" script, which points core.hooksPath here.
+set -e
+npm test

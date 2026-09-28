@@ -1,0 +1,29 @@
+@import "tailwindcss";
+@import "../src/ui/tokens.css";
+
+@layer base {
+  html {
+    color-scheme: light dark;
+    font-family: var(--font-sans);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+
+  /* Browsers italicize these by default. Diner pages never do (D-39). */
+  address,
+  cite,
+  dfn,
+  em,
+  i,
+  var {
+    font-style: normal;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+}
