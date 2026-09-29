@@ -95,6 +95,7 @@ export const en = {
     names: {
       vegan: "Vegan",
       vegetarian: "Vegetarian",
+      "made-without-gluten": "Made without gluten ingredients",
     },
   },
   money: {

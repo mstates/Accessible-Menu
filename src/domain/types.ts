@@ -29,8 +29,9 @@ export const PREP_NOTE_IDS = [
 ] as const;
 export type PrepNoteId = (typeof PREP_NOTE_IDS)[number];
 
-// Vocabulary pending Q-15. No gluten wording until Q-15 is answered.
-export type DietaryTagId = "vegan" | "vegetarian";
+// Vocabulary from D-66. The gluten tag reads "Made without gluten
+// ingredients" and never "Gluten-free".
+export type DietaryTagId = "vegan" | "vegetarian" | "made-without-gluten";
 
 export type Price =
   | { kind: "exact"; cents: number }

@@ -8,13 +8,16 @@
 -- code. sign_orders (after MVP) is absent on purpose.
 
 -- Vocabularies. Later migrations append values with alter type ... add value.
+-- The allergen list is the union of the US nine and the EU fourteen (Q-4),
+-- which is why wheat and gluten both appear.
 create type public.allergen as enum (
   'milk', 'eggs', 'fish', 'shellfish', 'tree-nuts', 'peanuts', 'wheat',
   'soy', 'sesame', 'celery', 'gluten', 'lupin', 'molluscs', 'mustard',
   'sulphites'
 );
--- Q-15 decides the gluten wording before Phase 1 adds it.
-create type public.dietary_tag as enum ('vegan', 'vegetarian');
+-- made-without-gluten renders as "Made without gluten ingredients", never
+-- as "Gluten-free" (D-66).
+create type public.dietary_tag as enum ('vegan', 'vegetarian', 'made-without-gluten');
 create type public.prep_note as enum (
   'shared-fryer', 'dedicated-fryer', 'shared-kitchen'
 );
@@ -153,7 +156,8 @@ create table public.feedback (
   barrier_scope public.barrier_scope,
   status public.feedback_status not null default 'new',
   fix_note_sent_at timestamptz,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 create index feedback_restaurant_id_idx on public.feedback (restaurant_id, created_at desc);
 
@@ -164,7 +168,8 @@ create table public.imports (
   source_files text[] not null default '{}',
   result jsonb,
   status public.import_status not null default 'uploaded',
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 create index imports_restaurant_id_idx on public.imports (restaurant_id);
 
@@ -201,6 +206,10 @@ create trigger sections_updated_at before update on public.sections
 create trigger items_updated_at before update on public.items
   for each row execute function public.set_updated_at();
 create trigger translations_updated_at before update on public.translations
+  for each row execute function public.set_updated_at();
+create trigger feedback_updated_at before update on public.feedback
+  for each row execute function public.set_updated_at();
+create trigger imports_updated_at before update on public.imports
   for each row execute function public.set_updated_at();
 
 -- A restaurant slug is printed on a sign. It never changes (D-6).
@@ -400,9 +409,12 @@ create view public.published_items with (security_barrier = true) as
   from public.items i
   join public.published_sections ps on ps.id = i.section_id;
 
--- Explicit grants. The project does not expose new tables automatically,
--- so every privilege below is the whole list.
+-- Explicit grants. Every privilege below is the whole list, and the default
+-- privileges keep that true for later migrations: a new table, view, or
+-- function reaches the Data API roles only through a grant written down.
 revoke all on all tables in schema public from anon, authenticated;
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+alter default privileges in schema public revoke all on functions from public, anon, authenticated;
 grant usage on schema public to anon, authenticated, service_role;
 
 grant select on public.published_restaurants, public.published_menus,
