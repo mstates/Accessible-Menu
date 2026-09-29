@@ -20,7 +20,14 @@ type Focused = {
   key: string;
   visible: boolean;
   indicated: boolean;
+  injected: boolean;
 };
+
+// Vercel injects a preview toolbar (vercel-live-feedback) into preview
+// deployments. It is not part of the page and never ships to production,
+// so the walk steps over any element whose tag starts with "vercel-".
+// The browser-side checks below inline that prefix because page.evaluate
+// runs them in the page, where module constants do not exist.
 
 async function open(page: Page, path: string) {
   const response = await page.goto(path);
@@ -46,6 +53,7 @@ async function focusableKeys(page: Page): Promise<string[]> {
     );
     const keys: string[] = [];
     elements.forEach((element, index) => {
+      if (element.tagName.toLowerCase().startsWith("vercel-")) return;
       const disabled = element.matches(":disabled");
       const negative = element.getAttribute("tabindex") === "-1";
       const style = getComputedStyle(element);
@@ -66,7 +74,7 @@ async function focused(page: Page): Promise<Focused> {
   return page.evaluate(() => {
     const element = document.activeElement as HTMLElement | null;
     if (!element || element === document.body) {
-      return { key: "body", visible: true, indicated: true };
+      return { key: "body", visible: true, indicated: true, injected: false };
     }
     const style = getComputedStyle(element);
     const outline =
@@ -78,6 +86,7 @@ async function focused(page: Page): Promise<Focused> {
       visible:
         element.getClientRects().length > 0 && style.visibility !== "hidden",
       indicated: outline || shadow,
+      injected: element.tagName.toLowerCase().startsWith("vercel-"),
     };
   });
 }
@@ -110,6 +119,7 @@ for (const path of pages) {
         tabs += 1;
         const current = await focused(page);
         if (current.key === "body" || reached.includes(current.key)) break;
+        if (current.injected) continue;
         expect(current.visible, `${current.key} took focus while hidden`).toBe(
           true,
         );
