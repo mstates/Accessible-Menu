@@ -18,6 +18,22 @@ export const en = {
     title: "Owner dashboard",
     heading: "Owner dashboard",
     empty: "Nothing here yet.",
+    signedInAs: "Signed in as {email}",
+    signOut: "Sign out",
+    signIn: {
+      title: "Sign in",
+      heading: "Sign in",
+      lead: "We email you a link. No password to remember.",
+      emailLabel: "Email address",
+      submit: "Email me a sign-in link",
+      sending: "Sending the link",
+      sent: "Check your email for a sign-in link. Open it on this phone or computer.",
+      invalidEmail:
+        "That does not look like an email address. Check it and try again.",
+      failed: "We could not send the link. Try again in a minute.",
+      linkFailed:
+        "That sign-in link did not work. It may have expired. Ask for a new one below.",
+    },
   },
   directory: {
     title: "Accessible menus in {city}",

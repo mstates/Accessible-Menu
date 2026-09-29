@@ -38,6 +38,16 @@ export default defineConfig({
     : {
         command: "npm run build && npm run start -- -p 3100",
         url: "http://localhost:3100",
+        // Owner routes need Supabase settings to build. Placeholders let the
+        // gate run on a machine without .env.local; nothing signs in here.
+        env: {
+          NEXT_PUBLIC_SUPABASE_URL:
+            process.env.NEXT_PUBLIC_SUPABASE_URL ??
+            "https://placeholder.supabase.co",
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:
+            process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+            "sb_publishable_placeholder",
+        },
         reuseExistingServer: false,
         timeout: 180_000,
       },

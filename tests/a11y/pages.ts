@@ -7,4 +7,5 @@ export const pages = [
   "/feedback/demo",
   "/d/reading-pa",
   "/app",
+  "/app/sign-in",
 ] as const;

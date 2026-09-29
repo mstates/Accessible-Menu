@@ -71,6 +71,7 @@ const textExtensions = new Set([
   ".md",
   ".mjs",
   ".sql",
+  ".toml",
   ".ts",
   ".tsx",
 ]);
