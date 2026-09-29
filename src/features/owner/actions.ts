@@ -45,6 +45,19 @@ export async function requestMagicLink(
   return { status: "sent", message: en.owner.signIn.sent };
 }
 
+// Starts Google sign-in. Supabase sends the owner to Google and back to
+// /auth/callback with a code, the same exchange the magic link uses (Spec 4.1).
+export async function signInWithGoogle(): Promise<void> {
+  const origin = await requestOrigin();
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: `${origin}/auth/callback?next=/app` },
+  });
+  if (error || !data.url) redirect("/app/sign-in?error=google");
+  redirect(data.url);
+}
+
 export async function signOut(): Promise<void> {
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();

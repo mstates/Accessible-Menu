@@ -23,7 +23,7 @@ export const en = {
     signIn: {
       title: "Sign in",
       heading: "Sign in",
-      lead: "We email you a link. No password to remember.",
+      lead: "Sign in with an emailed link or with Google. No password to remember.",
       emailLabel: "Email address",
       submit: "Email me a sign-in link",
       sending: "Sending the link",
@@ -31,8 +31,13 @@ export const en = {
       invalidEmail:
         "That does not look like an email address. Check it and try again.",
       failed: "We could not send the link. Try again in a minute.",
-      linkFailed:
-        "That sign-in link did not work. It may have expired. Ask for a new one below.",
+      or: "Or",
+      google: "Continue with Google",
+      failures: {
+        link: "That sign-in link did not work. It may have expired. Ask for a new one below.",
+        google:
+          "Google sign-in did not finish. Try again, or ask for an email link.",
+      },
     },
   },
   directory: {

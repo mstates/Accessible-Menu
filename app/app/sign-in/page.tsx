@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { en } from "@/copy";
 import { createSupabaseServerClient } from "@/core/supabase/server";
-import { SignInPage } from "@/features/owner/SignInPage";
+import { signInWithGoogle } from "@/features/owner/actions";
+import { SignInPage, type SignInFailure } from "@/features/owner/SignInPage";
 
 export const metadata: Metadata = {
   title: en.owner.signIn.title,
@@ -15,5 +16,13 @@ export default async function OwnerSignInPage({ searchParams }: Props) {
   const { data } = await supabase.auth.getClaims();
   if (data?.claims.email) redirect("/app");
   const { error } = await searchParams;
-  return <SignInPage copy={en} linkFailed={error === "link"} />;
+  const failure: SignInFailure =
+    error === "link" || error === "google" ? error : null;
+  return (
+    <SignInPage
+      copy={en}
+      failure={failure}
+      signInWithGoogle={signInWithGoogle}
+    />
+  );
 }
