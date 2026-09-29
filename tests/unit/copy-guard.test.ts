@@ -3,6 +3,7 @@ import { extname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { copy } from "../../src/copy";
+import { demoCity, demoRestaurant } from "../../src/core/data/demo";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const EM_DASH = String.fromCodePoint(0x2014);
@@ -38,7 +39,12 @@ function leaves(value: unknown, path: string): Leaf[] {
 }
 
 describe("copy guard: product copy", () => {
-  const strings = leaves(copy, "copy");
+  // The demo restaurant is content diners read, so it is checked like copy.
+  const strings = [
+    ...leaves(copy, "copy"),
+    ...leaves(demoRestaurant, "demoRestaurant"),
+    ...leaves(demoCity, "demoCity"),
+  ];
 
   it("finds copy to check", () => {
     expect(strings.length).toBeGreaterThan(0);

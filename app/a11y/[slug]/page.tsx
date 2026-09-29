@@ -1,0 +1,31 @@
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { en } from "@/copy";
+import { fill } from "@/copy/fill";
+import { getRestaurant, listRestaurantSlugs } from "@/core/data";
+import { StatementPage } from "@/features/diner/StatementPage";
+
+type Params = { params: Promise<{ slug: string }> };
+
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return listRestaurantSlugs().map((slug) => ({ slug }));
+}
+
+export async function generateMetadata({ params }: Params): Promise<Metadata> {
+  const { slug } = await params;
+  const restaurant = getRestaurant(slug);
+  return {
+    title: restaurant
+      ? fill(en.statement.title, { restaurant: restaurant.name })
+      : en.notFound.title,
+  };
+}
+
+export default async function AccessibilityStatementPage({ params }: Params) {
+  const { slug } = await params;
+  const restaurant = getRestaurant(slug);
+  if (!restaurant) notFound();
+  return <StatementPage restaurant={restaurant} copy={en} />;
+}

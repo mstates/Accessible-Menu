@@ -11,7 +11,15 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang={en.lang}>
-      <body>{children}</body>
+      <body className="min-h-screen bg-background text-foreground">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded focus:bg-background focus:px-4 focus:py-3 focus:underline"
+        >
+          {en.skipLink}
+        </a>
+        {children}
+      </body>
     </html>
   );
 }
