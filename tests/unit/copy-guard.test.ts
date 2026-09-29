@@ -112,6 +112,14 @@ describe("copy guard: repository text", () => {
     expect(files.length).toBeGreaterThan(0);
   });
 
+  it("scans every git hook", () => {
+    const hooks = readdirSync(join(root, ".githooks")).map((name) =>
+      join(root, ".githooks", name),
+    );
+    expect(hooks.length).toBeGreaterThan(0);
+    expect(files).toEqual(expect.arrayContaining(hooks));
+  });
+
   it("contains no em dash in any file", () => {
     const offenders = files
       .filter((file) => readFileSync(file, "utf8").includes(EM_DASH))
