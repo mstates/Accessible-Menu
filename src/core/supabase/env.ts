@@ -21,4 +21,8 @@ export const supabaseEnv = {
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
     );
   },
+  // The service role key. Server code only, never a NEXT_PUBLIC name.
+  get secretKey(): string {
+    return required("SUPABASE_SECRET_KEY", process.env.SUPABASE_SECRET_KEY);
+  },
 };

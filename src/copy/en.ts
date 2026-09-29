@@ -39,6 +39,21 @@ export const en = {
           "Google sign-in did not finish. Try again, or ask for an email link.",
       },
     },
+    billing: {
+      states: {
+        unstarted:
+          "Your free trial has not started. Start it to keep your menu up after the first 30 days.",
+        trial: "Free trial. Stripe emails you before it ends.",
+        active: "Subscription active.",
+        paused:
+          "A payment did not go through. Your menu is hidden until it is fixed.",
+        closed: "Subscription ended. Your menu is hidden.",
+      },
+      startTrial: "Start your free trial",
+      checkoutSuccess: "Thanks. Your free trial has started.",
+      checkoutCancel: "Checkout was cancelled. Nothing changed.",
+      restaurantMissing: "We could not find that restaurant.",
+    },
   },
   directory: {
     title: "Accessible menus in {city}",
