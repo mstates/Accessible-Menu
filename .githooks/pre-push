@@ -1,0 +1,10 @@
+#!/bin/sh
+# Refuse any direct push to release, including deletes.
+# Production is promoted by merging a pull request on GitHub.
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/release" ]; then
+    echo "pre-push: direct pushes to release are refused. Open a pull request and merge it on GitHub." >&2
+    exit 1
+  fi
+done
+exit 0
