@@ -8,4 +8,5 @@ export const pages = [
   "/d/reading-pa",
   "/app",
   "/app/sign-in",
+  "/app/restaurants/new",
 ] as const;

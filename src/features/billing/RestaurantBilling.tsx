@@ -16,22 +16,19 @@ type Props = {
 };
 
 // A restaurant's billing line on the dashboard: one sentence, and before the
-// trial has started, the one button that starts it (D-79).
+// trial has started, the one button that starts it (D-79). The page places
+// it inside the restaurant's card, which owns the heading.
 export function RestaurantBilling({ copy, restaurant, startTrial }: Props) {
   const state = billingState(restaurant.status, restaurant.hasStripeCustomer);
-  const headingId = `restaurant-${restaurant.id}`;
   return (
-    <section aria-labelledby={headingId} className="mt-6">
-      <h2 id={headingId} className="text-xl font-bold">
-        {restaurant.name}
-      </h2>
-      <p className="mt-2">{copy.owner.billing.states[state]}</p>
+    <div className="mt-4">
+      <p>{copy.owner.billing.states[state]}</p>
       {state === "unstarted" ? (
         <form action={startTrial} className="mt-4">
           <input type="hidden" name="restaurant" value={restaurant.id} />
           <Button type="submit">{copy.owner.billing.startTrial}</Button>
         </form>
       ) : null}
-    </section>
+    </div>
   );
 }

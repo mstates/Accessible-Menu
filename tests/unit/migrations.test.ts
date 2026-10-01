@@ -125,3 +125,122 @@ describe("migrations", () => {
     expect(sql).toMatch(/allergens_reviewed boolean not null default false/);
   });
 });
+
+// Function headers: from create function to the body's opening $$.
+const functionHeaders = [
+  ...sql.matchAll(
+    /create (?:or replace )?function public\.(\w+)\(([\s\S]*?)\) returns [\s\S]*? as \$\$/g,
+  ),
+].map((match) => ({ name: match[1] ?? "", header: match[0] }));
+
+const definers = functionHeaders.filter(({ header }) =>
+  header.includes("security definer"),
+);
+
+describe("security definer functions (D-67, D-95)", () => {
+  it("finds the definer functions", () => {
+    expect(definers.map((fn) => fn.name)).toEqual(
+      expect.arrayContaining(["is_owner", "owns_object", "create_restaurant"]),
+    );
+  });
+
+  it.each(definers.map((fn) => fn.name))(
+    "%s runs with an empty search_path and is revoked from public",
+    (name) => {
+      const fn = definers.find((candidate) => candidate.name === name);
+      expect(fn?.header).toMatch(/set search_path = ''/);
+      expect(sql).toMatch(
+        new RegExp(`revoke all on function public\\.${name}\\(`),
+      );
+    },
+  );
+
+  it("grants create_restaurant to authenticated and nobody else", () => {
+    expect(sql).toMatch(
+      /grant execute on function public\.create_restaurant\([\s\S]*?\) to authenticated;/,
+    );
+    const grants = [...sql.matchAll(/grant [^;]*create_restaurant[^;]*;/g)].map(
+      (match) => match[0],
+    );
+    expect(grants).toHaveLength(1);
+    expect(grants[0]).not.toMatch(/to (anon|public)\b/);
+  });
+
+  it("keeps generate_menu_code off the Data API", () => {
+    expect(sql).not.toMatch(/grant [^;]*generate_menu_code/);
+  });
+});
+
+describe("the owner boundary on restaurants (D-88, D-95)", () => {
+  const forbidden = [
+    "id",
+    "code",
+    "slug",
+    "city_slug",
+    "country",
+    "status",
+    "plan",
+    "stripe_customer_id",
+    "created_at",
+    "updated_at",
+  ];
+
+  it("replaces the table-wide update grant with a column list", () => {
+    expect(sql).toMatch(
+      /revoke update on public\.restaurants from authenticated;/,
+    );
+    const match = sql.match(
+      /grant update \(([^)]*)\) on public\.restaurants to authenticated;/,
+    );
+    expect(match).not.toBeNull();
+    const columns = (match?.[1] ?? "").split(",").map((c) => c.trim());
+    for (const column of forbidden) {
+      expect(columns).not.toContain(column);
+    }
+    expect(columns).toEqual(
+      expect.arrayContaining(["name", "address", "hours", "allergen_note"]),
+    );
+  });
+
+  it("locks the menu code after insert", () => {
+    expect(sql).toMatch(
+      /restaurants_code_format check \(code ~ '\^\[1-9\]\[0-9\]\{7\}\$'\)/,
+    );
+    expect(sql).toMatch(
+      /restaurants_code_lower check \(code = lower\(code\)\)/,
+    );
+    expect(sql).toMatch(
+      /create trigger restaurants_keep_code before update of code on public\.restaurants/,
+    );
+    expect(sql).toMatch(/create unique index restaurants_code_key/);
+  });
+
+  it("holds the field rules as table constraints", () => {
+    expect(sql).toMatch(/restaurants_country_us check \(country = 'US'\)/);
+    expect(sql).toMatch(/restaurants_website_format/);
+    expect(sql).toMatch(/website ~\* '\^https\?:\/\/\\S\+\$'/);
+    expect(sql).toMatch(/btrim\(address\) <> ''/);
+    expect(sql).toMatch(/btrim\(city\) <> ''/);
+    expect(sql).toMatch(
+      /restaurants_region_format check \(region ~ '\^\[A-Z\]\{2\}\$'\)/,
+    );
+    expect(sql).toMatch(/restaurants_postal_code_format/);
+    expect(sql).toMatch(/restaurants_phone_format/);
+    expect(sql).toMatch(/restaurants_timezone_known/);
+    expect(sql).toMatch(/restaurants_hours_object/);
+  });
+
+  it("keeps timezone and country not null", () => {
+    expect(sql).toMatch(/timezone text not null/);
+    expect(sql).toMatch(/country text not null/);
+  });
+
+  it("brings existing rows inside every rule before adding it", () => {
+    const normalize = sql.indexOf(
+      "update public.restaurants set\n  name = left(name, 120)",
+    );
+    const constraints = sql.indexOf("add constraint restaurants_name_length");
+    expect(normalize).toBeGreaterThan(-1);
+    expect(constraints).toBeGreaterThan(normalize);
+  });
+});

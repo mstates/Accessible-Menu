@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Copy } from "@/copy";
+import { menuPath } from "@/domain/menu-url";
 import type { Restaurant } from "@/domain/types";
 import { PageFrame } from "@/ui/PageFrame";
 
@@ -12,7 +13,7 @@ export function FeedbackPage({ restaurant, copy }: Props) {
       <h1 className="text-3xl font-bold">{copy.feedback.heading}</h1>
       <p className="mt-4">{copy.feedback.notReady}</p>
       <p className="mt-6">
-        <Link href={`/m/${restaurant.slug}`} className="text-link underline">
+        <Link href={menuPath(restaurant.slug)} className="text-link underline">
           {copy.feedback.backToMenu}
         </Link>
       </p>

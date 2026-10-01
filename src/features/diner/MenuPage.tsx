@@ -8,6 +8,7 @@ import {
   restaurantAllergenNote,
   type AllergenSentence,
 } from "@/domain/allergens";
+import { feedbackPath, statementPath } from "@/domain/menu-url";
 import { formatPrice } from "@/domain/money";
 import type { Item, Menu, Restaurant, Section } from "@/domain/types";
 
@@ -93,7 +94,7 @@ export function MenuPage({ restaurant, menu, copy }: Props) {
           <li>
             <Link
               prefetch={false}
-              href={`/feedback/${restaurant.slug}`}
+              href={feedbackPath(restaurant.slug)}
               className="text-link underline"
             >
               {copy.menu.footer.feedback}
@@ -102,7 +103,7 @@ export function MenuPage({ restaurant, menu, copy }: Props) {
           <li>
             <Link
               prefetch={false}
-              href={`/a11y/${restaurant.slug}`}
+              href={statementPath(restaurant.slug)}
               className="text-link underline"
             >
               {copy.menu.footer.statement}

@@ -31,7 +31,7 @@ This file restates the rules that never bend so they are in front of you on ever
 - Every menu ends with two quiet links: "Feedback about this menu" (also the barrier report) and "Accessibility statement."
 - Claims: "built to WCAG 2.2 AA and tested with real screen readers on every release, barriers fixed within five business days." Never "compliant," "certified," "guaranteed," "100%," or "lawsuit-proof."
 - Signs are produced by a certified ADA sign partner. We never make braille ourselves.
-- A restaurant's menu URL is permanent. The path is `/m/[slug]` on one domain. It never changes and never redirects away.
+- A restaurant's menu URL is permanent. The path is `/m/` plus the restaurant's eight-digit code on one domain, built only by `src/domain/menu-url.ts` (D-86, D-88). It never changes and never redirects away.
 - Stack is decided: Next.js App Router, TypeScript strict, Tailwind, React Aria Components, Supabase, Stripe, Vercel. Do not propose swaps.
 - Writing: plain language, warm, short sentences. No em dashes anywhere, code comments included. Never "AI" in product copy ("we read your menu for you"). Allergens spelled out in words.
 
@@ -55,11 +55,11 @@ End: a session summary in chat with four parts: what changed, what is untested, 
 
 Decided and not up for discussion: Next.js App Router, TypeScript strict, Tailwind, React Aria Components for every interactive primitive, Supabase (Postgres, Auth, Storage, RLS from the first migration), Stripe Checkout and Billing, Vercel with previews per branch and a manual production promote.
 
-The layout is in the Architecture page. In short: `app/` holds routes (marketing, `m/[slug]` diner menu, `a11y/[slug]` statement, `d/[city]` directory, `feedback/[slug]`, `app/` owner area, `api/` route handlers). `src/domain` is pure types and logic. `src/features` are islands (diner, owner, import, feedback, kit, directory, billing). `src/core` is infrastructure (supabase, model, stripe, cache, a11y). `src/ui` is tokens and primitives on React Aria Components. `src/copy` holds every user-facing string. `supabase/migrations` is numbered SQL. `tests/` is Vitest and Playwright.
+The layout is in the Architecture page. In short: `app/` holds routes (marketing, `m/[code]` diner menu, `a11y/[code]` statement, `d/[city]` directory, `feedback/[code]`, `app/` owner area, `api/` route handlers). `src/domain` is pure types and logic. `src/features` are islands (diner, owner, import, feedback, kit, directory, billing). `src/core` is infrastructure (supabase, model, stripe, cache, a11y). `src/ui` is tokens and primitives on React Aria Components. `src/copy` holds every user-facing string. `supabase/migrations` is numbered SQL. `tests/` is Vitest and Playwright.
 
 ## Module rules (short form; the Architecture page is canonical)
 
-1. The diner side is static first. `app/m/[slug]` renders complete HTML at build or revalidation time. Controls enhance that HTML; the page must be fully readable with JavaScript off.
+1. The diner side is static first. `app/m/[code]` renders complete HTML at build or revalidation time. Controls enhance that HTML; the page must be fully readable with JavaScript off.
 2. Features import only from `domain`, `core`, `ui`, and `copy`. Never from another feature's internals.
 3. Pure logic has no React or network imports and runs under Vitest in plain Node.
 4. Every model call goes through `core/model` with a zod schema on both sides and a provider interface. Import output is data to review, never content to publish. Allergen suggestions from import are stored as suggestions and never rendered to diners.
@@ -72,6 +72,7 @@ The layout is in the Architecture page. In short: `app/` holds routes (marketing
 11. No italics anywhere on a diner page, enforced in tokens and lint. Descriptions render in full, never truncated (D-39).
 12. No helper until the third use. No generic utils folder. No dependency under fifty lines. Every dependency gets a one-line row in Decisions.
 13. Never edit an applied migration. Add a new numbered one.
+14. Every new function in `public` gets an explicit `revoke all ... from public` by name and a grant only to the role that needs it. PUBLIC holds execute on every new function through Postgres's global default, and migration one's per-schema default-privilege revoke cannot remove it.
 
 ## Commands and gates
 
@@ -93,7 +94,7 @@ The layout is in the Architecture page. In short: `app/` holds routes (marketing
 - Put a PDF, an image of a menu, or free-form HTML on a diner page.
 - Publish an allergen the owner did not confirm.
 - Set a cookie or load a third-party script on a diner page.
-- Change a restaurant's slug or add a redirect away from a menu URL.
+- Change a restaurant's code or add a redirect away from a menu URL.
 - Write "compliant," "certified," "guaranteed," "100%," "lawsuit-proof," or "AI" in product copy.
 - Use an em dash.
 - Put an allergen sentence behind a popover, dialog, or disclosure, or let an owner hide allergen lines.

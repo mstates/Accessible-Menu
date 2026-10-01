@@ -1,0 +1,62 @@
+// The 50 states and the District of Columbia as USPS codes (D-87, D-94).
+// Stored in restaurants.region; names live in copy. The finder (D-83) fills
+// the same codes. Pure: no React, no network.
+
+export const US_STATE_CODES = [
+  "AL",
+  "AK",
+  "AZ",
+  "AR",
+  "CA",
+  "CO",
+  "CT",
+  "DE",
+  "DC",
+  "FL",
+  "GA",
+  "HI",
+  "ID",
+  "IL",
+  "IN",
+  "IA",
+  "KS",
+  "KY",
+  "LA",
+  "ME",
+  "MD",
+  "MA",
+  "MI",
+  "MN",
+  "MS",
+  "MO",
+  "MT",
+  "NE",
+  "NV",
+  "NH",
+  "NJ",
+  "NM",
+  "NY",
+  "NC",
+  "ND",
+  "OH",
+  "OK",
+  "OR",
+  "PA",
+  "RI",
+  "SC",
+  "SD",
+  "TN",
+  "TX",
+  "UT",
+  "VT",
+  "VA",
+  "WA",
+  "WV",
+  "WI",
+  "WY",
+] as const;
+export type StateCode = (typeof US_STATE_CODES)[number];
+
+export function isStateCode(value: string): value is StateCode {
+  return (US_STATE_CODES as readonly string[]).includes(value);
+}

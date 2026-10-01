@@ -6,6 +6,7 @@ import {
   Input,
   Label,
   Text,
+  TextArea,
   type TextFieldProps,
 } from "react-aria-components";
 
@@ -13,20 +14,31 @@ type Props = TextFieldProps & {
   label: string;
   description?: string;
   errorMessage?: string;
+  multiline?: boolean;
 };
 
+const inputClassName =
+  "rounded border border-border bg-background px-3 py-2 text-base text-foreground";
+
 // A labelled text input. The label, description, and error are wired to
-// the input by React Aria.
+// the input by React Aria. The id lands on the input, so an error summary
+// can link to it. No maxLength attribute anywhere: a cap is reported as an
+// error, never applied by cutting pasted text.
 export function TextField({
   label,
   description,
   errorMessage,
+  multiline = false,
   ...props
 }: Props) {
   return (
     <AriaTextField {...props} className="flex flex-col gap-1">
       <Label className="font-semibold">{label}</Label>
-      <Input className="min-h-11 rounded border border-border bg-background px-3 py-2 text-base text-foreground" />
+      {multiline ? (
+        <TextArea className={`${inputClassName} min-h-32`} />
+      ) : (
+        <Input className={`${inputClassName} min-h-11`} />
+      )}
       {description ? (
         <Text slot="description" className="text-sm text-foreground-muted">
           {description}

@@ -5,18 +5,20 @@ import { fill } from "@/copy/fill";
 import { getRestaurant, listRestaurantSlugs } from "@/core/data";
 import { MenuPage } from "@/features/diner/MenuPage";
 
-type Params = { params: Promise<{ slug: string }> };
+type Params = { params: Promise<{ code: string }> };
 
-// Static HTML for every known slug at build time (module rule 1, D-23).
+// Static HTML for every known code at build time (module rule 1, D-23,
+// D-86). The demo still answers to its Phase 0 name until the diner page
+// task reads real data (D-78).
 export const dynamicParams = false;
 
 export function generateStaticParams() {
-  return listRestaurantSlugs().map((slug) => ({ slug }));
+  return listRestaurantSlugs().map((code) => ({ code }));
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const { slug } = await params;
-  const restaurant = getRestaurant(slug);
+  const { code } = await params;
+  const restaurant = getRestaurant(code);
   return {
     title: restaurant
       ? fill(en.menu.title, { restaurant: restaurant.name })
@@ -25,8 +27,8 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 }
 
 export default async function DinerMenuPage({ params }: Params) {
-  const { slug } = await params;
-  const restaurant = getRestaurant(slug);
+  const { code } = await params;
+  const restaurant = getRestaurant(code);
   const menu = restaurant?.menus[0];
   if (!restaurant || !menu) notFound();
   return <MenuPage restaurant={restaurant} menu={menu} copy={en} />;

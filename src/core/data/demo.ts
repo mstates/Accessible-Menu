@@ -1,7 +1,7 @@
 import type { City, Restaurant } from "@/domain/types";
 
-// The hard-coded sample behind /m/demo for Phase 0. Phase 1 replaces this
-// seam with core/supabase. Prices cover all three shapes and the items
+// The hard-coded sample menu for Phase 0. Phase 1 replaces this seam with
+// core/supabase. Prices cover all three shapes and the items
 // cover all three allergen sentences.
 export const demoCity: City = { slug: "reading-pa", name: "Reading, PA" };
 

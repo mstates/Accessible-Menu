@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
+import { menuPath } from "@/domain/menu-url";
 import type { City, Restaurant } from "@/domain/types";
 import { PageFrame } from "@/ui/PageFrame";
 
@@ -20,7 +21,7 @@ export function CityPage({ city, restaurants, copy }: Props) {
           {restaurants.map((restaurant) => (
             <li key={restaurant.slug} className="py-4">
               <Link
-                href={`/m/${restaurant.slug}`}
+                href={menuPath(restaurant.slug)}
                 className="text-lg font-semibold text-link underline"
               >
                 {restaurant.name}

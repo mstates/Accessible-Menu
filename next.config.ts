@@ -1,4 +1,21 @@
 import type { NextConfig } from "next";
+import { resolveMenuOrigin } from "./src/domain/menu-url";
+
+// The menu origin rule runs at build time too (D-88, D-96): a production
+// build without a valid MENU_ORIGIN fails here instead of printing a link
+// that points at a deployment URL.
+const menuOrigin = resolveMenuOrigin({
+  MENU_ORIGIN: process.env.MENU_ORIGIN,
+  VERCEL_ENV: process.env.VERCEL_ENV,
+  VERCEL_URL: process.env.VERCEL_URL,
+});
+if (!menuOrigin.ok) {
+  throw new Error(
+    menuOrigin.reason === "missing-in-production"
+      ? "MENU_ORIGIN is required in production: the https origin menu links are printed with, no path (D-88)."
+      : "MENU_ORIGIN must be an https origin with no path, query, or trailing slash (D-88).",
+  );
+}
 
 const nextConfig: NextConfig = {
   // next dev would otherwise append an agent-rules block, em dash included,

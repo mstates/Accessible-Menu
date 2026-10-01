@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
+import { feedbackPath, menuPath } from "@/domain/menu-url";
 import type { Restaurant } from "@/domain/types";
 import { PageFrame } from "@/ui/PageFrame";
 
@@ -21,14 +22,17 @@ export function StatementPage({ restaurant, copy }: Props) {
       <ul className="mt-6 flex flex-wrap gap-x-4 gap-y-2">
         <li>
           <Link
-            href={`/feedback/${restaurant.slug}`}
+            href={feedbackPath(restaurant.slug)}
             className="text-link underline"
           >
             {copy.statement.feedback}
           </Link>
         </li>
         <li>
-          <Link href={`/m/${restaurant.slug}`} className="text-link underline">
+          <Link
+            href={menuPath(restaurant.slug)}
+            className="text-link underline"
+          >
             {copy.statement.backToMenu}
           </Link>
         </li>
