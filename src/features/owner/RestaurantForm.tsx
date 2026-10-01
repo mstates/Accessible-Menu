@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  startTransition,
   useActionState,
   useEffect,
   useRef,
@@ -103,9 +104,18 @@ export function RestaurantForm({
     label: strings.timezones[id],
   }));
 
+  // The action is called from onSubmit rather than through the form's action
+  // prop: React resets a form after its action returns, and React Aria
+  // fields then fall back to their mount-time defaults, which would wipe
+  // everything the owner typed on an invalid submit. The owner form needs
+  // JavaScript anyway, since a React Aria Select cannot change without it.
   return (
     <Form
-      action={formAction}
+      onSubmit={(event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        startTransition(() => formAction(data));
+      }}
       validationBehavior="aria"
       validationErrors={errors}
       className="flex flex-col gap-6"

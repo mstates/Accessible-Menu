@@ -21,17 +21,18 @@ type Props = {
 
 const strings = en.owner.restaurants;
 
-// One read per request, shared by the metadata and the page. The path
-// segment is user input: it is checked before any query, and row level
-// security hides rows that are not this owner's, so a wrong owner and an
-// unknown code look the same (D-89).
+// One read per request, shared by the metadata and the page. The session is
+// read first, so a signed-in owner with a bad code gets the 404 page, never
+// a bounce through sign-in. The path segment is user input: it is checked
+// before any query, and row level security hides rows that are not this
+// owner's, so a wrong owner and an unknown code look the same (D-89).
 const loadRestaurant = cache(async (rawCode: string) => {
-  const code = normalizeMenuCode(rawCode);
-  if (!isMenuCode(code)) return { email: null, restaurant: null };
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase.auth.getClaims();
   const email = data?.claims.email ?? null;
   if (!email) return { email, restaurant: null };
+  const code = normalizeMenuCode(rawCode);
+  if (!isMenuCode(code)) return { email, restaurant: null };
   return { email, restaurant: await getOwnerRestaurantByCode(supabase, code) };
 });
 
