@@ -304,13 +304,21 @@ type DayProps = {
 // One day of the hours grid: opens and closes, and a second row that is
 // added and removed, never hidden, so a range the owner took away can never
 // submit. Focus follows the add and remove buttons: the state change is
-// flushed first so the element to focus is already on the page.
+// flushed first so the element to focus is already on the page. A day-level
+// error (overlap, an all-day range beside another) is one paragraph that the
+// fieldset and every time input of that day describe themselves by, and
+// those inputs read as invalid while it stands. isInvalid is a controlled
+// state in React Aria that would override the form's validationErrors, so it
+// is set only with a day error and left undefined otherwise.
 function DayHours({ day, copy, defaultRanges, error }: DayProps) {
   const strings = copy.owner.restaurants;
   const label = strings.days[day];
   const [hasSecond, setHasSecond] = useState(defaultRanges.length > 1);
   const addButtonId = fieldId(`hours.${day}.add`);
   const secondOpenId = fieldId(hoursFieldName(day, 1, "open"));
+  const errorId = fieldId(`hours.${day}.error`);
+  const describedBy = error ? errorId : undefined;
+  const isInvalid = error ? true : undefined;
 
   function showSecond(show: boolean) {
     flushSync(() => setHasSecond(show));
@@ -321,10 +329,15 @@ function DayHours({ day, copy, defaultRanges, error }: DayProps) {
     <fieldset
       id={fieldId(`hours.${day}`)}
       tabIndex={-1}
+      aria-describedby={describedBy}
       className="flex flex-col gap-3 rounded border border-border p-3 outline-none focus-visible:outline-3"
     >
       <legend className="px-1 font-semibold">{label}</legend>
-      {error ? <p className="text-sm font-semibold">{error}</p> : null}
+      {error ? (
+        <p id={errorId} className="text-sm font-semibold">
+          {error}
+        </p>
+      ) : null}
       <div className="flex flex-wrap gap-4">
         <TextField
           id={fieldId(hoursFieldName(day, 0, "open"))}
@@ -332,6 +345,8 @@ function DayHours({ day, copy, defaultRanges, error }: DayProps) {
           type="time"
           label={fill(strings.fields.opens, { day: label })}
           defaultValue={defaultRanges[0]?.open}
+          aria-describedby={describedBy}
+          isInvalid={isInvalid}
         />
         <TextField
           id={fieldId(hoursFieldName(day, 0, "close"))}
@@ -339,6 +354,8 @@ function DayHours({ day, copy, defaultRanges, error }: DayProps) {
           type="time"
           label={fill(strings.fields.closes, { day: label })}
           defaultValue={defaultRanges[0]?.close}
+          aria-describedby={describedBy}
+          isInvalid={isInvalid}
         />
       </div>
       {hasSecond ? (
@@ -349,6 +366,8 @@ function DayHours({ day, copy, defaultRanges, error }: DayProps) {
             type="time"
             label={fill(strings.fields.opensAgain, { day: label })}
             defaultValue={defaultRanges[1]?.open}
+            aria-describedby={describedBy}
+            isInvalid={isInvalid}
           />
           <TextField
             id={fieldId(hoursFieldName(day, 1, "close"))}
@@ -356,6 +375,8 @@ function DayHours({ day, copy, defaultRanges, error }: DayProps) {
             type="time"
             label={fill(strings.fields.closesAgain, { day: label })}
             defaultValue={defaultRanges[1]?.close}
+            aria-describedby={describedBy}
+            isInvalid={isInvalid}
           />
           <Button onPress={() => showSecond(false)}>
             {fill(strings.fields.removeSecondTime, { day: label })}
