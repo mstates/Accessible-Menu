@@ -66,6 +66,7 @@ const eslintConfig = defineConfig([
             "&",
             "-",
             "·",
+            "*",
             "0",
             "1",
             "2",

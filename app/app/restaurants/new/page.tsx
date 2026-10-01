@@ -32,7 +32,6 @@ export default async function NewRestaurantPage() {
           action={createRestaurant}
           mode="create"
           submitLabel={strings.new.submit}
-          pendingLabel={strings.new.pending}
         />
       </div>
     </PageFrame>

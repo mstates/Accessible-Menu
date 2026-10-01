@@ -25,7 +25,8 @@ type Props = Omit<AriaSelectProps<SelectItem>, "children"> & {
 
 // A labelled single-choice list. Keyboard, typeahead, and the listbox
 // semantics come from React Aria. The trigger id lets an error summary link
-// to the control.
+// to the control. A required field shows an asterisk after its label, hidden
+// from assistive technology because isRequired already sets aria-required.
 export function Select({
   label,
   description,
@@ -36,7 +37,10 @@ export function Select({
 }: Props) {
   return (
     <AriaSelect {...props} className="flex flex-col gap-1">
-      <Label className="font-semibold">{label}</Label>
+      <Label className="font-semibold">
+        {label}
+        {props.isRequired ? <span aria-hidden="true"> *</span> : null}
+      </Label>
       <Button
         id={triggerId}
         className="flex min-h-11 items-center justify-between gap-2 rounded border border-border bg-background px-3 py-2 text-left text-base text-foreground"

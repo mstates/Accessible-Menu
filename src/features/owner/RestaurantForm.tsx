@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
 import { Form } from "react-aria-components";
@@ -40,7 +41,6 @@ type Props = {
   defaultValues?: RestaurantDetails;
   mode: "create" | "details";
   submitLabel: string;
-  pendingLabel: string;
 };
 
 const initial: RestaurantFormState = { status: "idle" };
@@ -56,13 +56,15 @@ const readServerZone = () => null;
 // as validationErrors keyed by field name and show in each FieldError; an
 // error summary above the fields takes focus and links to each one. Every
 // rule here is also a table constraint; the database is the boundary (D-95).
+// The fields sit under four headed sections: Location, Contact, Hours, and
+// Allergens, each a fieldset whose legend holds the heading, so the headings
+// list reads the page's shape and the legend names every field in it.
 export function RestaurantForm({
   copy,
   action,
   defaultValues,
   mode,
   submitLabel,
-  pendingLabel,
 }: Props) {
   const [state, formAction, pending] = useActionState(action, initial);
   const strings = copy.owner.restaurants;
@@ -129,6 +131,8 @@ export function RestaurantForm({
         />
       ) : null}
 
+      <p className="text-sm text-foreground-muted">{strings.requiredNote}</p>
+
       <TextField
         id={fieldId("name")}
         name="name"
@@ -137,74 +141,79 @@ export function RestaurantForm({
         autoComplete="organization"
         defaultValue={defaultValues?.name}
       />
-      <TextField
-        id={fieldId("address")}
-        name="address"
-        label={strings.fields.address}
-        isRequired
-        autoComplete="street-address"
-        defaultValue={defaultValues?.address ?? undefined}
-      />
-      <TextField
-        id={fieldId("city")}
-        name="city"
-        label={strings.fields.city}
-        isRequired
-        autoComplete="address-level2"
-        defaultValue={defaultValues?.city ?? undefined}
-      />
-      <Select
-        name="region"
-        triggerId={fieldId("region")}
-        label={strings.fields.region}
-        placeholder={strings.fields.regionPlaceholder}
-        items={states}
-        defaultSelectedKey={defaultValues?.region ?? undefined}
-        isRequired
-      />
-      <TextField
-        id={fieldId("postalCode")}
-        name="postalCode"
-        label={strings.fields.postalCode}
-        isRequired
-        autoComplete="postal-code"
-        inputMode="numeric"
-        defaultValue={defaultValues?.postalCode ?? undefined}
-      />
-      <TextField
-        id={fieldId("phone")}
-        name="phone"
-        type="tel"
-        label={strings.fields.phone}
-        autoComplete="tel"
-        defaultValue={defaultValues?.phone ?? undefined}
-      />
-      <TextField
-        id={fieldId("website")}
-        name="website"
-        label={strings.fields.website}
-        description={strings.fields.websiteHint}
-        autoComplete="url"
-        inputMode="url"
-        defaultValue={defaultValues?.website ?? undefined}
-      />
-      <Select
-        name="timezone"
-        triggerId={fieldId("timezone")}
-        label={strings.fields.timezone}
-        items={zones}
-        selectedKey={timezone}
-        onSelectionChange={(key) => {
-          if (key !== null) setChosenTimezone(String(key));
-        }}
-        isRequired
-      />
 
-      <fieldset className="flex flex-col gap-4">
-        <legend className="text-lg font-bold">{strings.fields.hours}</legend>
+      <Section heading={strings.sections.location}>
+        <TextField
+          id={fieldId("address")}
+          name="address"
+          label={strings.fields.address}
+          isRequired
+          autoComplete="street-address"
+          defaultValue={defaultValues?.address ?? undefined}
+        />
+        <TextField
+          id={fieldId("city")}
+          name="city"
+          label={strings.fields.city}
+          isRequired
+          autoComplete="address-level2"
+          defaultValue={defaultValues?.city ?? undefined}
+        />
+        <Select
+          name="region"
+          triggerId={fieldId("region")}
+          label={strings.fields.region}
+          placeholder={strings.fields.regionPlaceholder}
+          items={states}
+          defaultSelectedKey={defaultValues?.region ?? undefined}
+          isRequired
+        />
+        <TextField
+          id={fieldId("postalCode")}
+          name="postalCode"
+          label={strings.fields.postalCode}
+          isRequired
+          autoComplete="postal-code"
+          inputMode="numeric"
+          defaultValue={defaultValues?.postalCode ?? undefined}
+        />
+      </Section>
+
+      <Section heading={strings.sections.contact}>
+        <TextField
+          id={fieldId("phone")}
+          name="phone"
+          type="tel"
+          label={strings.fields.phone}
+          autoComplete="tel"
+          defaultValue={defaultValues?.phone ?? undefined}
+        />
+        <TextField
+          id={fieldId("website")}
+          name="website"
+          label={strings.fields.website}
+          description={strings.fields.websiteHint}
+          autoComplete="url"
+          inputMode="url"
+          defaultValue={defaultValues?.website ?? undefined}
+        />
+      </Section>
+
+      <Section heading={strings.sections.hours}>
         <p className="text-sm text-foreground-muted">
           {strings.fields.hoursHint}
         </p>
+        <Select
+          name="timezone"
+          triggerId={fieldId("timezone")}
+          label={strings.fields.timezone}
+          items={zones}
+          selectedKey={timezone}
+          onSelectionChange={(key) => {
+            if (key !== null) setChosenTimezone(String(key));
+          }}
+          isRequired
+        />
         {DAY_KEYS.map((day) => (
           <DayHours
             key={day}
@@ -214,40 +223,56 @@ export function RestaurantForm({
             error={errors[`hours.${day}`]}
           />
         ))}
-      </fieldset>
+      </Section>
 
-      <TextField
-        id={fieldId("allergenNote")}
-        name="allergenNote"
-        multiline
-        label={strings.fields.allergenNote}
-        description={fill(strings.fields.allergenNoteHint, {
-          default: copy.allergens.noteDefault,
-        })}
-        defaultValue={defaultValues?.allergenNote ?? undefined}
-      />
-
-      <div id={fieldId("prepNotes")} tabIndex={-1} className="outline-none">
-        <CheckboxGroup
-          name="prepNotes"
-          label={strings.fields.prepNotes}
-          description={strings.fields.prepNotesHint}
-          defaultValue={defaultValues?.prepNotes ?? []}
-        >
-          {PREP_NOTE_IDS.map((id) => (
-            <Checkbox key={id} value={id}>
-              {copy.allergens.prepNotes[id]}
-            </Checkbox>
-          ))}
-        </CheckboxGroup>
-      </div>
+      <Section heading={strings.sections.allergens}>
+        <TextField
+          id={fieldId("allergenNote")}
+          name="allergenNote"
+          multiline
+          label={strings.fields.allergenNote}
+          description={fill(strings.fields.allergenNoteHint, {
+            default: copy.allergens.noteDefault,
+          })}
+          defaultValue={defaultValues?.allergenNote ?? undefined}
+        />
+        <div id={fieldId("prepNotes")} tabIndex={-1} className="outline-none">
+          <CheckboxGroup
+            name="prepNotes"
+            label={strings.fields.prepNotes}
+            description={strings.fields.prepNotesHint}
+            defaultValue={defaultValues?.prepNotes ?? []}
+          >
+            {PREP_NOTE_IDS.map((id) => (
+              <Checkbox key={id} value={id}>
+                {copy.allergens.prepNotes[id]}
+              </Checkbox>
+            ))}
+          </CheckboxGroup>
+        </div>
+      </Section>
 
       <div>
-        <Button type="submit" isDisabled={pending}>
-          {pending ? pendingLabel : submitLabel}
+        <Button type="submit" isPending={pending}>
+          {submitLabel}
         </Button>
       </div>
     </Form>
+  );
+}
+
+type SectionProps = { heading: string; children: ReactNode };
+
+// A headed group of fields. The h2 lives inside the legend, so the heading
+// list and the field names both carry the section.
+function Section({ heading, children }: SectionProps) {
+  return (
+    <fieldset className="flex flex-col gap-4">
+      <legend className="mb-2">
+        <h2 className="text-xl font-bold">{heading}</h2>
+      </legend>
+      {children}
+    </fieldset>
   );
 }
 

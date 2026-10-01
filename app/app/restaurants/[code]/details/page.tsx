@@ -11,7 +11,7 @@ import { isMenuCode, menuUrl, normalizeMenuCode } from "@/domain/menu-url";
 import { updateRestaurant } from "@/features/owner/actions";
 import { dashboardPath } from "@/features/owner/paths";
 import { RestaurantForm } from "@/features/owner/RestaurantForm";
-import { SavedAnnouncer } from "@/features/owner/SavedAnnouncer";
+import { SavedNotice } from "@/features/owner/SavedNotice";
 import { PageFrame } from "@/ui/PageFrame";
 
 type Props = {
@@ -76,12 +76,11 @@ export default async function RestaurantDetailsPage({
         </p>
       ) : null}
       {saved ? (
-        <>
-          <p className="mt-4 rounded bg-background-raised p-4">
-            {strings.details.saved}
-          </p>
-          <SavedAnnouncer key={saved} message={strings.details.saved} />
-        </>
+        <SavedNotice
+          key={saved}
+          value={saved}
+          message={strings.details.saved}
+        />
       ) : null}
       <p className="mt-4">
         <span className="font-semibold">{strings.menuLink}</span>{" "}
@@ -107,7 +106,6 @@ export default async function RestaurantDetailsPage({
           defaultValues={restaurant}
           mode="details"
           submitLabel={strings.details.submit}
-          pendingLabel={strings.details.pending}
         />
       </div>
     </PageFrame>

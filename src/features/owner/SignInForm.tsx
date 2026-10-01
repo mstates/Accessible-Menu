@@ -23,8 +23,8 @@ export function SignInForm({ copy }: { copy: Copy }) {
         errorMessage={state.status === "error" ? state.message : undefined}
       />
       <div>
-        <Button type="submit" isDisabled={pending}>
-          {pending ? copy.owner.signIn.sending : copy.owner.signIn.submit}
+        <Button type="submit" isPending={pending}>
+          {copy.owner.signIn.submit}
         </Button>
       </div>
       <p role="status" className="min-h-6">
