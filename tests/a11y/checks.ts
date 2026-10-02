@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-// The three checks every page gets (D-62), shared by the public pages and
+// The checks every page gets (D-62, D-103), shared by the public pages and
 // the owner pages, plus the D-97 expectation after a client-side page change.
 
 const MAX_TABS = 200;
@@ -18,6 +18,14 @@ const textSpacing = `
   }
 `;
 
+// Android's largest text size, 200% (D-103). With the text-scale opt-in,
+// Chrome scales its default font size with the phone's setting and rem
+// follows. Chromium's own default font size stands in for the phone, so an
+// absolute font-size on html shows here as a root that did not grow, where
+// an injected style would hide it.
+const largestText = { standard: 32, fixed: 26 };
+const textScaleMeta = /<meta name="text-scale" content="scale"\s*\/?>/;
+
 type Focused = {
   key: string;
   visible: boolean;
@@ -33,8 +41,9 @@ type Focused = {
 
 export async function open(page: Page, path: string) {
   const response = await page.goto(path);
-  expect(response, `${path} returned no response`).not.toBeNull();
-  expect(response?.status(), `${path} must be a real page`).toBe(200);
+  if (!response) throw new Error(`${path} returned no response`);
+  expect(response.status(), `${path} must be a real page`).toBe(200);
+  return response;
 }
 
 async function hasHorizontalScroll(page: Page) {
@@ -93,7 +102,7 @@ async function focused(page: Page): Promise<Focused> {
   });
 }
 
-// Registers the three checks for one path. Call it inside a describe.
+// Registers the checks for one path. Call it inside a describe.
 export function pageChecks(path: string) {
   test("axe reports zero violations", async ({ page }) => {
     await open(page, path);
@@ -148,6 +157,30 @@ export function pageChecks(path: string) {
     page,
   }) => {
     await open(page, path);
+    expect(await hasHorizontalScroll(page)).toBe(false);
+    await page.addStyleTag({ content: textSpacing });
+    expect(await hasHorizontalScroll(page)).toBe(false);
+  });
+
+  test("at the largest phone text size, no horizontal scroll, before and after text spacing", async ({
+    page,
+  }) => {
+    const session = await page.context().newCDPSession(page);
+    await session.send("Page.setFontSizes", { fontSizes: largestText });
+    const response = await open(page, path);
+    const html = await response.text();
+    const headEnd = html.indexOf("</head>");
+    expect(headEnd, `${path} served no head`).toBeGreaterThan(-1);
+    expect(
+      html.slice(0, headEnd),
+      "the text-scale opt-in is in the served head",
+    ).toMatch(textScaleMeta);
+    expect(
+      await page.evaluate(
+        () => getComputedStyle(document.documentElement).fontSize,
+      ),
+      "html follows the default font size",
+    ).toBe("32px");
     expect(await hasHorizontalScroll(page)).toBe(false);
     await page.addStyleTag({ content: textSpacing });
     expect(await hasHorizontalScroll(page)).toBe(false);

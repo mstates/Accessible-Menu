@@ -12,6 +12,11 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang={en.lang}>
+      <head>
+        {/* Chrome follows the phone's text size only on pages that opt in
+            (D-103). A literal tag, not metadata, so it is never streamed. */}
+        <meta name="text-scale" content="scale" />
+      </head>
       <body className="min-h-screen bg-background text-foreground">
         <FocusReset />
         <a

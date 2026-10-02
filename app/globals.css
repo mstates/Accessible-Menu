@@ -7,6 +7,19 @@
     font-family: var(--font-sans);
   }
 
+  /* iOS Dynamic Type (D-103). The system body font carries the size set in
+     the phone's Text Size setting, so rem follows it. Only WebKit on iOS and
+     iPadOS has -webkit-touch-callout; desktop Safari parses the font keyword
+     too, but at 13px, so it stays out. The shorthand resets the family and
+     the line-height, so both are set back. */
+  @supports (font: -apple-system-body) and (-webkit-touch-callout: none) {
+    html {
+      font: -apple-system-body;
+      font-family: var(--font-sans);
+      line-height: 1.5;
+    }
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
