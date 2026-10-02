@@ -145,13 +145,10 @@ describe("security definer functions (D-67, D-95)", () => {
   });
 
   it.each(definers.map((fn) => fn.name))(
-    "%s runs with an empty search_path and is revoked from public",
+    "%s runs with an empty search_path",
     (name) => {
       const fn = definers.find((candidate) => candidate.name === name);
       expect(fn?.header).toMatch(/set search_path = ''/);
-      expect(sql).toMatch(
-        new RegExp(`revoke all on function public\\.${name}\\(`),
-      );
     },
   );
 
@@ -165,9 +162,87 @@ describe("security definer functions (D-67, D-95)", () => {
     expect(grants).toHaveLength(1);
     expect(grants[0]).not.toMatch(/to (anon|public)\b/);
   });
+});
 
-  it("keeps generate_menu_code off the Data API", () => {
-    expect(sql).not.toMatch(/grant [^;]*generate_menu_code/);
+// CLAUDE.md rule 14: every function a migration creates or replaces in
+// public, other than trigger and event trigger functions, is revoked from
+// public by name in that same migration. PUBLIC holds execute on every new
+// function through Postgres's global default, which migration one's
+// per-schema default-privilege revoke cannot remove, and a replace with new
+// parameters is a new function. This checks what the migrations declare,
+// not the live database; the boundary script still runs by hand (D-95).
+const callableByFile = files.flatMap((file) => {
+  const text = readFileSync(join(dir, file), "utf8");
+  return [
+    ...text.matchAll(
+      /create (?:or replace )?function public\.(\w+)\s*\(([\s\S]*?)\)\s*returns\s+(\S+)/gi,
+    ),
+  ]
+    .map((match) => ({
+      file,
+      text,
+      name: match[1] ?? "",
+      returns: (match[3] ?? "").toLowerCase(),
+    }))
+    .filter((fn) => fn.returns !== "trigger" && fn.returns !== "event_trigger");
+});
+
+// Every grant on a function, in any form: execute or all, on one function
+// by name or on every function in the schema.
+const functionGrants = [
+  ...sql.matchAll(
+    /grant\s+(?:execute|all(?:\s+privileges)?)\s+on\s+(?:function\s+public\.\w+\s*\([\s\S]*?\)|all\s+functions\s+in\s+schema\s+public)\s+to\s+([^;]+);/gi,
+  ),
+].map((match) => ({
+  grant: match[0],
+  roles: (match[1] ?? "").split(",").map((role) => role.trim().toLowerCase()),
+}));
+
+describe("function privileges (CLAUDE.md rule 14)", () => {
+  it("finds the callable functions", () => {
+    expect(callableByFile.map((fn) => fn.name)).toEqual(
+      expect.arrayContaining([
+        "is_owner",
+        "owns_object",
+        "generate_menu_code",
+        "create_restaurant",
+      ]),
+    );
+  });
+
+  it.each(callableByFile.map((fn) => [fn.name, fn.file] as const))(
+    "%s is revoked from public by name in %s",
+    (name, file) => {
+      const fn = callableByFile.find(
+        (candidate) => candidate.name === name && candidate.file === file,
+      );
+      const revokes = [
+        ...(fn?.text ?? "").matchAll(
+          new RegExp(
+            `revoke all on function public\\.${name}\\s*\\([\\s\\S]*?\\)\\s+from\\s+([^;]+);`,
+            "gi",
+          ),
+        ),
+      ].map((match) => match[1] ?? "");
+      expect(
+        revokes.length,
+        `${file} creates or replaces ${name} without a revoke`,
+      ).toBeGreaterThan(0);
+      expect(
+        revokes.some((roles) => /\bpublic\b/i.test(roles)),
+        `${file} revokes ${name}, but not from public`,
+      ).toBe(true);
+    },
+  );
+
+  it("grants functions only to authenticated or service_role", () => {
+    expect(functionGrants.length).toBeGreaterThan(0);
+    for (const { grant, roles } of functionGrants) {
+      expect(roles, grant).not.toEqual([]);
+      for (const role of roles) {
+        expect(["authenticated", "service_role"], grant).toContain(role);
+      }
+    }
   });
 });
 

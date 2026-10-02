@@ -62,7 +62,7 @@ describe("copy guard: product copy", () => {
 
 // Em dashes are banned in every file, code comments included (CLAUDE.md).
 // Banned words are checked only in copy, because "width: 100%" is valid CSS.
-const scanDirs = ["app", "src", "tests", "supabase", ".githooks"];
+const scanDirs = ["app", "src", "tests", "supabase", ".githooks", ".github"];
 const textExtensions = new Set([
   "",
   ".css",
@@ -74,6 +74,8 @@ const textExtensions = new Set([
   ".toml",
   ".ts",
   ".tsx",
+  ".yaml",
+  ".yml",
 ]);
 const skipNames = new Set([
   ".DS_Store",
