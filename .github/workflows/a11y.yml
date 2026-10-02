@@ -50,3 +50,73 @@ jobs:
           path: test-results
           retention-days: 7
           if-no-files-found: ignore
+
+  # Vercel's deployment carries the commit, not the branch (ref equals the
+  # sha, payload empty), so the branch is decided here: the commit must
+  # already be on main. This job checks out nothing and holds no secret. A
+  # failed API call fails it, and the owner job below is then skipped.
+  on-main:
+    name: Is the deployed commit on main?
+    if: github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Preview'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      on_main: ${{ steps.branch.outputs.on_main }}
+    steps:
+      - id: branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.deployment.sha }}
+        run: |
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${SHA}" --jq .status)"
+          echo "compare main...${SHA}: ${status}"
+          if [ "${status}" = "identical" ] || [ "${status}" = "behind" ]; then
+            echo "on_main=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "on_main=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Not a main commit. Owner checks run on main previews only."
+          fi
+
+  # Skipped, not green, for any other branch's preview. A step added later
+  # cannot run without the guard.
+  a11y-owner:
+    name: Owner screens on the preview, signed in (main only)
+    needs: on-main
+    if: needs.on-main.outputs.on_main == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.deployment.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Read the Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache the Chromium build
+        id: chromium
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - if: steps.chromium.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.chromium.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      # The only step that reads the secret. Missing variables fail the
+      # Playwright config with a message that points to the Build plan;
+      # nothing skips. No artifact step: the session never leaves the runner.
+      - name: Owner checks, signed in as the test owner
+        run: npm run a11y
+        env:
+          A11Y_SCOPE: owner
+          A11Y_BASE_URL: ${{ github.event.deployment_status.environment_url }}
+          A11Y_OWNER_EMAIL: ${{ vars.A11Y_OWNER_EMAIL }}
+          A11Y_OWNER_PASSWORD: ${{ secrets.A11Y_OWNER_PASSWORD }}
+          A11Y_OWNER_CODE: ${{ vars.A11Y_OWNER_CODE }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
