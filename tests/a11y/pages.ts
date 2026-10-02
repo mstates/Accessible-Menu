@@ -14,16 +14,19 @@ export const pages = [
   "/d/reading-pa",
   "/app",
   "/app/sign-in",
+  // An expired sign-in link, arriving with the page (D-110).
+  "/app/sign-in?error=link",
   "/app/restaurants/new",
 ] as const;
 
 // The owner pages, scanned signed in as the test owner with the one
 // restaurant it holds (D-100). Owner paths come from the owner feature. The
-// created outcome and a save's result message are reached by URL, so the
-// gate never sends a write to see them (D-108).
+// created outcome, a save's result message, and the return from Checkout are
+// reached by URL, so the gate never sends a write to see them (D-108).
 export function ownerPages(code: string) {
   return [
     dashboardPath,
+    `${dashboardPath}?checkout=success`,
     restaurantNewPath(),
     restaurantDetailsPath(code),
     restaurantDetailsPath(code, { created: true }),

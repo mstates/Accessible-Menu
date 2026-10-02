@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { open, pageChecks } from "./checks";
+import { en } from "../../src/copy";
+import { expectFocusResetThenSkipLink, open, pageChecks } from "./checks";
 import { pages } from "./pages";
 
 // Every public page, scanned signed out. The checks live in checks.ts and
@@ -17,4 +18,42 @@ test("the sign-in page carries an empty status region", async ({ page }) => {
   const region = page.locator('header [role="status"]');
   await expect(region).toHaveCount(1);
   await expect(region).toHaveText("");
+});
+
+// D-110: a sign-in that failed before the page loaded takes focus once. The
+// query value repeats, so each arrival is keyed by its render: a reload, with
+// the query stripped, and Back, replaying the same render, read nothing, and
+// a second arrival is read again.
+const signInFailures = [
+  ["link", en.owner.signIn.failures.link],
+  ["google", en.owner.signIn.failures.google],
+] as const;
+
+test("a sign-in failure takes focus on arrival, once for each arrival", async ({
+  page,
+}) => {
+  for (const [value, text] of signInFailures) {
+    const path = `/app/sign-in?error=${value}`;
+    const message = page.getByText(text, { exact: true });
+    await open(page, path);
+    await expect(message).toBeFocused();
+    await page.reload();
+    await expect(message).toHaveCount(0);
+    await open(page, path);
+    await expect(message, "a second arrival is read again").toBeFocused();
+  }
+});
+
+test("a sign-in failure is not read again on Back", async ({ page }) => {
+  const message = page.getByText(en.owner.signIn.failures.link, {
+    exact: true,
+  });
+  await open(page, "/app/sign-in?error=link");
+  await expect(message).toBeFocused();
+  await page.locator('header a[href="/"]').click();
+  await page.waitForURL((url) => url.pathname === "/");
+  await page.goBack();
+  await page.waitForURL((url) => url.pathname === "/app/sign-in");
+  await expect(message).toHaveCount(0);
+  await expectFocusResetThenSkipLink(page);
 });

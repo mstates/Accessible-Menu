@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useId, useRef } from "react";
 import {
   Button as AriaButton,
   ProgressBar,
@@ -14,6 +15,24 @@ type PendingProps =
 
 type Props = Omit<ButtonProps, "isPending"> & PendingProps;
 
+// React Aria announces pending through its live announcer, by reference: it
+// appends <div role="img" aria-labelledby={button id}> to an assertive log
+// inside [data-live-announcer], removes it after seven seconds, and holds
+// back the first message on a page for 100 ms while that log attaches. The
+// logs take additions only, so a message is spoken when it is added and
+// taking it out later unsays nothing (D-109).
+const MESSAGE_LIFETIME_MS = 7000;
+const LATE_MESSAGE_WINDOW_MS = 1000;
+
+function dropMessagesNaming(id: string): void {
+  for (const node of document.querySelectorAll(
+    "[data-live-announcer] [aria-labelledby]",
+  )) {
+    const ids = node.getAttribute("aria-labelledby")?.split(/\s+/) ?? [];
+    if (ids.includes(id)) node.remove();
+  }
+}
+
 // The one button. Semantics, keyboard handling, and the pending announcement
 // come from React Aria. While pending the label stays as it is and a
 // ProgressBar, labelled from copy, sits inside the button: React Aria gives
@@ -26,10 +45,42 @@ type Props = Omit<ButtonProps, "isPending"> & PendingProps;
 // for forced colors too: the background is dropped there, and the border is
 // what gets painted as the button's edge. Padding gives back the border's
 // two pixels, so the rendered size is unchanged.
-export function Button({ children, pendingLabel, ...props }: Props) {
+//
+// A button that unmounts while its pending message is still in React Aria's
+// log (a save remounting the form, the error page replacing it) would leave
+// an image named by nothing. So the button carries a known id, and on
+// unmount within seven seconds of a pending change it takes the messages
+// naming that id out of the log, then watches for one second for the late
+// first message React Aria may still add.
+export function Button({ children, pendingLabel, id, ...props }: Props) {
+  const fallbackId = useId();
+  const buttonId = id ?? fallbackId;
+  const isPending = props.isPending ?? false;
+  const wasPending = useRef(false);
+  const pendingChangedAt = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (isPending === wasPending.current) return;
+    wasPending.current = isPending;
+    pendingChangedAt.current = Date.now();
+  }, [isPending]);
+
+  useEffect(() => {
+    const changedAt = pendingChangedAt;
+    return () => {
+      const at = changedAt.current;
+      if (at === null || Date.now() - at > MESSAGE_LIFETIME_MS) return;
+      dropMessagesNaming(buttonId);
+      const late = new MutationObserver(() => dropMessagesNaming(buttonId));
+      late.observe(document.body, { childList: true, subtree: true });
+      window.setTimeout(() => late.disconnect(), LATE_MESSAGE_WINDOW_MS);
+    };
+  }, [buttonId]);
+
   return (
     <AriaButton
       {...props}
+      id={buttonId}
       className="inline-flex min-h-11 items-center justify-center gap-2 rounded border-2 border-transparent bg-foreground px-3.5 py-1.5 font-semibold text-background data-[pressed]:opacity-90 data-[disabled]:opacity-60 data-[pending]:opacity-60"
     >
       {(renderProps) => (

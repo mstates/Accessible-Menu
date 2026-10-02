@@ -8,6 +8,7 @@ import { createSupabaseServerClient } from "@/core/supabase/server";
 import { startTrial } from "@/features/billing/actions";
 import { RestaurantBilling } from "@/features/billing/RestaurantBilling";
 import { signOut } from "@/features/owner/actions";
+import { arrivalKey } from "@/features/owner/arrival";
 import { DashboardShell } from "@/features/owner/DashboardShell";
 import { restaurantNewPath } from "@/features/owner/paths";
 import { RestaurantCard } from "@/features/owner/RestaurantCard";
@@ -34,7 +35,11 @@ export default async function OwnerPage({ searchParams }: Props) {
   const email = data?.claims.email;
   if (!email) redirect("/app/sign-in");
   const { checkout } = await searchParams;
-  const notice = checkout ? (notices[checkout] ?? null) : null;
+  const message = checkout ? notices[checkout] : undefined;
+  const notice =
+    checkout && message
+      ? { message, key: arrivalKey("checkout", checkout) }
+      : null;
 
   // Row level security limits this to the owner's restaurants.
   const restaurants = await listOwnerRestaurants(supabase);

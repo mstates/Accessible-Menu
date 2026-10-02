@@ -3,12 +3,17 @@ import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
 import { Button } from "@/ui/Button";
 import { PageFrame } from "@/ui/PageFrame";
+import { ResultMessage } from "@/ui/ResultMessage";
+
+// A result that arrived with the page, such as the return from Checkout, and
+// the key of the render that carries it (D-110).
+export type DashboardNotice = { message: string; key: string };
 
 type Props = {
   copy: Copy;
   email: string;
   signOut: () => Promise<void>;
-  notice?: string | null;
+  notice?: DashboardNotice | null;
   children?: ReactNode;
 };
 
@@ -32,9 +37,12 @@ export function DashboardShell({
         {fill(copy.owner.signedInAs, { email })}
       </p>
       {notice ? (
-        <p role="status" className="mt-4 rounded bg-background-raised p-4">
-          {notice}
-        </p>
+        <ResultMessage
+          key={notice.key}
+          fromUrl={notice.key}
+          message={notice.message}
+          className="mt-4"
+        />
       ) : null}
       {children ?? <p className="mt-6">{copy.owner.empty}</p>}
       <form action={signOut} className="mt-8">

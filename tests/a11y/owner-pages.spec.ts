@@ -86,10 +86,17 @@ async function holdNavigation(page: Page, path: string) {
 // with the response Next gives for an action it does not know, the case a
 // save from before a deploy meets (Q-41). None is passed to the network, so
 // if Next's response ever changes shape the error page fails to appear and
-// the test fails; it never writes.
-async function answerWritesInBrowser(page: Page) {
+// the test fails; it never writes. With hold, the answer waits until the
+// test releases it, so the pending state can be looked at first.
+async function answerWritesInBrowser(page: Page, { hold = false } = {}) {
   const attempted: string[] = [];
   const answered: string[] = [];
+  let release = () => {};
+  const held = hold
+    ? new Promise<void>((resolve) => {
+        release = resolve;
+      })
+    : Promise.resolve();
   page.on("request", (request) => {
     if (request.method() !== "GET") attempted.push(request.url());
   });
@@ -100,28 +107,76 @@ async function answerWritesInBrowser(page: Page) {
       return;
     }
     answered.push(request.url());
+    await held;
     await route.fulfill({
       status: 404,
       headers: { "x-nextjs-action-not-found": "1" },
       body: "",
     });
   });
-  return { attempted, answered };
+  return { attempted, answered, release: () => release() };
 }
 
-// Saves the details form by pressing Enter in its first field, as an owner
-// can. The Save button never takes focus, so React Aria makes no pending
-// announcement: that announcement names the button by its id and stays in
-// React Aria's hidden log for seven seconds, longer than the button lives
-// once the error page replaces the form.
-async function saveIntoTheErrorPage(page: Page) {
+// Presses Save details with the button, the way an owner does, and returns
+// the button's id, which React Aria's pending message names.
+async function pressSave(page: Page): Promise<string> {
   await open(page, details);
-  await page.getByRole("textbox", { name: strings.fields.name }).press("Enter");
-  const heading = page.getByRole("heading", {
-    level: 1,
-    name: en.owner.error.heading,
-  });
-  await expect(heading, "focus moves to the error heading").toBeFocused();
+  const save = page.getByRole("button", { name: strings.details.submit });
+  const id = await save.getAttribute("id");
+  if (!id) throw new Error("the Save button has no id");
+  await save.click();
+  return id;
+}
+
+function errorHeading(page: Page) {
+  return page.getByRole("heading", { level: 1, name: en.owner.error.heading });
+}
+
+// React Aria's live announcer messages that name an element by id (D-109).
+function messagesNaming(page: Page, id: string) {
+  return page.locator(`[data-live-announcer] [aria-labelledby~="${id}"]`);
+}
+
+async function expectNoNamelessMessages(page: Page) {
+  const dangling = await page.evaluate(
+    () =>
+      [
+        ...document.querySelectorAll("[data-live-announcer] [aria-labelledby]"),
+      ].filter((node) =>
+        (node.getAttribute("aria-labelledby") ?? "")
+          .split(/\s+/)
+          .some((name) => !document.getElementById(name)),
+      ).length,
+  );
+  expect(
+    dangling,
+    "no message in React Aria's log names an element that is gone",
+  ).toBe(0);
+}
+
+// Records every message React Aria adds to its log, and whether each element
+// it names existed when it was added. Runs in the page as an init script.
+function recordAnnouncerMessages() {
+  const w = window as unknown as {
+    __messages: { names: string[]; existed: boolean }[];
+  };
+  w.__messages = [];
+  new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (!(node instanceof Element)) continue;
+        if (!node.closest("[data-live-announcer]")) continue;
+        const names = (node.getAttribute("aria-labelledby") ?? "")
+          .split(/\s+/)
+          .filter(Boolean);
+        if (names.length === 0) continue;
+        w.__messages.push({
+          names,
+          existed: names.every((name) => document.getElementById(name)),
+        });
+      }
+    }
+  }).observe(document, { subtree: true, childList: true });
 }
 
 test("every owner page carries an empty status region", async ({ page }) => {
@@ -239,11 +294,31 @@ test("at the largest phone text size, the pending state does not scroll sideways
   await page.waitForURL(`**${details}`);
 });
 
-test("a save the server cannot take lands on the focused error page", async ({
+// D-109 pins React Aria's announcer markup, which the Button relies on.
+// While the save is held, React Aria's pending message must name the Save
+// button by its id; once the error page replaces the form, the Button has
+// taken that message out. If React Aria ever announces another way, the
+// first expectation fails on the upgrade; nothing here can pass because a
+// selector found nothing.
+test("a save the server cannot take lands on the focused error page, and its pending message goes with the button", async ({
   page,
 }) => {
-  const writes = await answerWritesInBrowser(page);
-  await saveIntoTheErrorPage(page);
+  const writes = await answerWritesInBrowser(page, { hold: true });
+  const id = await pressSave(page);
+  await expect(
+    messagesNaming(page, id),
+    "React Aria's pending message names the Save button",
+  ).toHaveCount(1);
+
+  writes.release();
+  await expect(
+    errorHeading(page),
+    "focus moves to the error heading",
+  ).toBeFocused();
+  await expect(
+    messagesNaming(page, id),
+    "the message went with the button",
+  ).toHaveCount(0);
   expect(
     writes.answered.length,
     "the save was sent and answered in the browser",
@@ -256,6 +331,7 @@ test("a save the server cannot take lands on the focused error page", async ({
   await expect(statusRegion(page)).toHaveText("");
   await expectNoAxeViolations(page);
   await expectKeyboardWalk(page);
+  await expectNoNamelessMessages(page);
   await expectNoHorizontalScroll(page);
 
   await page.getByRole("button", { name: en.owner.error.reload }).click();
@@ -265,12 +341,109 @@ test("a save the server cannot take lands on the focused error page", async ({
   await expect(page).toHaveTitle(pageTitle(en, strings.details.title, name));
 });
 
+// The late path. Answered at once, the form can be gone before React Aria
+// adds its first message on the page, which it holds back for 100 ms; the
+// Button watches for that message and takes it out too. The recorder proves
+// React Aria still announced the Save button, so this cannot pass on an
+// empty log.
+test("answered at once, a late pending message is taken out as well", async ({
+  page,
+}) => {
+  await page.addInitScript(recordAnnouncerMessages);
+  const writes = await answerWritesInBrowser(page);
+  const id = await pressSave(page);
+  await expect(
+    errorHeading(page),
+    "focus moves to the error heading",
+  ).toBeFocused();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          (button) =>
+            (
+              window as unknown as {
+                __messages: { names: string[]; existed: boolean }[];
+              }
+            ).__messages.filter((m) => m.names.includes(button)).length,
+          id,
+        ),
+      { message: "React Aria announced the pending Save button" },
+    )
+    .toBeGreaterThan(0);
+  const late = await page.evaluate(
+    (button) =>
+      (
+        window as unknown as {
+          __messages: { names: string[]; existed: boolean }[];
+        }
+      ).__messages.some((m) => m.names.includes(button) && !m.existed),
+    id,
+  );
+  test.info().annotations.push({
+    type: "pending message",
+    description: late
+      ? "added after the Save button was gone"
+      : "added while the Save button existed",
+  });
+  await expect(messagesNaming(page, id)).toHaveCount(0);
+  await expectNoNamelessMessages(page);
+  await expectNoAxeViolations(page);
+  expect(
+    writes.attempted,
+    "every request that was not a GET was answered by the route",
+  ).toEqual(writes.answered);
+});
+
 test("at the largest phone text size, the error page does not scroll sideways", async ({
   page,
 }) => {
   await answerWritesInBrowser(page);
   await setLargestText(page);
-  await saveIntoTheErrorPage(page);
+  await pressSave(page);
+  await expect(
+    errorHeading(page),
+    "focus moves to the error heading",
+  ).toBeFocused();
   await expectRootAtLargest(page);
   await expectNoHorizontalScroll(page);
+});
+
+// D-110: a result that arrives with the page takes focus once. The query
+// value repeats, so each arrival is keyed by its render: a reload, with the
+// query stripped, and Back, replaying the same render, read nothing, and a
+// second arrival is read again.
+const checkoutNotices = [
+  ["success", en.owner.billing.checkoutSuccess],
+  ["cancel", en.owner.billing.checkoutCancel],
+  ["missing", en.owner.billing.restaurantMissing],
+] as const;
+
+test("a checkout result takes focus on arrival, once for each arrival", async ({
+  page,
+}) => {
+  for (const [value, text] of checkoutNotices) {
+    const path = `${dashboardPath}?checkout=${value}`;
+    const message = page.getByText(text, { exact: true });
+    await open(page, path);
+    await expect(message).toBeFocused();
+    await page.reload();
+    await expect(message).toHaveCount(0);
+    await open(page, path);
+    await expect(message, "a second arrival is read again").toBeFocused();
+  }
+});
+
+test("a checkout result is not read again on Back", async ({ page }) => {
+  const message = page.getByText(en.owner.billing.checkoutSuccess, {
+    exact: true,
+  });
+  await open(page, `${dashboardPath}?checkout=success`);
+  await expect(message).toBeFocused();
+  await page.locator(`main a[href="${restaurantNewPath()}"]`).click();
+  await page.waitForURL(`**${restaurantNewPath()}`);
+  await page.goBack();
+  await page.waitForURL((url) => url.pathname === dashboardPath);
+  await expect(message).toHaveCount(0);
+  await expectFocusResetThenSkipLink(page);
 });

@@ -1,9 +1,12 @@
 import type { Copy } from "@/copy";
 import { Button } from "@/ui/Button";
 import { PageFrame } from "@/ui/PageFrame";
+import { ResultMessage } from "@/ui/ResultMessage";
 import { SignInForm } from "./SignInForm";
 
-export type SignInFailure = "link" | "google" | null;
+// A sign-in that failed before this page loaded (an expired link, Google not
+// finishing), and the key of the render that carries it (D-110).
+export type SignInFailure = { reason: "link" | "google"; key: string } | null;
 
 type Props = {
   copy: Copy;
@@ -12,7 +15,6 @@ type Props = {
 };
 
 export function SignInPage({ copy, failure, signInWithGoogle }: Props) {
-  const failureMessage = failure ? copy.owner.signIn.failures[failure] : null;
   return (
     <PageFrame
       siteName={copy.site.name}
@@ -21,10 +23,13 @@ export function SignInPage({ copy, failure, signInWithGoogle }: Props) {
     >
       <h1 className="text-3xl font-bold">{copy.owner.signIn.heading}</h1>
       <p className="mt-2 text-foreground-muted">{copy.owner.signIn.lead}</p>
-      {failureMessage ? (
-        <p role="alert" className="mt-4 rounded bg-background-raised p-4">
-          {failureMessage}
-        </p>
+      {failure ? (
+        <ResultMessage
+          key={failure.key}
+          fromUrl={failure.key}
+          message={copy.owner.signIn.failures[failure.reason]}
+          className="mt-4"
+        />
       ) : null}
       <div className="mt-6 max-w-md">
         <SignInForm copy={copy} />
