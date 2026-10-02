@@ -249,6 +249,9 @@ export function pageChecks(path: string) {
     page,
   }) => {
     await open(page, path);
+    // A result message takes focus once the page hydrates, so the walk
+    // starts after the page has settled, or that focus move lands mid-walk.
+    await page.waitForLoadState("networkidle");
     await expectKeyboardWalk(page);
   });
 
