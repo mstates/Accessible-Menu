@@ -5,6 +5,9 @@ name: Accessibility gate
 # the result shows on that commit and on any pull request that carries it.
 # No concurrency group: a Production deployment of the same commit would
 # share a group keyed on the SHA and cancel the preview's gate mid-run.
+# No caches: a deployment_status run is not tied to a branch or tag ref, so
+# actions/cache and setup-node's npm cache refuse it (D-102). Dependencies
+# and Chromium install fresh, about forty seconds per job.
 on:
   deployment_status:
 
@@ -24,21 +27,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
-          cache: npm
       - run: npm ci
-      - name: Read the Playwright version
-        id: playwright
-        run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-      - name: Cache the Chromium build
-        id: chromium
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      - if: steps.chromium.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
-      - if: steps.chromium.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
+      - run: npx playwright install --with-deps chromium
       - run: npm run a11y
         env:
           A11Y_BASE_URL: ${{ github.event.deployment_status.environment_url }}
@@ -92,21 +82,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
-          cache: npm
       - run: npm ci
-      - name: Read the Playwright version
-        id: playwright
-        run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-      - name: Cache the Chromium build
-        id: chromium
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      - if: steps.chromium.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
-      - if: steps.chromium.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
+      - run: npx playwright install --with-deps chromium
       # The only step that reads the secret. Missing variables fail the
       # Playwright config with a message that points to the Build plan;
       # nothing skips. No artifact step: the session never leaves the runner.
