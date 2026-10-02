@@ -253,7 +253,11 @@ export function RestaurantForm({
       </Section>
 
       <div>
-        <Button type="submit" isPending={pending}>
+        <Button
+          type="submit"
+          isPending={pending}
+          pendingLabel={copy.ui.pending}
+        >
           {submitLabel}
         </Button>
       </div>

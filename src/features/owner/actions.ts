@@ -16,10 +16,18 @@ import { restaurantInputSchema } from "@/domain/restaurant";
 import { readRestaurantForm } from "./form-data";
 import { restaurantDetailsPath } from "./paths";
 
+// Sign-in outcomes. An address problem belongs to the email field; every
+// other outcome, sent or failed, is one message after the button. The
+// attempt count keys that message, so the same text twice is read twice.
 export type SignInState =
   | { status: "idle" }
-  | { status: "sent"; message: string }
-  | { status: "error"; message: string };
+  | { status: "invalid"; message: string; attempt: number }
+  | { status: "sent"; message: string; attempt: number }
+  | { status: "failed"; message: string; attempt: number };
+
+function nextAttempt(previous: SignInState): number {
+  return previous.status === "idle" ? 1 : previous.attempt + 1;
+}
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -34,12 +42,17 @@ async function requestOrigin(): Promise<string> {
 
 // Emails a magic link. First-time owners are created on the spot (Spec 4.1).
 export async function requestMagicLink(
-  _previous: SignInState,
+  previous: SignInState,
   formData: FormData,
 ): Promise<SignInState> {
+  const attempt = nextAttempt(previous);
   const email = String(formData.get("email") ?? "").trim();
   if (!emailPattern.test(email)) {
-    return { status: "error", message: en.owner.signIn.invalidEmail };
+    return {
+      status: "invalid",
+      message: en.owner.signIn.invalidEmail,
+      attempt,
+    };
   }
   const origin = await requestOrigin();
   const supabase = await createSupabaseServerClient();
@@ -51,9 +64,9 @@ export async function requestMagicLink(
     },
   });
   if (error) {
-    return { status: "error", message: en.owner.signIn.failed };
+    return { status: "failed", message: en.owner.signIn.failed, attempt };
   }
-  return { status: "sent", message: en.owner.signIn.sent };
+  return { status: "sent", message: en.owner.signIn.sent, attempt };
 }
 
 // Starts Google sign-in. Supabase sends the owner to Google and back to

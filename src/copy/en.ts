@@ -9,6 +9,9 @@ export const en = {
     menuBy: "Menu by",
   },
   skipLink: "Skip to main content",
+  ui: {
+    pending: "in progress",
+  },
   home: {
     heading: "Accessible Menu",
     lead: "A restaurant menu anyone can read.",

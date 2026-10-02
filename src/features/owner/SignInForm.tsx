@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { startTransition, useActionState, useEffect, useRef } from "react";
 import { Form } from "react-aria-components";
 import type { Copy } from "@/copy";
 import { Button } from "@/ui/Button";
@@ -8,28 +8,77 @@ import { TextField } from "@/ui/TextField";
 import { requestMagicLink, type SignInState } from "./actions";
 
 const initial: SignInState = { status: "idle" };
+const emailFieldId = "sign-in-email";
 
+// The magic link form. The action is called from onSubmit inside a
+// transition, not through the form's action prop, so React does not reset
+// the form after each submit and the typed address stays. An address problem
+// shows on the field and moves focus there; every other outcome, sent or
+// failed, is one message after the button that takes focus, keyed per
+// submission so the same message twice is read twice. The field stays valid
+// for those.
 export function SignInForm({ copy }: { copy: Copy }) {
-  const [state, action, pending] = useActionState(requestMagicLink, initial);
+  const [state, formAction, pending] = useActionState(
+    requestMagicLink,
+    initial,
+  );
+  const invalid = state.status === "invalid";
+
+  useEffect(() => {
+    if (state.status === "invalid") {
+      document.getElementById(emailFieldId)?.focus();
+    }
+  }, [state]);
+
   return (
-    <Form action={action} className="flex flex-col gap-4">
+    <Form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        startTransition(() => formAction(data));
+      }}
+      className="flex flex-col gap-4"
+    >
       <TextField
+        id={emailFieldId}
         name="email"
         type="email"
         autoComplete="email"
         isRequired
         label={copy.owner.signIn.emailLabel}
-        isInvalid={state.status === "error"}
-        errorMessage={state.status === "error" ? state.message : undefined}
+        isInvalid={invalid}
+        errorMessage={invalid ? state.message : undefined}
       />
       <div>
-        <Button type="submit" isPending={pending}>
+        <Button
+          type="submit"
+          isPending={pending}
+          pendingLabel={copy.ui.pending}
+        >
           {copy.owner.signIn.submit}
         </Button>
       </div>
-      <p role="status" className="min-h-6">
-        {state.status === "sent" ? state.message : null}
-      </p>
+      {state.status === "sent" || state.status === "failed" ? (
+        <Outcome key={state.attempt} message={state.message} />
+      ) : null}
     </Form>
+  );
+}
+
+// One outcome message that takes focus when it appears. No live role: the
+// focus move is what reads it, and the outline shows where focus went.
+function Outcome({ message }: { message: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+  return (
+    <p
+      ref={ref}
+      tabIndex={-1}
+      className="rounded bg-background-raised p-4 outline-none focus-visible:outline-3"
+    >
+      {message}
+    </p>
   );
 }

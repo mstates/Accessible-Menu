@@ -1,13 +1,29 @@
 "use client";
 
-import { Button as AriaButton, type ButtonProps } from "react-aria-components";
+import {
+  Button as AriaButton,
+  ProgressBar,
+  type ButtonProps,
+} from "react-aria-components";
+
+// A button that can be pending must say what the pending state is called,
+// so the two travel together: isPending without pendingLabel is a type error.
+type PendingProps =
+  | { isPending?: undefined; pendingLabel?: undefined }
+  | { isPending: boolean; pendingLabel: string };
+
+type Props = Omit<ButtonProps, "isPending"> & PendingProps;
 
 // The one button. Semantics, keyboard handling, and the pending announcement
-// come from React Aria. While pending the label stays as it is and an
-// aria-hidden spinner shows beside it, stroked in currentColor so it survives
-// forced colors, the way React Aria's own Tailwind starter does it. Opacity
+// come from React Aria. While pending the label stays as it is and a
+// ProgressBar, labelled from copy, sits inside the button: React Aria gives
+// it the id it folds into the button's accessible name and announces that
+// name when pending begins and ends while the button has focus, so VoiceOver
+// hears "Save details, in progress". The spinner inside it is decoration,
+// stroked in currentColor so it survives forced colors. Nothing here is ever
+// hidden while pending, or the announcement would lose its words. Opacity
 // alone would read as disabled, not as working.
-export function Button({ children, ...props }: ButtonProps) {
+export function Button({ children, pendingLabel, ...props }: Props) {
   return (
     <AriaButton
       {...props}
@@ -16,18 +32,24 @@ export function Button({ children, ...props }: ButtonProps) {
       {(renderProps) => (
         <>
           {typeof children === "function" ? children(renderProps) : children}
-          {renderProps.isPending ? (
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              className="size-5 shrink-0 motion-safe:animate-spin"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={3}
-              strokeLinecap="round"
+          {renderProps.isPending && pendingLabel ? (
+            <ProgressBar
+              isIndeterminate
+              aria-label={pendingLabel}
+              className="flex"
             >
-              <path d="M12 3a9 9 0 1 1-6.4 2.6" />
-            </svg>
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                className="size-5 shrink-0 motion-safe:animate-spin"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={3}
+                strokeLinecap="round"
+              >
+                <path d="M12 3a9 9 0 1 1-6.4 2.6" />
+              </svg>
+            </ProgressBar>
           ) : null}
         </>
       )}
