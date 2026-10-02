@@ -5,12 +5,17 @@ export const en = {
   lang: "en",
   site: {
     name: "Accessible Menu",
+    // Joins the parts of every owner page title (D-104). A placeholder until
+    // Michael's listening pass on main: every screen reader pauses at a comma
+    // and none says it as a word at default punctuation.
+    titleSeparator: ", ",
     descriptor: "Accessible menu",
     menuBy: "Menu by",
   },
   skipLink: "Skip to main content",
   ui: {
     pending: "in progress",
+    loading: "Loading",
   },
   home: {
     heading: "Accessible Menu",
@@ -23,6 +28,13 @@ export const en = {
     empty: "Nothing here yet.",
     signedInAs: "Signed in as {email}",
     signOut: "Sign out",
+    error: {
+      title: "Something went wrong",
+      heading: "Something went wrong",
+      lead: "This page may be out of date, or something went wrong on our side. Reload to get the latest version.",
+      saveNote: "If you were saving, check your change after the page reloads.",
+      reload: "Reload",
+    },
     signIn: {
       title: "Sign in",
       heading: "Sign in",
@@ -66,6 +78,9 @@ export const en = {
       editDetails: "Edit details",
       editDetailsFor: "for {restaurant}",
       backToDashboard: "Back to the dashboard",
+      nav: {
+        details: "Details",
+      },
       requiredNote: "Fields marked with * are required.",
       sections: {
         location: "Location",
@@ -80,8 +95,8 @@ export const en = {
         submit: "Create restaurant",
       },
       details: {
-        title: "{restaurant} details",
-        createdTitle: "Restaurant created. {restaurant} details",
+        title: "Details",
+        createdTitle: "Restaurant created. Details",
         lead: "Details save when you press Save and show on the menu page right away.",
         submit: "Save details",
         created: "Your restaurant is set up. Its menu link is above.",

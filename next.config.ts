@@ -22,6 +22,12 @@ const nextConfig: NextConfig = {
   // to CLAUDE.md whenever it detects Claude Code. The Next docs it points at
   // are readable at node_modules/next/dist/docs without the block.
   agentRules: false,
+  // Metadata never streams (D-107). For every browser Next renders metadata
+  // inside a Suspense boundary, so a title that resolves after the shell is
+  // written into the body. Matching every user agent makes metadata
+  // blocking, so each page's title is in the served head however the page
+  // streams later. This setting changes nothing else about streaming.
+  htmlLimitedBots: /.*/,
 };
 
 export default nextConfig;

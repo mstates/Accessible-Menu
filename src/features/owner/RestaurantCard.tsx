@@ -1,8 +1,8 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
 import { menuUrl } from "@/domain/menu-url";
+import { PageLink } from "@/ui/PageLink";
 import { restaurantDetailsPath } from "./paths";
 
 type Props = {
@@ -40,7 +40,7 @@ export function RestaurantCard({ copy, name, code, origin, children }: Props) {
         </p>
       ) : null}
       <p className="mt-2">
-        <Link
+        <PageLink
           href={restaurantDetailsPath(code)}
           className="text-link underline"
         >
@@ -49,7 +49,7 @@ export function RestaurantCard({ copy, name, code, origin, children }: Props) {
             {" "}
             {fill(strings.editDetailsFor, { restaurant: name })}
           </span>
-        </Link>
+        </PageLink>
       </p>
       {children}
     </section>

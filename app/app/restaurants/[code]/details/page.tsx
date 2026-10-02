@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 import { en } from "@/copy";
-import { fill } from "@/copy/fill";
+import { pageTitle } from "@/copy/title";
 import { menuOrigin } from "@/core/config";
 import { getOwnerRestaurantByCode } from "@/core/supabase/restaurants";
 import { createSupabaseServerClient } from "@/core/supabase/server";
@@ -11,8 +10,10 @@ import { isMenuCode, menuUrl, normalizeMenuCode } from "@/domain/menu-url";
 import { updateRestaurant } from "@/features/owner/actions";
 import { dashboardPath } from "@/features/owner/paths";
 import { RestaurantForm } from "@/features/owner/RestaurantForm";
-import { SavedNotice } from "@/features/owner/SavedNotice";
+import { RestaurantNav } from "@/features/owner/RestaurantNav";
 import { PageFrame } from "@/ui/PageFrame";
+import { PageLink } from "@/ui/PageLink";
+import { ResultMessage } from "@/ui/ResultMessage";
 
 type Props = {
   params: Promise<{ code: string }>;
@@ -45,13 +46,12 @@ export async function generateMetadata({
   const { code } = await params;
   const { created } = await searchParams;
   const { restaurant } = await loadRestaurant(code);
-  if (!restaurant) return { title: en.notFound.title };
+  if (!restaurant) return { title: pageTitle(en, en.notFound.title) };
   return {
-    title: fill(
+    title: pageTitle(
+      en,
       created ? strings.details.createdTitle : strings.details.title,
-      {
-        restaurant: restaurant.name,
-      },
+      restaurant.name,
     ),
   };
 }
@@ -68,7 +68,19 @@ export default async function RestaurantDetailsPage({
   const action = updateRestaurant.bind(null, restaurant.code);
 
   return (
-    <PageFrame siteName={en.site.name} homeHref="/">
+    <PageFrame
+      siteName={en.site.name}
+      homeHref="/"
+      loadingLabel={en.ui.loading}
+      nav={
+        <RestaurantNav
+          copy={en}
+          name={restaurant.name}
+          code={restaurant.code}
+          current="details"
+        />
+      }
+    >
       <h1 className="text-3xl font-bold">{restaurant.name}</h1>
       {created ? (
         <p className="mt-4 rounded bg-background-raised p-4">
@@ -76,10 +88,11 @@ export default async function RestaurantDetailsPage({
         </p>
       ) : null}
       {saved ? (
-        <SavedNotice
+        <ResultMessage
           key={saved}
-          value={saved}
+          fromUrl={saved}
           message={strings.details.saved}
+          className="mt-4"
         />
       ) : null}
       <p className="mt-4">
@@ -94,9 +107,9 @@ export default async function RestaurantDetailsPage({
         </p>
       ) : null}
       <p className="mt-2">
-        <Link href={dashboardPath} className="text-link underline">
+        <PageLink href={dashboardPath} className="text-link underline">
           {strings.backToDashboard}
-        </Link>
+        </PageLink>
       </p>
       <p className="mt-6 text-foreground-muted">{strings.details.lead}</p>
       <div className="mt-6">

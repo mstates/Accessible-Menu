@@ -1,9 +1,10 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useRef } from "react";
+import { startTransition, useActionState, useEffect } from "react";
 import { Form } from "react-aria-components";
 import type { Copy } from "@/copy";
 import { Button } from "@/ui/Button";
+import { ResultMessage } from "@/ui/ResultMessage";
 import { TextField } from "@/ui/TextField";
 import { requestMagicLink, type SignInState } from "./actions";
 
@@ -59,26 +60,8 @@ export function SignInForm({ copy }: { copy: Copy }) {
         </Button>
       </div>
       {state.status === "sent" || state.status === "failed" ? (
-        <Outcome key={state.attempt} message={state.message} />
+        <ResultMessage key={state.attempt} message={state.message} />
       ) : null}
     </Form>
-  );
-}
-
-// One outcome message that takes focus when it appears. No live role: the
-// focus move is what reads it, and the outline shows where focus went.
-function Outcome({ message }: { message: string }) {
-  const ref = useRef<HTMLParagraphElement>(null);
-  useEffect(() => {
-    ref.current?.focus();
-  }, []);
-  return (
-    <p
-      ref={ref}
-      tabIndex={-1}
-      className="rounded bg-background-raised p-4 outline-none focus-visible:outline-3"
-    >
-      {message}
-    </p>
   );
 }

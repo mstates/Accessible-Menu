@@ -22,7 +22,11 @@ export function DashboardShell({
   children,
 }: Props) {
   return (
-    <PageFrame siteName={copy.site.name} homeHref="/">
+    <PageFrame
+      siteName={copy.site.name}
+      homeHref="/"
+      loadingLabel={copy.ui.loading}
+    >
       <h1 className="text-3xl font-bold">{copy.owner.heading}</h1>
       <p className="mt-2 text-foreground-muted">
         {fill(copy.owner.signedInAs, { email })}

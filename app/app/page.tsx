@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { en } from "@/copy";
+import { pageTitle } from "@/copy/title";
 import { menuOrigin } from "@/core/config";
 import { listOwnerRestaurants } from "@/core/supabase/restaurants";
 import { createSupabaseServerClient } from "@/core/supabase/server";
@@ -11,9 +11,10 @@ import { signOut } from "@/features/owner/actions";
 import { DashboardShell } from "@/features/owner/DashboardShell";
 import { restaurantNewPath } from "@/features/owner/paths";
 import { RestaurantCard } from "@/features/owner/RestaurantCard";
+import { PageLink } from "@/ui/PageLink";
 
 export const metadata: Metadata = {
-  title: en.owner.title,
+  title: pageTitle(en, en.owner.title),
 };
 
 type Props = { searchParams: Promise<{ checkout?: string }> };
@@ -41,9 +42,9 @@ export default async function OwnerPage({ searchParams }: Props) {
   return (
     <DashboardShell copy={en} email={email} signOut={signOut} notice={notice}>
       <p className="mt-6">
-        <Link href={restaurantNewPath()} className="text-link underline">
+        <PageLink href={restaurantNewPath()} className="text-link underline">
           {en.owner.restaurants.add}
-        </Link>
+        </PageLink>
       </p>
       {restaurants.length > 0 ? (
         restaurants.map((restaurant) => (

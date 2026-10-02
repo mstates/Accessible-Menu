@@ -14,7 +14,11 @@ type Props = {
 export function SignInPage({ copy, failure, signInWithGoogle }: Props) {
   const failureMessage = failure ? copy.owner.signIn.failures[failure] : null;
   return (
-    <PageFrame siteName={copy.site.name} homeHref="/">
+    <PageFrame
+      siteName={copy.site.name}
+      homeHref="/"
+      loadingLabel={copy.ui.loading}
+    >
       <h1 className="text-3xl font-bold">{copy.owner.signIn.heading}</h1>
       <p className="mt-2 text-foreground-muted">{copy.owner.signIn.lead}</p>
       {failureMessage ? (

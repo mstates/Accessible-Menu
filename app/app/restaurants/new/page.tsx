@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { en } from "@/copy";
+import { pageTitle } from "@/copy/title";
 import { createSupabaseServerClient } from "@/core/supabase/server";
 import { createRestaurant } from "@/features/owner/actions";
 import { dashboardPath } from "@/features/owner/paths";
 import { RestaurantForm } from "@/features/owner/RestaurantForm";
 import { PageFrame } from "@/ui/PageFrame";
+import { PageLink } from "@/ui/PageLink";
 
 export const metadata: Metadata = {
-  title: en.owner.restaurants.new.title,
+  title: pageTitle(en, en.owner.restaurants.new.title),
 };
 
 export default async function NewRestaurantPage() {
@@ -18,13 +19,17 @@ export default async function NewRestaurantPage() {
   if (!data?.claims.email) redirect("/app/sign-in");
   const strings = en.owner.restaurants;
   return (
-    <PageFrame siteName={en.site.name} homeHref="/">
+    <PageFrame
+      siteName={en.site.name}
+      homeHref="/"
+      loadingLabel={en.ui.loading}
+    >
       <h1 className="text-3xl font-bold">{strings.new.heading}</h1>
       <p className="mt-2 text-foreground-muted">{strings.new.lead}</p>
       <p className="mt-2">
-        <Link href={dashboardPath} className="text-link underline">
+        <PageLink href={dashboardPath} className="text-link underline">
           {strings.backToDashboard}
-        </Link>
+        </PageLink>
       </p>
       <div className="mt-6">
         <RestaurantForm
