@@ -32,7 +32,8 @@ export const en = {
       sent: "Check your email for a sign-in link. Open it on this phone or computer.",
       invalidEmail:
         "That does not look like an email address. Check it and try again.",
-      failed: "We could not send the link. Try again in a minute.",
+      failed:
+        "We could not send the link. Wait a minute and try again, or continue with Google.",
       or: "Or",
       google: "Continue with Google",
       failures: {
