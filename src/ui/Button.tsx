@@ -22,12 +22,15 @@ type Props = Omit<ButtonProps, "isPending"> & PendingProps;
 // hears "Save details, in progress". The spinner inside it is decoration,
 // stroked in currentColor so it survives forced colors. Nothing here is ever
 // hidden while pending, or the announcement would lose its words. Opacity
-// alone would read as disabled, not as working.
+// alone would read as disabled, not as working. The transparent border is
+// for forced colors too: the background is dropped there, and the border is
+// what gets painted as the button's edge. Padding gives back the border's
+// two pixels, so the rendered size is unchanged.
 export function Button({ children, pendingLabel, ...props }: Props) {
   return (
     <AriaButton
       {...props}
-      className="inline-flex min-h-11 items-center justify-center gap-2 rounded bg-foreground px-4 py-2 font-semibold text-background data-[pressed]:opacity-90 data-[disabled]:opacity-60 data-[pending]:opacity-60"
+      className="inline-flex min-h-11 items-center justify-center gap-2 rounded border-2 border-transparent bg-foreground px-3.5 py-1.5 font-semibold text-background data-[pressed]:opacity-90 data-[disabled]:opacity-60 data-[pending]:opacity-60"
     >
       {(renderProps) => (
         <>
