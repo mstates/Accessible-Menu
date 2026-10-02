@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { RestaurantStatus } from "./billing";
-import { hoursSchema, type Hours, type HoursMessages } from "./hours";
+import { hoursInputSchema, type Hours, type HoursInputMessages } from "./hours";
 import { US_STATE_CODES, type StateCode } from "./regions";
 import { TIMEZONE_IDS, type TimezoneId } from "./timezones";
 import { PREP_NOTE_IDS, type PrepNoteId } from "./types";
@@ -58,7 +58,7 @@ export const PHONE_PATTERN = /^[0-9 ()+.-]{7,25}$/;
 export const WEBSITE_PATTERN = /^https?:\/\/\S+$/i;
 const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/i;
 
-export type RestaurantMessages = HoursMessages & {
+export type RestaurantMessages = HoursInputMessages & {
   nameRequired: string;
   nameLength: string;
   addressRequired: string;
@@ -127,7 +127,7 @@ export function restaurantInputSchema(messages: RestaurantMessages) {
         .max(RESTAURANT_LIMITS.website, { error: messages.websiteLength })
         .nullable(),
     ),
-    hours: hoursSchema(messages).nullable(),
+    hours: hoursInputSchema(messages).nullable(),
     timezone: z.enum(TIMEZONE_IDS, { error: messages.timezone }),
     allergenNote: z.preprocess(
       blankToNull,

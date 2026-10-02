@@ -100,7 +100,11 @@ export default async function RestaurantDetailsPage({
       </p>
       <p className="mt-6 text-foreground-muted">{strings.details.lead}</p>
       <div className="mt-6">
+        {/* React Aria fields keep the values they mounted with, so a save
+            remounts the form from the saved row and the owner sees each
+            value as it was understood: 17:30 comes back as 5:30 pm (D-105). */}
         <RestaurantForm
+          key={saved ?? "details"}
           copy={en}
           action={action}
           defaultValues={restaurant}

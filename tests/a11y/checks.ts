@@ -124,19 +124,13 @@ export function pageChecks(path: string) {
     await open(page, path);
     const expected = await focusableKeys(page);
     const reached: string[] = [];
-    let previous = "";
     let tabs = 0;
     while (tabs < MAX_TABS) {
       await page.keyboard.press("Tab");
       tabs += 1;
       const current = await focused(page);
       if (current.key === "body") break;
-      // A native time input keeps focus while Tab moves between its hour,
-      // minute, and AM/PM parts, so the same element twice in a row is one
-      // control still being crossed, not a cycle.
-      if (current.key === previous) continue;
       if (reached.includes(current.key)) break;
-      previous = current.key;
       if (current.injected) continue;
       expect(current.visible, `${current.key} took focus while hidden`).toBe(
         true,

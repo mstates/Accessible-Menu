@@ -99,6 +99,7 @@ export const en = {
         websiteHint: "We add https:// if you leave it off.",
         hoursHint:
           "Leave a day blank if you are closed that day. Enter the same opening and closing time for a day you are open around the clock.",
+        timeHint: "For example, 11 am, 5:30 pm, or 17:30.",
         opens: "{day} opens",
         closes: "{day} closes",
         opensAgain: "{day} opens again",
@@ -198,7 +199,8 @@ export const en = {
           "Enter a phone number with 7 to 25 digits, spaces, or punctuation.",
         website: "Enter a web address like example.com.",
         websiteLength: "Keep the web address to 500 characters.",
-        time: "Enter a time.",
+        timeAmPm: "Add am or pm to the time {field}.",
+        timeFormat: "Enter the time {field}, like 11 am, 5:30 pm, or 17:30.",
         timePair: "{day} needs both an opening and a closing time.",
         ranges: "{day} can have two time ranges at most.",
         overlap: "{day} has times that overlap.",
@@ -282,6 +284,12 @@ export const en = {
     cent: { one: "cent", other: "cents" },
     and: "and",
     to: "to",
+  },
+  time: {
+    am: "am",
+    pm: "pm",
+    noon: "noon",
+    midnight: "midnight",
   },
   statement: {
     title: "Accessibility statement, {restaurant}",

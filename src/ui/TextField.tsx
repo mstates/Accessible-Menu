@@ -18,14 +18,17 @@ type Props = TextFieldProps & {
 };
 
 const inputClassName =
-  "rounded border border-border bg-background px-3 py-2 text-base text-foreground";
+  "w-full rounded border border-border bg-background px-3 py-2 text-base text-foreground";
 
 // A labelled text input. The label, description, and error are wired to
 // the input by React Aria. The id lands on the input, so an error summary
 // can link to it. A required field shows an asterisk after its label, hidden
 // from assistive technology because isRequired already sets aria-required.
 // No maxLength attribute anywhere: a cap is reported as an error, never
-// applied by cutting pasted text.
+// applied by cutting pasted text. Every input fills its column. The
+// percentage width also keeps an input's built-in width, twenty characters,
+// out of the minimum width of the fieldset around it: at a 32px root that
+// built-in width alone is wider than a 320px screen (D-105).
 export function TextField({
   label,
   description,

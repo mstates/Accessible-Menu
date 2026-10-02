@@ -3,17 +3,15 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { en } from "@/copy";
-import { fill } from "@/copy/fill";
 import {
   createOwnerRestaurant,
   updateOwnerRestaurant,
   type RestaurantWriteError,
 } from "@/core/supabase/restaurants";
 import { createSupabaseServerClient } from "@/core/supabase/server";
-import { isDayKey } from "@/domain/hours";
 import { isMenuCode, normalizeMenuCode } from "@/domain/menu-url";
 import { restaurantInputSchema } from "@/domain/restaurant";
-import { readRestaurantForm } from "./form-data";
+import { fieldErrors, readRestaurantForm } from "./form-data";
 import { restaurantDetailsPath } from "./paths";
 
 // Sign-in outcomes. An address problem belongs to the email field; every
@@ -98,25 +96,6 @@ export type RestaurantFormState =
 const restaurantCopy = en.owner.restaurants;
 const schema = restaurantInputSchema(restaurantCopy.errors);
 
-type Issue = { path: PropertyKey[]; message: string };
-
-// One message per field, keyed by the field name the form posts. Hours
-// messages carry {day}, filled from the path.
-function fieldErrors(issues: Issue[]): Record<string, string> {
-  const errors: Record<string, string> = {};
-  for (const issue of issues) {
-    const path = issue.path.map(String);
-    const name = path.join(".");
-    if (name in errors) continue;
-    const day = path[0] === "hours" ? path[1] : undefined;
-    errors[name] =
-      day !== undefined && isDayKey(day)
-        ? fill(issue.message, { day: restaurantCopy.days[day] })
-        : issue.message;
-  }
-  return errors;
-}
-
 function writeErrorMessage(error: RestaurantWriteError): string {
   switch (error.kind) {
     case "cap":
@@ -142,7 +121,10 @@ export async function createRestaurant(
   const supabase = await ownerClient();
   const parsed = schema.safeParse(readRestaurantForm(formData));
   if (!parsed.success) {
-    return { status: "invalid", errors: fieldErrors(parsed.error.issues) };
+    return {
+      status: "invalid",
+      errors: fieldErrors(parsed.error.issues, restaurantCopy),
+    };
   }
   const result = await createOwnerRestaurant(supabase, parsed.data);
   if (!result.ok) {
@@ -165,7 +147,10 @@ export async function updateRestaurant(
   }
   const parsed = schema.safeParse(readRestaurantForm(formData));
   if (!parsed.success) {
-    return { status: "invalid", errors: fieldErrors(parsed.error.issues) };
+    return {
+      status: "invalid",
+      errors: fieldErrors(parsed.error.issues, restaurantCopy),
+    };
   }
   const result = await updateOwnerRestaurant(supabase, code, parsed.data);
   if (!result.ok) {

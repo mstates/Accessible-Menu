@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   emptyHours,
+  hoursInputSchema,
   hoursSchema,
   isAllDay,
   parseHours,
   type Hours,
+  type HoursInputMessages,
   type HoursMessages,
 } from "../../src/domain/hours";
 
@@ -141,5 +143,134 @@ describe("the hours shape (D-92)", () => {
     expect(parseHours("Tuesday to Sunday")).toBeNull();
     expect(parseHours([])).toBeNull();
     expect(parseHours({ mon: "11-9" })).toBeNull();
+  });
+});
+
+describe("hours as the owner typed them (D-105)", () => {
+  const inputMessages: HoursInputMessages = {
+    timePair: "timePair",
+    timeAmPm: "timeAmPm",
+    timeFormat: "timeFormat",
+    ranges: "ranges",
+    overlap: "overlap",
+    allDay: "allDay",
+  };
+  const input = hoursInputSchema(inputMessages);
+
+  function typed(day: Partial<Record<keyof Hours, unknown>>) {
+    return { ...emptyHours(), ...day };
+  }
+
+  function typedProblems(value: unknown): string[] {
+    const result = input.safeParse(value);
+    if (result.success) return [];
+    return result.error.issues.map(
+      (issue) => `${issue.path.map(String).join(".")}: ${issue.message}`,
+    );
+  }
+
+  it("reads typed times into the stored shape", () => {
+    const result = input.safeParse(
+      typed({
+        mon: [{ open: "11am", close: "9 pm" }],
+        tue: [
+          { open: "11 a.m.", close: "2:30pm" },
+          { open: "17:00", close: "9p" },
+        ],
+        wed: [{ open: "5.30 pm", close: "11 pm" }],
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.mon).toEqual([{ open: "11:00", close: "21:00" }]);
+    expect(result.data.tue).toEqual([
+      { open: "11:00", close: "14:30" },
+      { open: "17:00", close: "21:00" },
+    ]);
+    expect(result.data.wed).toEqual([{ open: "17:30", close: "23:00" }]);
+    expect(parseHours(result.data)).toEqual(result.data);
+  });
+
+  it("stores a close after midnight as is, read as the next morning", () => {
+    const result = input.safeParse(
+      typed({ sat: [{ open: "5 pm", close: "2 am" }] }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.sat).toEqual([{ open: "17:00", close: "02:00" }]);
+  });
+
+  it("stores midnight as 00:00 in either role", () => {
+    const result = input.safeParse(
+      typed({
+        fri: [{ open: "noon", close: "midnight" }],
+        sun: [{ open: "midnight", close: "12 am" }],
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.fri).toEqual([{ open: "12:00", close: "00:00" }]);
+    expect(result.data.sun).toEqual([{ open: "00:00", close: "00:00" }]);
+    expect(isAllDay(result.data.sun[0] ?? { open: "", close: "x" })).toBe(true);
+  });
+
+  it("asks for am or pm on the side that needs it", () => {
+    expect(
+      typedProblems(typed({ mon: [{ open: "11", close: "9 pm" }] })),
+    ).toEqual(["mon.0.open: timeAmPm"]);
+    expect(
+      typedProblems(typed({ thu: [{ open: "11 am", close: "5.30" }] })),
+    ).toEqual(["thu.0.close: timeAmPm"]);
+  });
+
+  it("names a time it cannot read on its own side", () => {
+    expect(
+      typedProblems(typed({ mon: [{ open: "lunch", close: "25:00" }] })),
+    ).toEqual(["mon.0.open: timeFormat", "mon.0.close: timeFormat"]);
+  });
+
+  it("reports a half range on the empty side and still reads the other", () => {
+    expect(
+      typedProblems(typed({ wed: [{ open: "11 am", close: "" }] })),
+    ).toEqual(["wed.0.close: timePair"]);
+    expect(typedProblems(typed({ wed: [{ open: "11", close: " " }] }))).toEqual(
+      ["wed.0.open: timeAmPm", "wed.0.close: timePair"],
+    );
+  });
+
+  it("checks overlap after reading, and only when every time read", () => {
+    expect(
+      typedProblems(
+        typed({
+          mon: [
+            { open: "11 am", close: "3 pm" },
+            { open: "2 pm", close: "9 pm" },
+          ],
+        }),
+      ),
+    ).toEqual(["mon: overlap"]);
+    expect(
+      typedProblems(
+        typed({
+          mon: [
+            { open: "11 am", close: "3 pm" },
+            { open: "2", close: "9 pm" },
+          ],
+        }),
+      ),
+    ).toEqual(["mon.1.open: timeAmPm"]);
+  });
+
+  it("keeps midnight to midnight alone on its day", () => {
+    expect(
+      typedProblems(
+        typed({
+          sun: [
+            { open: "midnight", close: "midnight" },
+            { open: "11 am", close: "2 pm" },
+          ],
+        }),
+      ),
+    ).toEqual(["sun: allDay"]);
   });
 });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseTime, TIME_PATTERN } from "./time";
 
 // Opening hours (D-92). One object keyed by day, each day a list of up to two
 // time ranges in the restaurant's time zone (D-21). An empty list means
@@ -6,7 +7,9 @@ import { z } from "zod";
 // earlier than its open means closing after midnight. Open equal to close
 // means open around the clock, and is then the day's only range. Seven keys,
 // two ranges, five-character times keep the JSON far below the database's
-// 4000-octet cap. Pure: no React, no network.
+// 4000-octet cap. Two schemas share the day rules: hoursSchema reads the
+// stored shape, and hoursInputSchema reads times as the owner typed them
+// (D-105) into that shape. Pure: no React, no network.
 
 export const DAY_KEYS = [
   "mon",
@@ -26,16 +29,24 @@ export function isDayKey(value: string): value is DayKey {
 export type TimeRange = { open: string; close: string };
 export type Hours = Record<DayKey, TimeRange[]>;
 
-export const TIME_PATTERN = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
-
 export const MAX_RANGES_PER_DAY = 2;
 
-export type HoursMessages = {
-  time: string;
-  timePair: string;
+type DayMessages = {
   ranges: string;
   overlap: string;
   allDay: string;
+};
+
+export type HoursMessages = DayMessages & {
+  time: string;
+  timePair: string;
+};
+
+// Typed times name their field: timeAmPm and timeFormat carry {field}.
+export type HoursInputMessages = DayMessages & {
+  timePair: string;
+  timeAmPm: string;
+  timeFormat: string;
 };
 
 const MINUTES_IN_DAY = 24 * 60;
@@ -89,9 +100,46 @@ function timeRangeSchema(messages: HoursMessages) {
     });
 }
 
-function daySchema(messages: HoursMessages) {
+// The owner's text for each side. A blank side beside a filled one is named
+// as the missing half, and the filled side is still read, so one submit
+// reports both. Each filled side goes through parseTime; a side it cannot
+// read gets the am or pm message or the format message.
+function typedRangeSchema(messages: HoursInputMessages) {
   return z
-    .array(timeRangeSchema(messages))
+    .object({ open: z.string(), close: z.string() })
+    .transform((typed, ctx): TimeRange => {
+      const range: TimeRange = { open: "", close: "" };
+      for (const side of ["open", "close"] as const) {
+        const text = typed[side].trim();
+        if (text === "") {
+          ctx.addIssue({
+            code: "custom",
+            message: messages.timePair,
+            path: [side],
+          });
+          continue;
+        }
+        const parsed = parseTime(text);
+        if (parsed.ok) {
+          range[side] = parsed.time;
+          continue;
+        }
+        ctx.addIssue({
+          code: "custom",
+          message:
+            parsed.problem === "ampm" ? messages.timeAmPm : messages.timeFormat,
+          path: [side],
+        });
+      }
+      return range;
+    });
+}
+
+// The day rules, shared by both schemas. They look only at ranges whose
+// times all read; a day with a bad time reports that time and nothing more.
+function daySchema(range: z.ZodType<TimeRange>, messages: DayMessages) {
+  return z
+    .array(range)
     .max(MAX_RANGES_PER_DAY, { error: messages.ranges })
     .superRefine((ranges, ctx) => {
       const valid = ranges.every(
@@ -115,8 +163,7 @@ function daySchema(messages: HoursMessages) {
     });
 }
 
-export function hoursSchema(messages: HoursMessages) {
-  const day = daySchema(messages);
+function week<Day extends z.ZodType>(day: Day) {
   return z.strictObject({
     mon: day,
     tue: day,
@@ -126,6 +173,15 @@ export function hoursSchema(messages: HoursMessages) {
     sat: day,
     sun: day,
   });
+}
+
+export function hoursSchema(messages: HoursMessages) {
+  return week(daySchema(timeRangeSchema(messages), messages));
+}
+
+// The hours as the owner typed them, read into the stored shape.
+export function hoursInputSchema(messages: HoursInputMessages) {
+  return week(daySchema(typedRangeSchema(messages), messages));
 }
 
 // Readers that only need to know whether a stored value is hours at all

@@ -1,10 +1,18 @@
-import { DAY_KEYS, type DayKey, type TimeRange } from "@/domain/hours";
+import { fill } from "@/copy/fill";
+import {
+  DAY_KEYS,
+  isDayKey,
+  type DayKey,
+  type TimeRange,
+} from "@/domain/hours";
 
 // Turns the posted restaurant form into the plain object the zod schema
-// parses. Field names match the schema keys; the hours grid posts as
-// hours.<day>.<index>.open and .close. A day with no times is closed; every
-// day blank means the owner gave no hours. A range with one side filled is
-// kept as typed so the schema can report the empty side.
+// parses, and the schema's issues back into one message per field. Field
+// names match the schema keys; the hours grid posts as
+// hours.<day>.<index>.open and .close, each time as the owner typed it
+// (D-105). A day with no times is closed; every day blank means the owner
+// gave no hours. A range with one side filled is kept as typed so the
+// schema can report the empty side.
 
 function text(formData: FormData, name: string): string {
   const value = formData.get(name);
@@ -35,6 +43,57 @@ function readHours(formData: FormData): Record<DayKey, TimeRange[]> | null {
   });
   if (!anyTime) return null;
   return Object.fromEntries(entries) as Record<DayKey, TimeRange[]>;
+}
+
+type TimeFieldLabels = {
+  opens: string;
+  closes: string;
+  opensAgain: string;
+  closesAgain: string;
+};
+
+// The label of one time field, "Monday opens again" for example. The form
+// shows it, and an error about that time names its field with it.
+export function timeFieldLabel(
+  labels: TimeFieldLabels,
+  day: string,
+  index: number,
+  side: keyof TimeRange,
+): string {
+  const first = side === "open" ? labels.opens : labels.closes;
+  const again = side === "open" ? labels.opensAgain : labels.closesAgain;
+  return fill(index === 0 ? first : again, { day });
+}
+
+type Issue = { path: PropertyKey[]; message: string };
+
+type ErrorCopy = { days: Record<DayKey, string>; fields: TimeFieldLabels };
+
+// One message per field, keyed by the field name the form posts; the first
+// issue wins. Hours messages carry {day}, and a time's messages carry
+// {field}, its label, so each link in the error summary names its field.
+export function fieldErrors(
+  issues: Issue[],
+  strings: ErrorCopy,
+): Record<string, string> {
+  const errors: Record<string, string> = {};
+  for (const issue of issues) {
+    const path = issue.path.map(String);
+    const name = path.join(".");
+    if (name in errors) continue;
+    const [root, day, index, side] = path;
+    if (root !== "hours" || day === undefined || !isDayKey(day)) {
+      errors[name] = issue.message;
+      continue;
+    }
+    const dayLabel = strings.days[day];
+    const field =
+      index !== undefined && (side === "open" || side === "close")
+        ? timeFieldLabel(strings.fields, dayLabel, Number(index), side)
+        : dayLabel;
+    errors[name] = fill(issue.message, { day: dayLabel, field });
+  }
+  return errors;
 }
 
 export function readRestaurantForm(formData: FormData) {

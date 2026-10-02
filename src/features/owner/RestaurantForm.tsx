@@ -16,6 +16,7 @@ import { fill } from "@/copy/fill";
 import { DAY_KEYS, type DayKey, type TimeRange } from "@/domain/hours";
 import { US_STATE_CODES } from "@/domain/regions";
 import type { RestaurantDetails } from "@/domain/restaurant";
+import { formatTime } from "@/domain/time";
 import {
   DEFAULT_TIMEZONE,
   matchTimezone,
@@ -27,7 +28,7 @@ import { Checkbox, CheckboxGroup } from "@/ui/CheckboxGroup";
 import { Select } from "@/ui/Select";
 import { TextField } from "@/ui/TextField";
 import type { RestaurantFormState } from "./actions";
-import { hoursFieldName } from "./form-data";
+import { hoursFieldName, timeFieldLabel } from "./form-data";
 import { fieldId } from "./paths";
 
 type Action = (
@@ -44,6 +45,9 @@ type Props = {
 };
 
 const initial: RestaurantFormState = { status: "idle" };
+
+// The one hint every time field is described by (D-105).
+const timeHintId = fieldId("hours.hint");
 
 // The browser's zone is a client-only value. Reading it through an external
 // store keeps the server render on the fallback and lets React re-render
@@ -214,6 +218,9 @@ export function RestaurantForm({
           }}
           isRequired
         />
+        <p id={timeHintId} className="text-sm text-foreground-muted">
+          {strings.fields.timeHint}
+        </p>
         {DAY_KEYS.map((day) => (
           <DayHours
             key={day}
@@ -332,11 +339,15 @@ type DayProps = {
 
 // One day of the hours grid: opens and closes, and a second row that is
 // added and removed, never hidden, so a range the owner took away can never
-// submit. Focus follows the add and remove buttons: the state change is
-// flushed first so the element to focus is already on the page. A day-level
-// error (overlap, an all-day range beside another) is one paragraph that the
-// fieldset and every time input of that day describe themselves by, and
-// those inputs read as invalid while it stands. isInvalid is a controlled
+// submit. Each time is a plain text field (D-105): the owner types it, the
+// server reads it, and nothing is reformatted while they type. A saved time
+// comes back in one format from formatTime, so the owner sees what was
+// understood. Every time field is described by the hint above the days.
+// Focus follows the add and remove buttons: the state change is flushed
+// first so the element to focus is already on the page. A day-level error
+// (overlap, an all-day range beside another) is one paragraph that the
+// fieldset and every time field of that day describe themselves by, and
+// those fields read as invalid while it stands. isInvalid is a controlled
 // state in React Aria that would override the form's validationErrors, so it
 // is set only with a day error and left undefined otherwise.
 function DayHours({ day, copy, defaultRanges, error }: DayProps) {
@@ -347,7 +358,12 @@ function DayHours({ day, copy, defaultRanges, error }: DayProps) {
   const secondOpenId = fieldId(hoursFieldName(day, 1, "open"));
   const errorId = fieldId(`hours.${day}.error`);
   const describedBy = error ? errorId : undefined;
+  const fieldDescribedBy = error ? `${errorId} ${timeHintId}` : timeHintId;
   const isInvalid = error ? true : undefined;
+  const shown = defaultRanges.map((range) => ({
+    open: formatTime(range.open, copy.time),
+    close: formatTime(range.close, copy.time),
+  }));
 
   function showSecond(show: boolean) {
     flushSync(() => setHasSecond(show));
@@ -371,19 +387,19 @@ function DayHours({ day, copy, defaultRanges, error }: DayProps) {
         <TextField
           id={fieldId(hoursFieldName(day, 0, "open"))}
           name={hoursFieldName(day, 0, "open")}
-          type="time"
-          label={fill(strings.fields.opens, { day: label })}
-          defaultValue={defaultRanges[0]?.open}
-          aria-describedby={describedBy}
+          autoComplete="off"
+          label={timeFieldLabel(strings.fields, label, 0, "open")}
+          defaultValue={shown[0]?.open}
+          aria-describedby={fieldDescribedBy}
           isInvalid={isInvalid}
         />
         <TextField
           id={fieldId(hoursFieldName(day, 0, "close"))}
           name={hoursFieldName(day, 0, "close")}
-          type="time"
-          label={fill(strings.fields.closes, { day: label })}
-          defaultValue={defaultRanges[0]?.close}
-          aria-describedby={describedBy}
+          autoComplete="off"
+          label={timeFieldLabel(strings.fields, label, 0, "close")}
+          defaultValue={shown[0]?.close}
+          aria-describedby={fieldDescribedBy}
           isInvalid={isInvalid}
         />
       </div>
@@ -392,19 +408,19 @@ function DayHours({ day, copy, defaultRanges, error }: DayProps) {
           <TextField
             id={secondOpenId}
             name={hoursFieldName(day, 1, "open")}
-            type="time"
-            label={fill(strings.fields.opensAgain, { day: label })}
-            defaultValue={defaultRanges[1]?.open}
-            aria-describedby={describedBy}
+            autoComplete="off"
+            label={timeFieldLabel(strings.fields, label, 1, "open")}
+            defaultValue={shown[1]?.open}
+            aria-describedby={fieldDescribedBy}
             isInvalid={isInvalid}
           />
           <TextField
             id={fieldId(hoursFieldName(day, 1, "close"))}
             name={hoursFieldName(day, 1, "close")}
-            type="time"
-            label={fill(strings.fields.closesAgain, { day: label })}
-            defaultValue={defaultRanges[1]?.close}
-            aria-describedby={describedBy}
+            autoComplete="off"
+            label={timeFieldLabel(strings.fields, label, 1, "close")}
+            defaultValue={shown[1]?.close}
+            aria-describedby={fieldDescribedBy}
             isInvalid={isInvalid}
           />
           <Button onPress={() => showSecond(false)}>

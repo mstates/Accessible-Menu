@@ -5,7 +5,11 @@ import {
   RESTAURANT_LIMITS,
   restaurantInputSchema,
 } from "../../src/domain/restaurant";
-import { readRestaurantForm } from "../../src/features/owner/form-data";
+import {
+  fieldErrors,
+  readRestaurantForm,
+  timeFieldLabel,
+} from "../../src/features/owner/form-data";
 
 const schema = restaurantInputSchema(en.owner.restaurants.errors);
 const errors = en.owner.restaurants.errors;
@@ -110,7 +114,7 @@ describe("the restaurant input (D-95)", () => {
     const result = schema.safeParse({
       ...valid,
       hours: {
-        mon: [{ open: "11:00", close: "" }],
+        mon: [{ open: "11 am", close: "" }],
         tue: [],
         wed: [],
         thu: [],
@@ -159,21 +163,21 @@ describe("reading the posted form", () => {
     expect(read.hours).toBeNull();
   });
 
-  it("reads the hours grid: blank days closed, a half range kept, a lone second row moved up", () => {
+  it("reads the hours grid as typed: blank days closed, a half range kept, a lone second row moved up", () => {
     const read = readRestaurantForm(
       form({
-        "hours.mon.0.open": "11:00",
-        "hours.mon.0.close": "21:00",
-        "hours.tue.0.open": "11:00",
+        "hours.mon.0.open": "11am",
+        "hours.mon.0.close": " 9 pm ",
+        "hours.tue.0.open": "11 a.m.",
         "hours.tue.0.close": "",
         "hours.wed.1.open": "17:00",
-        "hours.wed.1.close": "21:00",
+        "hours.wed.1.close": "9.30 pm",
       }),
     );
     expect(read.hours).toEqual({
-      mon: [{ open: "11:00", close: "21:00" }],
-      tue: [{ open: "11:00", close: "" }],
-      wed: [{ open: "17:00", close: "21:00" }],
+      mon: [{ open: "11am", close: "9 pm" }],
+      tue: [{ open: "11 a.m.", close: "" }],
+      wed: [{ open: "17:00", close: "9.30 pm" }],
       thu: [],
       fri: [],
       sat: [],
@@ -193,8 +197,8 @@ describe("reading the posted form", () => {
         website: "",
         timezone: "America/New_York",
         allergenNote: " We cook with nuts. ",
-        "hours.sat.0.open": "17:00",
-        "hours.sat.0.close": "02:00",
+        "hours.sat.0.open": "5 pm",
+        "hours.sat.0.close": "2 am",
       }),
     );
     const result = schema.safeParse(read);
@@ -203,5 +207,56 @@ describe("reading the posted form", () => {
     expect(result.data.allergenNote).toBe("We cook with nuts.");
     expect(result.data.website).toBeNull();
     expect(result.data.hours?.sat).toEqual([{ open: "17:00", close: "02:00" }]);
+  });
+});
+
+describe("naming each field in an error (D-105)", () => {
+  const strings = en.owner.restaurants;
+
+  it("labels each time field by day and role", () => {
+    expect(timeFieldLabel(strings.fields, "Monday", 0, "open")).toBe(
+      "Monday opens",
+    );
+    expect(timeFieldLabel(strings.fields, "Monday", 0, "close")).toBe(
+      "Monday closes",
+    );
+    expect(timeFieldLabel(strings.fields, "Monday", 1, "open")).toBe(
+      "Monday opens again",
+    );
+    expect(timeFieldLabel(strings.fields, "Monday", 1, "close")).toBe(
+      "Monday closes again",
+    );
+  });
+
+  it("names the time field, the day, or nothing, by the message's path", () => {
+    const result = schema.safeParse({
+      ...valid,
+      name: "",
+      hours: {
+        mon: [
+          { open: "11 am", close: "3 pm" },
+          { open: "5", close: "lunch" },
+        ],
+        tue: [{ open: "11 am", close: "" }],
+        wed: [
+          { open: "11 am", close: "3 pm" },
+          { open: "2 pm", close: "9 pm" },
+        ],
+        thu: [],
+        fri: [],
+        sat: [],
+        sun: [],
+      },
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(fieldErrors(result.error.issues, strings)).toEqual({
+      name: errors.nameRequired,
+      "hours.mon.1.open": "Add am or pm to the time Monday opens again.",
+      "hours.mon.1.close":
+        "Enter the time Monday closes again, like 11 am, 5:30 pm, or 17:30.",
+      "hours.tue.0.close": "Tuesday needs both an opening and a closing time.",
+      "hours.wed": "Wednesday has times that overlap.",
+    });
   });
 });
