@@ -20,7 +20,7 @@ export function StatementPage({ restaurant, copy }: Props) {
       <p className="mt-2">{copy.statement.reply}</p>
       <p className="mt-2">{copy.statement.person}</p>
       <ul className="mt-6 flex flex-wrap gap-x-4 gap-y-2">
-        <li>
+        <li className="min-w-0">
           <Link
             href={feedbackPath(restaurant.slug)}
             className="text-link underline"
@@ -28,7 +28,7 @@ export function StatementPage({ restaurant, copy }: Props) {
             {copy.statement.feedback}
           </Link>
         </li>
-        <li>
+        <li className="min-w-0">
           <Link
             href={menuPath(restaurant.slug)}
             className="text-link underline"

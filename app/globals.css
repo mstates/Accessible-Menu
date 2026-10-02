@@ -10,6 +10,10 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    /* A long unbroken string (a menu URL, an email address, a long name)
+       wraps instead of widening the page, at 320px and under the WCAG
+       1.4.12 text-spacing override. Inherited, so every page has it. */
+    overflow-wrap: anywhere;
   }
 
   /* Browsers italicize these by default. Diner pages never do (D-39). */

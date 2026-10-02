@@ -64,7 +64,7 @@ export function Checkbox({ children, ...props }: ItemProps) {
           <path d="M5 13l4 4L19 7" />
         </svg>
       </span>
-      <span>{children}</span>
+      <span className="min-w-0">{children}</span>
     </AriaCheckbox>
   );
 }

@@ -55,7 +55,7 @@ export function MenuPage({ restaurant, menu, copy }: Props) {
       >
         <ul className="flex flex-wrap gap-x-4 gap-y-2">
           {menu.sections.map((section) => (
-            <li key={section.id}>
+            <li key={section.id} className="min-w-0">
               <a href={`#${section.id}`} className="text-link underline">
                 {sectionLink(section, copy)}
               </a>
@@ -91,7 +91,7 @@ export function MenuPage({ restaurant, menu, copy }: Props) {
       </main>
       <footer className="mx-auto max-w-menu border-t border-border px-4 pt-6 pb-10 text-sm">
         <ul className="flex flex-wrap gap-x-4 gap-y-2">
-          <li>
+          <li className="min-w-0">
             <Link
               prefetch={false}
               href={feedbackPath(restaurant.slug)}
@@ -100,7 +100,7 @@ export function MenuPage({ restaurant, menu, copy }: Props) {
               {copy.menu.footer.feedback}
             </Link>
           </li>
-          <li>
+          <li className="min-w-0">
             <Link
               prefetch={false}
               href={statementPath(restaurant.slug)}
@@ -142,7 +142,7 @@ function MenuItem({ item, copy }: { item: Item; copy: Copy }) {
   return (
     <li className="py-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4">
-        <p className="text-lg font-semibold">{item.name}</p>
+        <p className="min-w-0 text-lg font-semibold">{item.name}</p>
         <p className="text-lg">
           <span aria-hidden="true">{price.display}</span>
           <span className="sr-only">{price.spoken}</span>

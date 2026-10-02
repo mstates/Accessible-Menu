@@ -45,7 +45,7 @@ export function Select({
         id={triggerId}
         className="flex min-h-11 items-center justify-between gap-2 rounded border border-border bg-background px-3 py-2 text-left text-base text-foreground"
       >
-        <SelectValue />
+        <SelectValue className="min-w-0" />
         <svg
           aria-hidden="true"
           viewBox="0 0 20 20"

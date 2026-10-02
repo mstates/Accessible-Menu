@@ -60,7 +60,9 @@ export const demoRestaurant: Restaurant = {
         {
           id: "mains",
           name: "Mains",
-          note: "Every main is cooked to order and takes about twenty minutes.",
+          // The address is one long unbroken string on purpose: the a11y gate
+          // checks that it wraps at 320px under the text-spacing override.
+          note: "Every main is cooked to order and takes about twenty minutes. Parties of eight or more, write to reservations@maplestreetkitchen.example.",
           items: [
             {
               id: "trout",
