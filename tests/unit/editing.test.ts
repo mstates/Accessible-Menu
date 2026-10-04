@@ -3,6 +3,10 @@ import { en } from "../../src/copy";
 import { cleanMenuName } from "../../src/domain/menu";
 import { commitOf } from "../../src/features/owner/editing/commit";
 import { afterHold, leaveOf } from "../../src/features/owner/editing/leave";
+import {
+  saysSaved,
+  saysSavedAgain,
+} from "../../src/features/owner/editing/spoken";
 import { statusOf } from "../../src/features/owner/editing/status";
 import {
   afterUndo,
@@ -123,6 +127,85 @@ describe("the saved status", () => {
 
   it("shows saving over an older failure while a retry is on its way", () => {
     expect(statusOf({ ...rest, inFlight: 1, failedFields: 1 })).toBe("saving");
+  });
+});
+
+// Enter and focus leaving a field reach the same commit; these follow what
+// each one sends and what a landing then says. The calls that make a
+// landing are checked on the page, by ear.
+describe("what a landed save says (D-118)", () => {
+  const renaming = {
+    saved: "Dinner",
+    draft: "Supper",
+    inFlight: null,
+    failed: null,
+  };
+  const quiet = { owed: false, failedFields: 0, waiting: 0 };
+
+  it("says Saved. once for a rename sent by leaving the field", () => {
+    expect(commitOf(renaming, cleanMenuName)).toEqual({
+      kind: "send",
+      value: "Supper",
+    });
+    expect(saysSaved({ kind: "text", ...quiet })).toBe(true);
+    expect(saysSavedAgain(false, "saved"), "the status says nothing").toBe(
+      false,
+    );
+  });
+
+  it("says Saved. once for a rename sent with Enter, since the blur after it sends nothing", () => {
+    expect(commitOf(renaming, cleanMenuName).kind).toBe("send");
+    expect(
+      commitOf({ ...renaming, inFlight: "Supper" }, cleanMenuName),
+      "focus leaves while the save is on its way",
+    ).toEqual({ kind: "nothing" });
+    expect(
+      commitOf({ ...renaming, saved: "Supper", draft: null }, cleanMenuName),
+      "focus leaves after it landed",
+    ).toEqual({ kind: "nothing" });
+    expect(saysSaved({ kind: "text", ...quiet })).toBe(true);
+  });
+
+  it("says nothing when nothing changed, since nothing is sent", () => {
+    expect(commitOf({ ...renaming, draft: null }, cleanMenuName).kind).toBe(
+      "nothing",
+    );
+    expect(
+      commitOf({ ...renaming, draft: "Dinner " }, cleanMenuName).kind,
+    ).toBe("reset");
+    expect(saysSavedAgain(false, "saved")).toBe(false);
+  });
+
+  it("adds nothing to what an add, a move, a delete, or an Undo says", () => {
+    expect(saysSaved({ kind: "change", ...quiet })).toBe(false);
+    expect(saysSaved({ kind: "change", ...quiet, owed: true })).toBe(false);
+    expect(saysSaved({ kind: "change", ...quiet, waiting: 1 })).toBe(false);
+    expect(saysSavedAgain(false, "saved")).toBe(false);
+  });
+
+  it("says only All changes saved. when the save that lands ends a failure", () => {
+    expect(saysSaved({ kind: "text", ...quiet, owed: true })).toBe(false);
+    expect(saysSavedAgain(true, "saving")).toBe(false);
+    expect(saysSavedAgain(true, "slow")).toBe(false);
+    expect(saysSavedAgain(true, "failed")).toBe(false);
+    expect(saysSavedAgain(true, "saved")).toBe(true);
+  });
+
+  it("says Saved. for a field that lands while another is still failed or a save is behind it", () => {
+    expect(
+      saysSaved({ kind: "text", owed: true, failedFields: 1, waiting: 0 }),
+    ).toBe(true);
+    expect(
+      saysSaved({ kind: "text", owed: true, failedFields: 0, waiting: 1 }),
+    ).toBe(true);
+  });
+
+  it("says Saved. for each of two fields saved in a row", () => {
+    expect(
+      saysSaved({ kind: "text", ...quiet, waiting: 1 }),
+      "the first lands with the second behind it",
+    ).toBe(true);
+    expect(saysSaved({ kind: "text", ...quiet }), "then the second").toBe(true);
   });
 });
 

@@ -17,10 +17,11 @@ type Props = {
 
 // The one saved status of an editing screen (D-111). It is a status with
 // aria-live off: a screen reader can find it and read it, and its changes
-// are never spoken, so saving field after field stays quiet. What must be
-// heard, a failure and the return to saved after one, goes through the
-// page's log. Try again and Reload sit beside it, outside the status, and
-// show only when there is something to retry or the page is out of date.
+// are never spoken, so Saving and its return are not read field after
+// field. What must be heard, a field that saved, a failure, and the return
+// to saved after one, goes through the page's log (D-118). Try again and
+// Reload sit beside it, outside the status, and show only when there is
+// something to retry or the page is out of date.
 export function SavedStatus({
   strings,
   status,

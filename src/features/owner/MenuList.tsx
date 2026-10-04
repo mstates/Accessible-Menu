@@ -95,9 +95,9 @@ function buttonId(id: string, action: Direction | "delete"): string {
 // The menus of one restaurant (D-111): each name is a real field that saves
 // when focus leaves it or on Enter, and only if it changed. Move up and Move
 // down are buttons in every row (D-112); Delete asks nothing and Undo brings
-// the menu back. One saved status and one Undo sit above the list. Success
-// is quiet; a failure, a move, a delete, an add, and an Undo are said once
-// through the log at the end.
+// the menu back. One saved status and one Undo sit above the list. The
+// status is never spoken; a name that saves, a failure, a move, a delete, an
+// add, and an Undo are said once through the log at the end (D-118).
 export function MenuList(props: Props) {
   return (
     <Announcer>

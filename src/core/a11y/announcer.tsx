@@ -11,14 +11,15 @@ import {
 } from "react";
 
 // The polite live region for an editing screen (D-111): what must be heard
-// without moving focus, a failed save, a move, a delete, an Undo. It is a
-// log, on the page and empty from the first render, so it already exists
-// when its first message arrives, which is what makes a screen reader speak
-// it. Each message is its own node, added to the log and taken out after
-// seven seconds: a log speaks additions only, so the same sentence twice is
-// read twice and taking a node out says nothing. Nothing here is visible;
-// every message has a visible counterpart on the page. React Aria's own
-// announcer is private (D-109), so this one is ours.
+// without moving focus, a field that saved (D-118), a failed save, a move, a
+// delete, an Undo. It is a log, on the page and empty from the first
+// render, so it already exists when its first message arrives, which is
+// what makes a screen reader speak it. Each message is its own node, added
+// to the log and taken out after seven seconds: a log speaks additions
+// only, so the same sentence twice is read twice and taking a node out says
+// nothing. Nothing here is visible; every message has a visible counterpart
+// on the page. React Aria's own announcer is private (D-109), so this one is
+// ours.
 
 const MESSAGE_LIFETIME_MS = 7000;
 

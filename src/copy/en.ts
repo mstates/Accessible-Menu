@@ -241,6 +241,8 @@ export const en = {
       slow: "Still saving. Check your connection.",
       failed: "Not saved.",
       savedAgain: "All changes saved.",
+      // Said once when a field's save lands; the saved status is never spoken.
+      fieldSaved: "Saved.",
       tryAgain: "Try again",
       reload: "Reload",
       undo: "Undo",

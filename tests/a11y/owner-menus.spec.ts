@@ -18,12 +18,14 @@ import { expectWrites, guardWrites } from "./write-guard";
 // The menus list, signed in as the test owner (D-100), on the three menus
 // the test restaurant was given by hand. The gate never writes and never
 // types into a field that saves (D-108, D-111, D-115): every test here runs
-// behind the write guard. Most only read. Two press a Move button and say
-// they expect a write; the guard answers it inside the browser as an action
-// the server does not know, which is how the failed state is reached.
-// Typing, real saves, add, delete, Undo with something to undo, and a name
-// that is taken are covered by the unit tests and by hand. The shared page
-// checks for this page run from owner-pages.spec.ts.
+// behind the write guard. Most only read. One presses Enter and Tab in a name
+// it does not change, and the guard proves nothing was sent. Two press a
+// Move button and say they expect a write; the guard answers it inside the
+// browser as an action the server does not know, which is how the failed
+// state is reached. Typing, real saves and the "Saved." they say (D-118),
+// add, delete, Undo with something to undo, and a name that is taken are
+// covered by the unit tests and by hand. The shared page checks for this
+// page run from owner-pages.spec.ts.
 
 const { code } = ownerEnv();
 const menusPath = restaurantMenusPath(code);
@@ -164,6 +166,35 @@ test("pressing Move up on the first row sends nothing and says it is already fir
   await expect(log(page)).toHaveText(
     fill(strings.alreadyFirst, { menu: first }),
   );
+  expect(await menuNames(page)).toEqual(names);
+});
+
+// The first gate test to press Enter in a field that saves (D-118). It types
+// nothing, so nothing may be sent or said; the write guard is the proof
+// that nothing was sent. The dimmed Move up after it says one sentence at
+// once, so the log is read after the commit has run.
+test("Enter and Tab on an unchanged name send nothing and say nothing", async ({
+  page,
+}) => {
+  const names = await openMenus(page);
+  const first = names[0] ?? "";
+  const middle = names[1] ?? "";
+  const field = page.getByRole("textbox", {
+    name: `${strings.nameLabel} ${fill(strings.nameFor, { menu: middle })}`,
+    exact: true,
+  });
+  await field.focus();
+  await page.keyboard.press("Enter");
+  await expect(field).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(field).not.toBeFocused();
+
+  await rowButton(page, strings.moveUp, first).focus();
+  await page.keyboard.press("Enter");
+  await expect(log(page)).toHaveText(
+    fill(strings.alreadyFirst, { menu: first }),
+  );
+  await expect(savedStatus(page)).toHaveText(editing.saved);
   expect(await menuNames(page)).toEqual(names);
 });
 

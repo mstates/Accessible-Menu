@@ -14,6 +14,7 @@ import { useAnnounce } from "@/core/a11y/announcer";
 import { useNavigationGuard, type NavigationGuard } from "@/ui/NavigationGuard";
 import { useReportPending } from "@/ui/NavigationStatus";
 import { afterHold, leaveOf } from "./leave";
+import { saysSaved, saysSavedAgain, type Landing } from "./spoken";
 import { statusOf } from "./status";
 
 // The state every editing screen keeps (D-111): what is on its way, what
@@ -21,8 +22,9 @@ import { statusOf } from "./status";
 // from it. Saves run one after another, in the order they were made, and
 // each one records its own outcome before the next starts. A save that
 // throws, a dropped connection or an action the server no longer knows,
-// becomes a result and never reaches the error boundary (Q-41). Success is
-// quiet; a failure is said once through the page's log. A link waits for
+// becomes a result and never reaches the error boundary (Q-41). The status
+// is never spoken; a field whose save lands says "Saved." once, and a
+// failure is said once, through the page's log (D-118). A link waits for
 // saves on their way and stays when one has failed, and leaving the document
 // with anything unsaved raises the browser's own warning.
 
@@ -53,6 +55,10 @@ type Live = {
   failures: Record<string, FieldFailure>;
   // Counts every failure, so a link that waited can tell one happened.
   failed: number;
+  // A failure was said, and "All changes saved." has not been since. Set
+  // when the failure is said, not when the status shows it, since a save
+  // waiting behind a failure keeps the status at saving.
+  owed: boolean;
 };
 
 function without<Value>(
@@ -93,6 +99,7 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
     sent: {},
     failures: {},
     failed: 0,
+    owed: false,
   });
   const tail = useRef<Promise<void>>(Promise.resolve());
 
@@ -103,15 +110,12 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
     notice,
   });
 
-  // Coming back to saved after a failure is said once. Routine saves are not.
-  const wasFailed = useRef(false);
+  // Coming back to saved after a failure is said once, and the field save
+  // that got it there said nothing of its own (D-118).
   useEffect(() => {
-    if (status === "failed") {
-      wasFailed.current = true;
-    } else if (status === "saved" && wasFailed.current) {
-      wasFailed.current = false;
-      announce(strings.savedAgain);
-    }
+    if (!saysSavedAgain(live.current.owed, status)) return;
+    live.current.owed = false;
+    announce(strings.savedAgain);
   }, [status, announce, strings.savedAgain]);
 
   // One save and everything it records, after the saves made before it.
@@ -193,6 +197,21 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
     live.current.sent = without(live.current.sent, key);
   }, []);
 
+  // Every save that landed ends here: the last failure's sentence goes
+  // unless a field is still failed, and a field's text says "Saved." once
+  // (D-118). It runs inside run, so this save still counts as on its way.
+  const land = useCallback(
+    (kind: Landing["kind"]) => {
+      const { failures: failed, owed, inFlight: pending } = live.current;
+      const failedFields = Object.keys(failed).length;
+      if (failedFields === 0) setNotice(null);
+      if (saysSaved({ kind, owed, failedFields, waiting: pending - 1 })) {
+        announce(strings.fieldSaved);
+      }
+    },
+    [announce, strings.fieldSaved],
+  );
+
   // A field's save landed. Its draft goes only if the owner has not typed on
   // since, and inside a transition, so the field switches to the saved value
   // in the same commit that brings the refreshed list and the old value
@@ -205,9 +224,9 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
         startTransition(() => setDrafts(next));
       }
       clearFailure(key);
-      if (Object.keys(live.current.failures).length === 0) setNotice(null);
+      land("text");
     },
-    [clearFailure],
+    [clearFailure, land],
   );
 
   // A row left the screen: what was typed in it goes with it.
@@ -222,16 +241,15 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
     [clearFailure],
   );
 
-  // A save that was not a field landed: the last failure's sentence goes,
-  // unless a field is still failed.
-  const landed = useCallback(() => {
-    if (Object.keys(live.current.failures).length === 0) setNotice(null);
-  }, []);
+  // A save that was not a field landed: an add, a move, a delete, or an
+  // Undo, which says its own sentence.
+  const landed = useCallback(() => land("change"), [land]);
 
   const failField = useCallback(
     (key: string, failure: FieldFailure) => {
       live.current.failures = { ...live.current.failures, [key]: failure };
       live.current.failed += 1;
+      live.current.owed = true;
       setFailures(live.current.failures);
       setNotice(failure.sentence);
       announce(failure.sentence);
@@ -243,6 +261,7 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
   const failChange = useCallback(
     (sentence: string) => {
       live.current.failed += 1;
+      live.current.owed = true;
       setNotice(sentence);
       announce(sentence);
     },
