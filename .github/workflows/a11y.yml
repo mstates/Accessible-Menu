@@ -18,7 +18,7 @@ jobs:
   a11y-public:
     name: Public pages on the preview
     if: github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Preview'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -48,7 +48,7 @@ jobs:
   on-main:
     name: Is the deployed commit on main?
     if: github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Preview'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       on_main: ${{ steps.branch.outputs.on_main }}
@@ -73,7 +73,7 @@ jobs:
     name: Owner screens on the preview, signed in (main only)
     needs: on-main
     if: needs.on-main.outputs.on_main == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
