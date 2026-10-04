@@ -21,7 +21,10 @@ if (!phone) {
 }
 
 const small = { width: 320, height: 640 };
-const ownerFiles = /owner(\.setup|\.teardown|-pages\.spec)\.ts$/;
+// Every owner file: the setup, the teardown, and each owner-*.spec.ts. The
+// public projects leave them all out, and the owner projects run every spec.
+const ownerFiles = /owner(\.setup|\.teardown|-[\w-]+\.spec)\.ts$/;
+const ownerSpecs = /owner-[\w-]+\.spec\.ts$/;
 
 const publicProjects: Project[] = [
   {
@@ -51,13 +54,13 @@ const ownerProjects: Project[] = [
   { name: "owner-teardown", testMatch: /owner\.teardown\.ts$/, use: quiet },
   {
     name: "owner-phone-light",
-    testMatch: /owner-pages\.spec\.ts$/,
+    testMatch: ownerSpecs,
     dependencies: ["owner-setup"],
     use: { ...phone, colorScheme: "light", ...ownerUse },
   },
   {
     name: "owner-phone-dark-320",
-    testMatch: /owner-pages\.spec\.ts$/,
+    testMatch: ownerSpecs,
     dependencies: ["owner-setup"],
     use: { ...phone, viewport: small, colorScheme: "dark", ...ownerUse },
   },

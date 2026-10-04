@@ -46,6 +46,12 @@ function dropMessagesNaming(id: string): void {
 // what gets painted as the button's edge. Padding gives back the border's
 // two pixels, so the rendered size is unchanged.
 //
+// A button that cannot act right now but must keep focus, a Move up on the
+// first row, takes aria-disabled instead of isDisabled: it stays in the tab
+// order and React Aria still fires the press, so its handler returns early
+// and says why. It dims like a disabled button and takes the system's
+// disabled color in forced colors, where opacity alone is not a signal.
+//
 // A button that unmounts while its pending message is still in React Aria's
 // log (a save remounting the form, the error page replacing it) would leave
 // an image named by nothing. So the button carries a known id, and on
@@ -81,7 +87,7 @@ export function Button({ children, pendingLabel, id, ...props }: Props) {
     <AriaButton
       {...props}
       id={buttonId}
-      className="inline-flex min-h-11 items-center justify-center gap-2 rounded border-2 border-transparent bg-foreground px-3.5 py-1.5 font-semibold text-background data-[pressed]:opacity-90 data-[disabled]:opacity-60 data-[pending]:opacity-60"
+      className="inline-flex min-h-11 items-center justify-center gap-2 rounded border-2 border-transparent bg-foreground px-3.5 py-1.5 font-semibold text-background data-[pressed]:opacity-90 data-[disabled]:opacity-60 data-[pending]:opacity-60 aria-disabled:opacity-60 forced-colors:aria-disabled:not-data-[pending]:border-[color:GrayText] forced-colors:aria-disabled:not-data-[pending]:text-[color:GrayText]"
     >
       {(renderProps) => (
         <>

@@ -1,9 +1,11 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { NavigationGuardProvider } from "./NavigationGuard";
 import {
   NavigationStatusProvider,
   NavigationStatusRegion,
 } from "./NavigationStatus";
+import { PageLink } from "./PageLink";
 
 type Props = {
   siteName: string;
@@ -13,9 +15,14 @@ type Props = {
   nav?: ReactNode;
   // Owner pages pass the loading word. The frame then carries the status
   // region in the header, and every PageLink inside reports to it (D-106).
+  // It also carries the navigation guard, and the site link becomes a
+  // PageLink, so every link on an editing screen asks before it leaves
+  // (D-111).
   loadingLabel?: string;
   children: ReactNode;
 };
+
+const siteLinkClassName = "min-w-0 font-semibold underline";
 
 // Header, main, and footer landmarks for every page that is not a menu.
 // The skip link in the root layout targets #main.
@@ -30,9 +37,15 @@ export function PageFrame({
     <>
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-menu flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3">
-          <Link href={homeHref} className="min-w-0 font-semibold underline">
-            {siteName}
-          </Link>
+          {loadingLabel ? (
+            <PageLink href={homeHref} className={siteLinkClassName}>
+              {siteName}
+            </PageLink>
+          ) : (
+            <Link href={homeHref} className={siteLinkClassName}>
+              {siteName}
+            </Link>
+          )}
           {loadingLabel ? (
             <NavigationStatusRegion label={loadingLabel} />
           ) : null}
@@ -54,7 +67,9 @@ export function PageFrame({
     </>
   );
   return loadingLabel ? (
-    <NavigationStatusProvider>{frame}</NavigationStatusProvider>
+    <NavigationStatusProvider>
+      <NavigationGuardProvider>{frame}</NavigationGuardProvider>
+    </NavigationStatusProvider>
   ) : (
     frame
   );

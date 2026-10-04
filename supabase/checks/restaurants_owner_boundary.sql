@@ -1,7 +1,8 @@
 -- Owner boundary check for restaurants. Run in the Supabase SQL editor after
--- every migration that touches restaurants. Everything rolls back. Replace
--- the uid below with your own auth.users id. A run that ends without an
--- error passed every check.
+-- every migration that touches restaurants or adds a function: its first
+-- block is the function-privilege check for the whole schema. Everything
+-- rolls back. Replace the uid below with your own auth.users id. A run that
+-- ends without an error passed every check.
 begin;
 
 -- Every function in public is closed to the Data API roles unless a
@@ -32,13 +33,14 @@ begin
   join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public'
     and p.prorettype not in ('trigger'::regtype, 'event_trigger'::regtype)
-    and p.proname not in ('create_restaurant', 'is_owner', 'owns_object')
+    and p.proname not in ('create_restaurant', 'is_owner', 'owns_object',
+      'set_menu_order')
     and has_function_privilege('authenticated', p.oid, 'execute');
   if open_to_authenticated is not null then
     raise exception 'FAIL: authenticated can run %', open_to_authenticated;
   end if;
 
-  raise notice 'ok: no function in public is open beyond create_restaurant, is_owner, and owns_object';
+  raise notice 'ok: no function in public is open beyond create_restaurant, is_owner, owns_object, and set_menu_order';
 end;
 $$;
 

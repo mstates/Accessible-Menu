@@ -111,6 +111,23 @@ export async function getOwnerRestaurantByCode(
   return readRow(data);
 }
 
+// The id behind a code, for writes on the restaurant's own rows. Unlike the
+// read above, a read that failed is told apart from a code this owner does
+// not hold, so a save can say which it was.
+export async function findOwnerRestaurantId(
+  client: SupabaseClient,
+  code: string,
+): Promise<{ id: string } | "not-found" | "failed"> {
+  const { data, error } = await client
+    .from("restaurants")
+    .select("id")
+    .eq("code", code)
+    .maybeSingle();
+  if (error) return "failed";
+  const row = z.object({ id: z.string() }).safeParse(data);
+  return row.success ? row.data : "not-found";
+}
+
 // Under row level security a code the caller does not own matches zero rows
 // without an error, so the update asks for the row back and reads an empty
 // answer as not found.

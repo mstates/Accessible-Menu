@@ -12,6 +12,9 @@ import {
 
 type Props = TextFieldProps & {
   label: string;
+  // Follows the label in visually hidden text, so one of several fields with
+  // the same visible label names what it belongs to: "Menu name for Dinner".
+  labelSuffix?: string;
   description?: string;
   errorMessage?: string;
   multiline?: boolean;
@@ -31,6 +34,7 @@ const inputClassName =
 // built-in width alone is wider than a 320px screen (D-105).
 export function TextField({
   label,
+  labelSuffix,
   description,
   errorMessage,
   multiline = false,
@@ -40,6 +44,7 @@ export function TextField({
     <AriaTextField {...props} className="flex flex-col gap-1">
       <Label className="font-semibold">
         {label}
+        {labelSuffix ? <span className="sr-only"> {labelSuffix}</span> : null}
         {props.isRequired ? <span aria-hidden="true"> *</span> : null}
       </Label>
       {multiline ? (

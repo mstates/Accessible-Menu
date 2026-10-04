@@ -20,6 +20,10 @@ export function restaurantDetailsPath(
     : `${base}?saved=${notice.saved}`;
 }
 
+export function restaurantMenusPath(code: string): string {
+  return `/app/restaurants/${code}/menus`;
+}
+
 // The id an error summary links to for a field name. Dots become dashes so
 // hours.mon.0.open stays a valid id.
 export function fieldId(name: string): string {

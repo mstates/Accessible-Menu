@@ -81,7 +81,7 @@ export default async function RestaurantDetailsPage({
         />
       }
     >
-      <h1 className="text-3xl font-bold">{restaurant.name}</h1>
+      <h1 className="text-3xl font-bold">{strings.details.heading}</h1>
       {created ? (
         <p className="mt-4 rounded bg-background-raised p-4">
           {strings.details.created}

@@ -3,7 +3,7 @@ import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
 import { menuUrl } from "@/domain/menu-url";
 import { PageLink } from "@/ui/PageLink";
-import { restaurantDetailsPath } from "./paths";
+import { restaurantDetailsPath, restaurantMenusPath } from "./paths";
 
 type Props = {
   copy: Copy;
@@ -14,11 +14,11 @@ type Props = {
 };
 
 // One restaurant on the dashboard: its name, its menu link from the one
-// builder (D-88), the way to its details, and whatever the page passes in
-// (the billing line). The "never changes" note shows only when the origin is
-// the configured one; a preview URL is not permanent. The details link names
-// the restaurant in visually hidden text, so a list of links reads one entry
-// per restaurant instead of "Edit details" over and over.
+// builder (D-88), the way to its details and to its menus, and whatever the
+// page passes in (the billing line). The "never changes" note shows only
+// when the origin is the configured one; a preview URL is not permanent.
+// Each link names the restaurant in visually hidden text, so a list of links
+// reads one entry per restaurant instead of "Edit details" over and over.
 export function RestaurantCard({ copy, name, code, origin, children }: Props) {
   const headingId = `restaurant-${code}`;
   const strings = copy.owner.restaurants;
@@ -48,6 +48,18 @@ export function RestaurantCard({ copy, name, code, origin, children }: Props) {
           <span className="sr-only">
             {" "}
             {fill(strings.editDetailsFor, { restaurant: name })}
+          </span>
+        </PageLink>
+      </p>
+      <p className="mt-2">
+        <PageLink
+          href={restaurantMenusPath(code)}
+          className="text-link underline"
+        >
+          {strings.editMenus}
+          <span className="sr-only">
+            {" "}
+            {fill(strings.editMenusFor, { restaurant: name })}
           </span>
         </PageLink>
       </p>

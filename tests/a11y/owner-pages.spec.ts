@@ -4,6 +4,7 @@ import { pageTitle } from "../../src/copy/title";
 import {
   dashboardPath,
   restaurantDetailsPath,
+  restaurantMenusPath,
   restaurantNewPath,
 } from "../../src/features/owner/paths";
 import {
@@ -17,28 +18,28 @@ import {
   setLargestText,
 } from "./checks";
 import { ownerEnv } from "./owner-env";
-import { ownerPages } from "./pages";
+import { ownerPages, restaurantName } from "./pages";
+import { expectWrites, guardWrites } from "./write-guard";
 
 // Owner screens, signed in as the test owner (D-100), with the session from
-// owner.setup.ts. The gate never sends a write (D-108): these checks load
-// pages, press Tab, run axe, inject a style, and follow links. The one test
-// that presses Save answers every request that is not a GET inside the
-// browser, so nothing reaches the server. The trial button is tabbed over,
+// owner.setup.ts. The gate never sends a write (D-108, D-115): every test in
+// this file runs behind the write guard, which answers any request that is
+// not a GET inside the browser and fails a test that sent one without
+// saying so. These checks load pages, press Tab, run axe, inject a style,
+// and follow links. The tests that press Save say they expect a write, and
+// nothing they send reaches the server. The trial button is tabbed over,
 // never pressed.
 
 const { code } = ownerEnv();
 const details = restaurantDetailsPath(code);
 const strings = en.owner.restaurants;
 
+guardWrites();
+
 for (const path of ownerPages(code)) {
   test.describe(path, () => {
     pageChecks(path);
   });
-}
-
-// The restaurant's name, as the details page's h1 shows it.
-async function restaurantName(page: Page): Promise<string> {
-  return (await page.locator("main h1").first().textContent())?.trim() ?? "";
 }
 
 function statusRegion(page: Page) {
@@ -58,7 +59,9 @@ function announcerText(page: Page) {
 
 // Holds the client-side navigation request for one path (a GET carrying the
 // RSC header and no prefetch header) until the returned function is called.
-// Prefetches pass, so the link is as ready as it would be for an owner.
+// Prefetches pass, so the link is as ready as it would be for an owner. The
+// request is handed on with fallback, never continue, so it still goes
+// through the write guard on the context.
 async function holdNavigation(page: Page, path: string) {
   let release = () => {};
   const held = new Promise<void>((resolve) => {
@@ -76,49 +79,17 @@ async function holdNavigation(page: Page, path: string) {
       ) {
         await held;
       }
-      await route.continue();
+      await route.fallback();
     },
   );
   return () => release();
 }
 
-// D-108: every request that is not a GET is answered inside the browser
-// with the response Next gives for an action it does not know, the case a
-// save from before a deploy meets (Q-41). None is passed to the network, so
-// if Next's response ever changes shape the error page fails to appear and
-// the test fails; it never writes. With hold, the answer waits until the
-// test releases it, so the pending state can be looked at first.
-async function answerWritesInBrowser(page: Page, { hold = false } = {}) {
-  const attempted: string[] = [];
-  const answered: string[] = [];
-  let release = () => {};
-  const held = hold
-    ? new Promise<void>((resolve) => {
-        release = resolve;
-      })
-    : Promise.resolve();
-  page.on("request", (request) => {
-    if (request.method() !== "GET") attempted.push(request.url());
-  });
-  await page.context().route("**/*", async (route) => {
-    const request = route.request();
-    if (request.method() === "GET") {
-      await route.continue();
-      return;
-    }
-    answered.push(request.url());
-    await held;
-    await route.fulfill({
-      status: 404,
-      headers: { "x-nextjs-action-not-found": "1" },
-      body: "",
-    });
-  });
-  return { attempted, answered, release: () => release() };
-}
-
 // Presses Save details with the button, the way an owner does, and returns
-// the button's id, which React Aria's pending message names.
+// the button's id, which React Aria's pending message names. The write guard
+// answers the save inside the browser with the response Next gives for an
+// action it does not know (D-108), so if Next's response ever changes shape
+// the error page fails to appear and the test fails; it never writes.
 async function pressSave(page: Page): Promise<string> {
   await open(page, details);
   const save = page.getByRole("button", { name: strings.details.submit });
@@ -203,16 +174,33 @@ test("owner titles name the page, then the restaurant, then the site", async ({
   );
 });
 
-test("the restaurant nav is named for it and marks Details as the current page", async ({
+// D-113: the h1 is the page's own name, and the restaurant shows as the
+// visible text that names its nav. The dashboard's card is a second source
+// for that name, so the nav cannot agree only with itself.
+test("the restaurant nav shows the restaurant's name, is named by it, and marks Details as the current page", async ({
   page,
 }) => {
+  await open(page, dashboardPath);
+  const card = page.locator("main section").filter({
+    has: page.locator(`a[href="${details}"]`),
+  });
+  const onDashboard = (await card.locator("h2").textContent())?.trim() ?? "";
+  expect(onDashboard, "the dashboard names the restaurant").not.toBe("");
+
   await open(page, details);
   const name = await restaurantName(page);
+  expect(name, "the nav shows the name the dashboard shows").toBe(onDashboard);
   const nav = page.getByRole("navigation", { name, exact: true });
   await expect(nav).toHaveCount(1);
+  await expect(nav.getByText(name, { exact: true })).toBeVisible();
   const current = nav.locator('a[aria-current="page"]');
+  await expect(current).toHaveCount(1);
   await expect(current).toHaveText(strings.nav.details);
   await expect(current).toHaveAttribute("href", details);
+  await expect(
+    nav.locator(`a[href="${restaurantMenusPath(code)}"]`),
+  ).toHaveText(strings.nav.menus);
+  await expect(page.locator("main h1")).toHaveText(strings.details.heading);
 });
 
 test("a saved result takes focus on arrival and is not read again on reload or Back", async ({
@@ -303,7 +291,7 @@ test("at the largest phone text size, the pending state does not scroll sideways
 test("a save the server cannot take lands on the focused error page, and its pending message goes with the button", async ({
   page,
 }) => {
-  const writes = await answerWritesInBrowser(page, { hold: true });
+  const writes = expectWrites(page, { hold: true });
   const id = await pressSave(page);
   await expect(
     messagesNaming(page, id),
@@ -350,7 +338,7 @@ test("answered at once, a late pending message is taken out as well", async ({
   page,
 }) => {
   await page.addInitScript(recordAnnouncerMessages);
-  const writes = await answerWritesInBrowser(page);
+  const writes = expectWrites(page);
   const id = await pressSave(page);
   await expect(
     errorHeading(page),
@@ -398,7 +386,7 @@ test("answered at once, a late pending message is taken out as well", async ({
 test("at the largest phone text size, the error page does not scroll sideways", async ({
   page,
 }) => {
-  await answerWritesInBrowser(page);
+  expectWrites(page);
   await setLargestText(page);
   await pressSave(page);
   await expect(

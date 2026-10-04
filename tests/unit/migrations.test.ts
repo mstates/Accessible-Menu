@@ -319,3 +319,103 @@ describe("the owner boundary on restaurants (D-88, D-95)", () => {
     expect(constraints).toBeGreaterThan(normalize);
   });
 });
+
+describe("the owner boundary on menus (D-82, D-85)", () => {
+  const menus = readFileSync(join(dir, "20261004000001_menus.sql"), "utf8");
+  const neverWritten = [
+    "id",
+    "published",
+    "published_at",
+    "source",
+    "created_at",
+    "updated_at",
+  ];
+
+  function columnsOf(privilege: string): string[] {
+    const match = sql.match(
+      new RegExp(
+        `grant ${privilege} \\(([^)]*)\\) on public\\.menus to authenticated;`,
+      ),
+    );
+    expect(match, `no ${privilege} column list on menus`).not.toBeNull();
+    return (match?.[1] ?? "").split(",").map((column) => column.trim());
+  }
+
+  it("replaces the table-wide writes with column lists", () => {
+    expect(sql).toMatch(
+      /revoke insert, update, delete on public\.menus from authenticated;/,
+    );
+    expect(columnsOf("insert")).toEqual(["restaurant_id", "name", "sort"]);
+    expect(columnsOf("update")).toEqual(["name", "sort", "deleted_at"]);
+    for (const column of neverWritten) {
+      expect(columnsOf("insert")).not.toContain(column);
+      expect(columnsOf("update")).not.toContain(column);
+    }
+    expect(columnsOf("update")).not.toContain("restaurant_id");
+  });
+
+  it("gives owners no delete on menus from this migration on", () => {
+    const from = files.indexOf("20261004000001_menus.sql");
+    expect(from).toBeGreaterThan(-1);
+    const later = files
+      .slice(from)
+      .map((name) => readFileSync(join(dir, name), "utf8"))
+      .join("\n");
+    expect(later).not.toMatch(/grant [^;]*\bdelete\b[^;]*public\.menus\b/);
+  });
+
+  it("lets nothing publish until the Publish task", () => {
+    const unpublish = menus.indexOf(
+      "update public.menus set published = false, published_at = null where published;",
+    );
+    const constraint = menus.indexOf(
+      "add constraint menus_not_published_yet check (not published);",
+    );
+    expect(unpublish).toBeGreaterThan(-1);
+    expect(constraint).toBeGreaterThan(unpublish);
+    expect(sql).not.toMatch(/drop constraint menus_not_published_yet/);
+  });
+
+  it("leaves the published views alone", () => {
+    expect(menus).not.toMatch(/\bview\b/);
+  });
+
+  it("holds the name rule as a table constraint", () => {
+    const normalize = menus.indexOf("update public.menus\n  set name =");
+    const constraint = menus.indexOf("add constraint menus_name_text");
+    expect(normalize).toBeGreaterThan(-1);
+    expect(constraint).toBeGreaterThan(normalize);
+    expect(menus).toMatch(
+      /check \(name ~ '\\S' and name !~ '\[\[:cntrl:\]\]' and length\(name\) <= 60\)/,
+    );
+  });
+
+  it("keeps a deleted menu and frees its name", () => {
+    expect(menus).toMatch(
+      /alter table public\.menus add column deleted_at timestamptz;/,
+    );
+    const numbering = menus.indexOf("do $$");
+    const index = menus.indexOf("create unique index menus_name_key");
+    expect(numbering).toBeGreaterThan(-1);
+    expect(index).toBeGreaterThan(numbering);
+    expect(menus).toMatch(
+      /create unique index menus_name_key\s+on public\.menus \(restaurant_id, lower\(btrim\(name\)\)\)\s+where deleted_at is null;/,
+    );
+  });
+
+  it("orders menus through one function, open to authenticated only", () => {
+    const grants = [...sql.matchAll(/grant [^;]*set_menu_order[^;]*;/g)].map(
+      (match) => match[0],
+    );
+    expect(grants).toHaveLength(1);
+    expect(grants[0]).toMatch(/to authenticated;$/);
+    const body = menus.slice(
+      menus.indexOf("create function public.set_menu_order"),
+    );
+    expect(body).not.toMatch(/security definer/);
+    expect(body).toMatch(/for update;/);
+    expect(body).toMatch(/coalesce\(array_ndims\(p_ids\), 0\) <> 1/);
+    expect(body).toMatch(/cardinality\(p_ids\) <> live/);
+    expect(body).toMatch(/m\.deleted_at is null/);
+  });
+});
