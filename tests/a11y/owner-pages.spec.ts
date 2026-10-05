@@ -6,8 +6,10 @@ import { DAY_KEYS, type DayKey } from "../../src/domain/hours";
 import {
   dashboardPath,
   restaurantDetailsPath,
+  restaurantMenuPath,
   restaurantMenusPath,
   restaurantNewPath,
+  restaurantSectionPath,
 } from "../../src/features/owner/paths";
 import {
   expectFocusResetThenSkipLink,
@@ -19,7 +21,7 @@ import {
   pageChecks,
   setLargestText,
 } from "./checks";
-import { ownerEnv } from "./owner-env";
+import { ownerEnv, ownerFixture } from "./owner-env";
 import { ownerPages, restaurantName } from "./pages";
 import { expectWrites, guardWrites } from "./write-guard";
 
@@ -305,6 +307,145 @@ test("a saved result takes focus on arrival and is not read again on reload or B
   await expect(message).toHaveCount(0);
   await expectFocusResetThenSkipLink(page);
 });
+
+// Records every title the document has, from its first byte, so a test can
+// read back each one a navigation passed through. Runs in the page as an
+// init script.
+function recordTitles() {
+  const w = window as unknown as { __arrivalTitles: string[] };
+  w.__arrivalTitles = [];
+  let last: string | null = null;
+  new MutationObserver(() => {
+    if (document.title === last) return;
+    last = document.title;
+    w.__arrivalTitles.push(last);
+  }).observe(document, { subtree: true, childList: true, characterData: true });
+}
+
+function titlesSeen(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const w = window as unknown as { __arrivalTitles: string[] };
+    const seen = w.__arrivalTitles;
+    w.__arrivalTitles = [];
+    return seen;
+  });
+}
+
+// Q-51 and D-134: a page that arrives by a link is read by Next's route
+// announcer with its whole title, never its h1 alone, on all four owner
+// pages a restaurant has: Details, Menus, a menu's page, and a section's
+// page. The walk reaches each by the link an owner would press, and comes
+// back to a menu's page and a section's page a second time, at another
+// menu and another section, once the client already knows those routes.
+// The title the page commits with is the whole title, never an empty one
+// for an instant. Owner links never prefetch: a link pressed while its own
+// prefetch was on its way arrived with an empty title, so the walk checks
+// that no request is a prefetch. It runs twice: pressing each link as soon
+// as its page has arrived, and pressing it after a pause, the time a
+// prefetch would have had to land. Both are only reads, so the write guard
+// has nothing to answer.
+for (const pace of ["at once", "after a pause"] as const) {
+  test(`arrival by a link reads the whole title on every owner page, each link pressed ${pace}`, async ({
+    page,
+  }) => {
+    const { withSections, withDishes, emptySection, empty } = ownerFixture();
+    const prefetches: string[] = [];
+    page.on("request", (request) => {
+      if (request.headers()["next-router-prefetch"]) {
+        prefetches.push(new URL(request.url()).pathname);
+      }
+    });
+    await page.addInitScript(recordTitles);
+    await open(page, dashboardPath);
+    await page.waitForLoadState("networkidle");
+    const name = (
+      await page
+        .locator(`main section:has(a[href="${details}"]) h2`)
+        .textContent()
+    )?.trim();
+    expect(name, "the dashboard names the restaurant").toBeTruthy();
+    const restaurant = name ?? "";
+    const menusPath = restaurantMenusPath(code);
+    const menuPage = (menu: { id: string }) =>
+      restaurantMenuPath(code, menu.id);
+    const sectionPage = (section: { id: string }) =>
+      restaurantSectionPath(code, section.id);
+    const inMain = (href: string) => page.locator(`main a[href="${href}"]`);
+    const inNav = (href: string) =>
+      page
+        .getByRole("navigation", { name: restaurant, exact: true })
+        .locator(`a[href="${href}"]`);
+
+    const walk = [
+      {
+        link: inMain(details),
+        path: details,
+        title: pageTitle(en, strings.details.title, restaurant),
+      },
+      {
+        link: inNav(menusPath),
+        path: menusPath,
+        title: pageTitle(en, en.owner.menus.title, restaurant),
+      },
+      {
+        link: inMain(menuPage(withSections)),
+        path: menuPage(withSections),
+        title: pageTitle(en, withSections.name, restaurant),
+      },
+      {
+        link: inMain(sectionPage(withDishes)),
+        path: sectionPage(withDishes),
+        title: pageTitle(en, withDishes.name, restaurant, withSections.name),
+      },
+      {
+        link: page
+          .locator("main")
+          .getByRole("navigation", { name: en.ui.breadcrumb, exact: true })
+          .locator(`a[href="${menuPage(withSections)}"]`),
+        path: menuPage(withSections),
+        title: pageTitle(en, withSections.name, restaurant),
+      },
+      {
+        link: inMain(sectionPage(emptySection)),
+        path: sectionPage(emptySection),
+        title: pageTitle(en, emptySection.name, restaurant, withSections.name),
+      },
+      {
+        link: inNav(menusPath),
+        path: menusPath,
+        title: pageTitle(en, en.owner.menus.title, restaurant),
+      },
+      {
+        link: inMain(menuPage(empty)),
+        path: menuPage(empty),
+        title: pageTitle(en, empty.name, restaurant),
+      },
+      {
+        link: inNav(details),
+        path: details,
+        title: pageTitle(en, strings.details.title, restaurant),
+      },
+    ];
+
+    for (const step of walk) {
+      await titlesSeen(page);
+      await step.link.click();
+      await page.waitForURL(`**${step.path}`);
+      await expect
+        .poll(() => announcerText(page), {
+          message: `arriving at ${step.path}, the announcer reads the whole title`,
+        })
+        .toBe(step.title);
+      await expect(page).toHaveTitle(step.title);
+      expect(
+        await titlesSeen(page),
+        `arriving at ${step.path}, the page commits with its whole title and never an empty one`,
+      ).toEqual([step.title]);
+      if (pace === "after a pause") await page.waitForTimeout(1000);
+    }
+    expect(prefetches, "no owner link prefetches its page").toEqual([]);
+  });
+}
 
 // D-97, signed in: the dashboard's details link is a client-side navigation.
 test("signed in, after following Edit details, the next Tab reaches the skip link and the page is announced", async ({

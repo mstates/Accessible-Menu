@@ -28,6 +28,18 @@ const nextConfig: NextConfig = {
   // blocking, so each page's title is in the served head however the page
   // streams later. This setting changes nothing else about streaming.
   htmlLimitedBots: /.*/,
+  experimental: {
+    // Off, so a page that arrives by a link brings its title in the same
+    // commit (D-134). With it on, as Next 16.3 ships, a navigation whose
+    // head was not prefetched in full mounts an empty head first and the
+    // real one a render later; Next's route announcer reads the title in
+    // between, finds none, and reads only the h1. Next's own comment calls
+    // that a stopgap for metadata that streams, and ours never does
+    // (D-107). Owner links also never prefetch (PageLink), which closes the
+    // same gap for a link pressed while its prefetch is on its way. Revisit
+    // both at the next Next upgrade.
+    optimisticRouting: false,
+  },
 };
 
 export default nextConfig;
