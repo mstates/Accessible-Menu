@@ -1,5 +1,3 @@
-import { z } from "zod";
-
 // The owner-side menu: the row an owner reads on the menus list and the one
 // field an owner writes there. The diner-side Menu in types.ts is the
 // published view model and stays separate until the diner page reads real
@@ -7,32 +5,33 @@ import { z } from "zod";
 
 export type OwnerMenu = { id: string; name: string };
 
-// A menu as the menus list reads it: with how many of its sections are not
-// deleted, which is what a delete would take with it (D-119).
-export type ListedMenu = OwnerMenu & { sections: number };
+// What a row holds that a delete would take with it (D-119): for a menu, its
+// sections that are not deleted and their dishes that are not deleted; for a
+// section, its dishes, with no sections. It is also what a delete says the
+// owner was told about: nothing for a delete at once and for an Undo, the
+// confirmation's numbers otherwise. The database counts again in the
+// statement that marks the row and refuses a delete that would take more
+// (migration 5), so a page that is out of date never deletes anything
+// nobody was asked about.
+export type Held = { sections: number; dishes: number };
 
-// A delete that takes content with it asks first (D-119): a menu with
-// sections opens the confirmation, an empty one goes at once.
-export function deleteAsksFirst(sections: number): boolean {
-  return sections > 0;
-}
+export const HOLDS_NOTHING: Held = { sections: 0, dishes: 0 };
 
-// Every delete says how many sections the owner was told about: none for a
-// delete at once and for an Undo, the confirmation's number otherwise. The
-// server refuses one that would take more, so a page that is out of date
-// never deletes sections nobody was asked about.
-export function deleteTakesMore(live: number, told: number): boolean {
-  return live > told;
+// A menu as the menus list reads it, with what it holds.
+export type ListedMenu = OwnerMenu & Held;
+
+// A delete that takes content with it asks first (D-119): a row that holds
+// anything opens the confirmation, an empty one goes at once.
+export function deleteAsksFirst(held: Held): boolean {
+  return held.sections + held.dishes > 0;
 }
 
 // Also a table constraint in the database (migration 3), which is the
 // boundary. These checks exist to name the field and the message.
 export const MENU_LIMITS = { name: 60 } as const;
 
-export type MenuNameMessages = {
-  nameRequired: string;
-  nameLength: string;
-};
+// The rules a name can break, which are also the keys of their messages.
+export type MenuRule = "nameRequired" | "nameLength";
 
 // A name is one line. A control character inside a pasted name, a tab or a
 // line break, becomes a space, so the name the owner sees is the name saved.
@@ -42,16 +41,10 @@ export function cleanMenuName(value: string): string {
   return value.replace(CONTROL_CHARACTERS, " ").trim();
 }
 
-export function menuNameSchema(messages: MenuNameMessages) {
-  return z
-    .string()
-    .transform(cleanMenuName)
-    .pipe(
-      z
-        .string()
-        .min(1, { error: messages.nameRequired })
-        .max(MENU_LIMITS.name, { error: messages.nameLength }),
-    );
+// The rule a cleaned name breaks, or null when it can be saved.
+export function menuNameProblem(value: string): MenuRule | null {
+  if (value === "") return "nameRequired";
+  return value.length > MENU_LIMITS.name ? "nameLength" : null;
 }
 
 // Names are compared the way the unique index compares them (migration 3):

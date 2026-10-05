@@ -54,10 +54,13 @@ export const ownerStatePath = join(
 
 // What the checks need to know about the test restaurant's menus, and can
 // only learn once the setup has signed in: which menu holds the sections
-// the sections checks read, and which holds none. The setup finds them,
-// fails closed when they are not there, and writes them beside the session
-// file. Ids and names only, no secret. A menu's page is named by its id, so
-// its path is known when a test runs, never when the test files are loaded.
+// the sections checks read, with how many sections and dishes, since its
+// delete question names both; which menu holds none; and, in the first,
+// which section holds the dishes the dishes checks read and which holds
+// none. The setup finds them, fails closed when they are not there, and
+// writes them beside the session file. Ids, names, and counts only, no
+// secret. A menu's page and a section's page are named by an id, so their
+// paths are known when a test runs, never when the test files are loaded.
 export const ownerFixturePath = join(
   process.env.RUNNER_TEMP ?? tmpdir(),
   "accessible-menu-owner-fixture.json",
@@ -68,8 +71,15 @@ const fixtureSchema = z.object({
     id: z.string(),
     name: z.string(),
     sections: z.number(),
+    dishes: z.number(),
   }),
   empty: z.object({ id: z.string(), name: z.string() }),
+  withDishes: z.object({
+    id: z.string(),
+    name: z.string(),
+    dishes: z.number(),
+  }),
+  emptySection: z.object({ id: z.string(), name: z.string() }),
 });
 
 export type OwnerFixture = z.infer<typeof fixtureSchema>;
@@ -81,7 +91,7 @@ export function ownerFixture(): OwnerFixture {
     raw = readFileSync(ownerFixturePath, "utf8");
   } catch {
     throw new Error(
-      "the owner setup has not written the menus the sections checks read",
+      "the owner setup has not written the menus and sections the checks read",
     );
   }
   return fixtureSchema.parse(JSON.parse(raw));

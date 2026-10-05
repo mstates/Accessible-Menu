@@ -17,6 +17,7 @@ import {
   setLargestText,
 } from "./checks";
 import { ownerEnv, ownerFixture } from "./owner-env";
+import { expectBurstKeepsEveryName, expectRowHeadings } from "./owner-lists";
 import { restaurantName } from "./pages";
 import { expectWrites, guardWrites } from "./write-guard";
 
@@ -31,6 +32,10 @@ import { expectWrites, guardWrites } from "./write-guard";
 // add, a delete that lands, Undo with something to undo, and a name that is
 // taken are covered by the unit tests and by hand. The shared page checks
 // for this page run from owner-pages.spec.ts.
+//
+// One test types: three names into the add field, each with Enter, without
+// waiting. An add field sends nothing until Enter, and the guard answers
+// what Enter sends, so nothing typed reaches the server (D-115, D-125).
 //
 // The delete confirmation (D-119) is checked without a write: it is opened,
 // read, and left by Keep and by Escape, and a tap on its Delete inside the
@@ -122,7 +127,7 @@ test("every field and button names its menu, and no two controls share a name", 
   for (const menu of names) {
     await expect(
       page.getByRole("textbox", {
-        name: `${strings.nameLabel} ${fill(strings.nameFor, { menu })}`,
+        name: `${strings.nameLabel} ${fill(strings.labelFor, { menu })}`,
         exact: true,
       }),
     ).toHaveCount(1);
@@ -196,7 +201,7 @@ test("Enter and Tab on an unchanged name send nothing and say nothing", async ({
   const first = names[0] ?? "";
   const middle = names[1] ?? "";
   const field = page.getByRole("textbox", {
-    name: `${strings.nameLabel} ${fill(strings.nameFor, { menu: middle })}`,
+    name: `${strings.nameLabel} ${fill(strings.labelFor, { menu: middle })}`,
     exact: true,
   });
   await field.focus();
@@ -324,26 +329,37 @@ function sectionsLink(page: Page, menu: string) {
 
 function nameField(page: Page, menu: string) {
   return page.getByRole("textbox", {
-    name: `${strings.nameLabel} ${fill(strings.nameFor, { menu })}`,
+    name: `${strings.nameLabel} ${fill(strings.labelFor, { menu })}`,
     exact: true,
   });
 }
 
-// What the confirmation asks, which is also its name (D-119).
-function deleteQuestion(menu: string, sections: number): string {
-  const counted = fill(
-    sections === 1 ? strings.sectionCount.one : strings.sectionCount.other,
-    { count: sections },
-  );
-  return fill(strings.deleteAsk, { menu, sections: counted });
+// What a menu holds, as the setup counted it: its sections and their dishes.
+type Holds = { name: string; sections: number; dishes: number };
+
+// What the confirmation asks, which is also its name (D-119). It names the
+// menu's sections, and their dishes when they hold any.
+function deleteQuestion({ name: menu, sections, dishes }: Holds): string {
+  const counted = (words: { one: string; other: string }, count: number) =>
+    fill(count === 1 ? words.one : words.other, { count });
+  return dishes > 0
+    ? fill(strings.deleteAskBoth, {
+        menu,
+        sections: counted(strings.sectionCount, sections),
+        dishes: counted(strings.dishCount, dishes),
+      })
+    : fill(strings.deleteAsk, {
+        menu,
+        sections: counted(strings.sectionCount, sections),
+      });
 }
 
 // The confirmation and its two answers. Every locator is scoped to the
 // dialog: Playwright still finds the controls behind it by role, since its
 // role engine does not know the page there is inert.
-function confirmation(page: Page, menu: string, sections: number) {
+function confirmation(page: Page, menu: Holds) {
   const dialog = page.getByRole("alertdialog", {
-    name: deleteQuestion(menu, sections),
+    name: deleteQuestion(menu),
     exact: true,
   });
   return {
@@ -426,17 +442,13 @@ test("Delete on a menu with sections asks first, with focus on Keep, and Keep or
   const { withSections } = ownerFixture();
   const names = await openMenus(page);
   const rowDelete = rowButton(page, strings.remove, withSections.name);
-  const { dialog, keep, confirm } = confirmation(
-    page,
-    withSections.name,
-    withSections.sections,
-  );
+  const { dialog, keep, confirm } = confirmation(page, withSections);
 
   await rowDelete.focus();
   await page.keyboard.press("Enter");
   await expect(dialog, "an alert dialog named by its question").toHaveCount(1);
   await expect(dialog.getByRole("heading", { level: 2 })).toHaveText(
-    deleteQuestion(withSections.name, withSections.sections),
+    deleteQuestion(withSections),
   );
   await expect(keep, "focus starts on Keep").toBeFocused();
 
@@ -491,11 +503,7 @@ test("the delete confirmation fits and scrolls from its top, before and after te
 }) => {
   const { withSections } = ownerFixture();
   await openMenus(page);
-  const { dialog, keep } = confirmation(
-    page,
-    withSections.name,
-    withSections.sections,
-  );
+  const { dialog, keep } = confirmation(page, withSections);
   await rowButton(page, strings.remove, withSections.name).focus();
   await page.keyboard.press("Enter");
   await expect(keep).toBeFocused();
@@ -513,11 +521,7 @@ test("at the largest phone text size, the delete confirmation fits and scrolls f
   await setLargestText(page);
   await openMenus(page);
   await expectRootAtLargest(page);
-  const { dialog, keep, confirm } = confirmation(
-    page,
-    withSections.name,
-    withSections.sections,
-  );
+  const { dialog, keep, confirm } = confirmation(page, withSections);
   await rowButton(page, strings.remove, withSections.name).focus();
   await page.keyboard.press("Enter");
   await expect(keep).toBeFocused();
@@ -545,11 +549,7 @@ test("a second tap right after the dialog opens does not confirm the delete, and
   const { withSections } = ownerFixture();
   const names = await openMenus(page);
   const rowDelete = rowButton(page, strings.remove, withSections.name);
-  const { dialog, keep, confirm } = confirmation(
-    page,
-    withSections.name,
-    withSections.sections,
-  );
+  const { dialog, keep, confirm } = confirmation(page, withSections);
 
   await stopClock(page);
   await rowDelete.tap();
@@ -590,11 +590,7 @@ test("a delete confirmed by Tab then Enter, at once, closes the dialog first, mo
   const index = names.indexOf(withSections.name);
   const neighbor = names[index + 1] ?? names[index - 1] ?? "";
   const rowDelete = rowButton(page, strings.remove, withSections.name);
-  const { dialog, keep, confirm } = confirmation(
-    page,
-    withSections.name,
-    withSections.sections,
-  );
+  const { dialog, keep, confirm } = confirmation(page, withSections);
 
   await stopClock(page);
   await rowDelete.focus();
@@ -653,11 +649,7 @@ test("a tap on Delete once the double-tap guard is over confirms, and the menu c
   const index = names.indexOf(withSections.name);
   const neighbor = names[index + 1] ?? names[index - 1] ?? "";
   const rowDelete = rowButton(page, strings.remove, withSections.name);
-  const { dialog, keep, confirm } = confirmation(
-    page,
-    withSections.name,
-    withSections.sections,
-  );
+  const { dialog, keep, confirm } = confirmation(page, withSections);
 
   await stopClock(page);
   await rowDelete.tap();
@@ -700,11 +692,7 @@ test("a press with no pointer behind it, the kind a screen reader sends, confirm
   const { withSections } = ownerFixture();
   const names = await openMenus(page);
   const rowDelete = rowButton(page, strings.remove, withSections.name);
-  const { dialog, keep, confirm } = confirmation(
-    page,
-    withSections.name,
-    withSections.sections,
-  );
+  const { dialog, keep, confirm } = confirmation(page, withSections);
 
   await stopClock(page);
   await rowDelete.evaluate((element: HTMLElement) => element.click());
@@ -761,4 +749,21 @@ test("Delete on a menu with no sections asks nothing, and the menu comes back wh
   expect(await menuNames(page), "the menu is back").toEqual(names);
   await expect(rowDelete, "focus is back on its Delete").toBeFocused();
   await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
+});
+
+// D-128: every row has a visible heading with its saved name.
+test("every menu's row has one heading, its saved name", async ({ page }) => {
+  await expectRowHeadings(page, menusPath);
+});
+
+test("three menus added with Enter without waiting each stay on the page, are sent in turn, and are said once", async ({
+  page,
+}) => {
+  await expectBurstKeepsEveryName(page, menusPath, {
+    newLabel: strings.newLabel,
+    removeName: (menu) =>
+      fill(strings.rowAction, { action: editing.removeUnsaved, menu }),
+    notAdded: (menu) => fill(strings.notAdded, { menu }),
+    removed: (menu) => fill(strings.removed, { menu }),
+  });
 });

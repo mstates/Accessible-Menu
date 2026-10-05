@@ -16,6 +16,10 @@ export type OwnerSection = {
   everyItem: string;
 };
 
+// A section as its menu's page reads it: with how many of its dishes are not
+// deleted, which is what a delete would take with it (D-119).
+export type ListedSection = OwnerSection & { dishes: number };
+
 // The three texts of a section an owner writes.
 export const SECTION_TEXTS = ["name", "note", "everyItem"] as const;
 export type SectionText = (typeof SECTION_TEXTS)[number];

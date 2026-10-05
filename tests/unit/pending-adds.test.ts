@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { en } from "../../src/copy";
-import { fill } from "../../src/copy/fill";
 import { nameTaken } from "../../src/domain/menu";
+import {
+  addedSentence,
+  failureSentence,
+  notDone,
+  problemText,
+  removedSentence,
+  type ListWords,
+} from "../../src/features/owner/editing/list-words";
 import {
   addFailed,
   addLanded,
@@ -16,8 +23,11 @@ import {
   type PendingAdd,
 } from "../../src/features/owner/editing/pending-adds";
 import { saveQueue } from "../../src/features/owner/editing/queue";
-import * as menuWords from "../../src/features/owner/menu-messages";
-import * as sectionWords from "../../src/features/owner/section-messages";
+import {
+  dishList,
+  menuList,
+  sectionList,
+} from "../../src/features/owner/lists";
 
 const editing = en.owner.editing;
 
@@ -175,43 +185,25 @@ type Words = {
   removed: (name: string) => string;
 };
 
+// What a list says about an add, from the words its screen is given.
+function wordsOf(words: ListWords): Words {
+  return {
+    added: (name, total) => addedSentence(words, name, total),
+    failed: (name) =>
+      failureSentence(
+        notDone(words, "notAdded", name),
+        problemText(words, { kind: "failed" }, name),
+      ),
+    removed: (name) => removedSentence(words, name),
+  };
+}
+
+// The three lists share one add handler now (D-128); each still says its
+// own sentences.
 const lists: [string, Words][] = [
-  [
-    "menus",
-    {
-      added: (name, total) =>
-        menuWords.addedSentence(en.owner.menus, name, total),
-      failed: (name) =>
-        menuWords.failureSentence(
-          fill(en.owner.menus.notAdded, { menu: name }),
-          menuWords.problemText(
-            en.owner.menus,
-            editing,
-            { kind: "failed" },
-            name,
-          ),
-        ),
-      removed: (name) => fill(en.owner.menus.removed, { menu: name }),
-    },
-  ],
-  [
-    "sections",
-    {
-      added: (name, total) =>
-        sectionWords.addedSentence(en.owner.sections, name, total),
-      failed: (name) =>
-        sectionWords.failureSentence(
-          fill(en.owner.sections.notAdded, { section: name }),
-          sectionWords.problemText(
-            en.owner.sections,
-            editing,
-            { kind: "failed" },
-            name,
-          ),
-        ),
-      removed: (name) => fill(en.owner.sections.removed, { section: name }),
-    },
-  ],
+  ["menus", wordsOf(menuList.words(en.owner.menus, editing))],
+  ["sections", wordsOf(sectionList.words(en.owner.sections, editing))],
+  ["dishes", wordsOf(dishList.words(en.owner.dishes, editing))],
 ];
 
 function page(words: Words, failing: string | null) {

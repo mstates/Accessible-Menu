@@ -5,13 +5,13 @@ import { z } from "zod";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
 import { findOwnerMenu } from "@/core/supabase/menus";
-import { listOwnerSections } from "@/core/supabase/sections";
+import { listOwnerSectionsWithDishes } from "@/core/supabase/sections";
 import { loadRestaurant } from "@/features/owner/load-restaurant";
 import { restaurantMenusPath } from "@/features/owner/paths";
 import { RestaurantNav } from "@/features/owner/RestaurantNav";
 import { SectionList } from "@/features/owner/SectionList";
+import { Breadcrumb } from "@/ui/Breadcrumb";
 import { PageFrame } from "@/ui/PageFrame";
-import { PageLink } from "@/ui/PageLink";
 
 type Props = { params: Promise<{ code: string; menu: string }> };
 
@@ -46,18 +46,24 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: pageTitle(en, menu.name, restaurant.name) };
 }
 
-// One menu's own page (D-122): its sections today, its dishes later. The
-// page is named for the menu, in the title and in the h1, since the page is
-// the menu. Menus stays marked in the restaurant's nav as the part this page
-// sits inside, and the link under the h1 goes back there. The list is read
-// on every render, and every save ends with a refresh, so what the page
+// One menu's own page (D-122): its sections, each a row that links to its
+// own page, where its dishes are (D-128). The page is named for the menu,
+// in the title and in the h1, since the page is the menu. Menus stays
+// marked in the restaurant's nav as the part this page sits inside, and the
+// breadcrumb above the h1 is the way back there. The list is read on every
+// render, with how many dishes each section holds, which is what a delete
+// asks about (D-119), and every save ends with a refresh, so what the page
 // shows is what the server holds.
 export default async function RestaurantMenuPage({ params }: Props) {
   const { code, menu: menuId } = await params;
   const { supabase, email, restaurant, menu } = await loadMenu(code, menuId);
   if (!email) redirect("/app/sign-in");
   if (!restaurant || !menu) notFound();
-  const sections = await listOwnerSections(supabase, menu.id);
+  const sections = await listOwnerSectionsWithDishes(
+    supabase,
+    restaurant.id,
+    menu.id,
+  );
 
   return (
     <PageFrame
@@ -73,15 +79,17 @@ export default async function RestaurantMenuPage({ params }: Props) {
         />
       }
     >
-      <h1 className="text-3xl font-bold">{menu.name}</h1>
-      <p className="mt-2">
-        <PageLink
-          href={restaurantMenusPath(restaurant.code)}
-          className="text-link underline"
-        >
-          {strings.backToMenus}
-        </PageLink>
-      </p>
+      <Breadcrumb
+        label={en.ui.breadcrumb}
+        trail={[
+          {
+            href: restaurantMenusPath(restaurant.code),
+            label: en.owner.restaurants.nav.menus,
+          },
+        ]}
+        current={menu.name}
+      />
+      <h1 className="mt-2 text-3xl font-bold">{menu.name}</h1>
       <p className="mt-6 text-foreground-muted">{strings.lead}</p>
       <SectionList
         strings={strings}

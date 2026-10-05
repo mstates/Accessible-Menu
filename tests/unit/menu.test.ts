@@ -3,33 +3,34 @@ import { en } from "../../src/copy";
 import {
   cleanMenuName,
   deleteAsksFirst,
-  deleteTakesMore,
+  HOLDS_NOTHING,
   inOrder,
   MENU_LIMITS,
-  menuNameSchema,
+  menuNameProblem,
   mergeOrder,
   moveInOrder,
   nameTaken,
 } from "../../src/domain/menu";
 
 const errors = en.owner.menus.errors;
-const schema = menuNameSchema(errors);
 
+// The message for what was typed, as the list and the server both find it:
+// the name is cleaned, then held to the rule.
 function problem(input: string): string {
-  const result = schema.safeParse(input);
-  return result.success ? "" : (result.error.issues[0]?.message ?? "");
+  const rule = menuNameProblem(cleanMenuName(input));
+  return rule ? errors[rule] : "";
 }
 
 describe("the menu name (migration 3)", () => {
   it("trims the name and keeps what is inside", () => {
-    const result = schema.safeParse("  Weekend brunch  ");
-    expect(result.success && result.data).toBe("Weekend brunch");
+    expect(cleanMenuName("  Weekend brunch  ")).toBe("Weekend brunch");
+    expect(problem("  Weekend brunch  ")).toBe("");
   });
 
   it("turns a pasted tab or line break into a space", () => {
     expect(cleanMenuName("Lunch\tand\r\ndinner")).toBe("Lunch and dinner");
-    const result = schema.safeParse("Lunch\nspecials");
-    expect(result.success && result.data).toBe("Lunch specials");
+    expect(cleanMenuName("Lunch\nspecials")).toBe("Lunch specials");
+    expect(problem("Lunch\nspecials")).toBe("");
   });
 
   it.each([
@@ -140,30 +141,21 @@ describe("the list in a given order", () => {
   });
 });
 
+// Whether a delete that would take more than the owner was told is refused
+// is the database's rule now (migration 5), proven by the boundary script.
 describe("a delete that takes content with it (D-119)", () => {
-  it("asks first when the menu holds sections, and not when it is empty", () => {
-    expect(deleteAsksFirst(0)).toBe(false);
-    expect(deleteAsksFirst(1)).toBe(true);
-    expect(deleteAsksFirst(4)).toBe(true);
+  it("asks first when the row holds anything, and not when it is empty", () => {
+    expect(deleteAsksFirst(HOLDS_NOTHING)).toBe(false);
+    expect(deleteAsksFirst({ sections: 0, dishes: 0 })).toBe(false);
+    expect(deleteAsksFirst({ sections: 1, dishes: 0 }), "a menu").toBe(true);
+    expect(deleteAsksFirst({ sections: 4, dishes: 12 }), "a menu").toBe(true);
+    expect(deleteAsksFirst({ sections: 0, dishes: 1 }), "a section").toBe(true);
   });
 
-  it("is refused when the menu holds more sections than the owner was told", () => {
-    expect(deleteTakesMore(1, 0), "a delete at once, or an Undo").toBe(true);
-    expect(deleteTakesMore(5, 4), "a confirmation that is out of date").toBe(
-      true,
-    );
-  });
-
-  it("goes ahead when the menu holds what the owner was told, or less", () => {
-    expect(deleteTakesMore(0, 0)).toBe(false);
-    expect(deleteTakesMore(4, 4)).toBe(false);
-    expect(deleteTakesMore(3, 4)).toBe(false);
-  });
-
-  it("keeps the count on a listed menu through a reorder", () => {
+  it("keeps the counts on a listed menu through a reorder", () => {
     const menus = [
-      { id: "a", name: "Lunch", sections: 0 },
-      { id: "b", name: "Dinner", sections: 3 },
+      { id: "a", name: "Lunch", sections: 0, dishes: 0 },
+      { id: "b", name: "Dinner", sections: 3, dishes: 14 },
     ];
     expect(inOrder(menus, ["b", "a"])).toEqual([menus[1], menus[0]]);
     expect(nameTaken(menus, null, "dinner")).toEqual(menus[1]);

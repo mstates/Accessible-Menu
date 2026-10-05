@@ -16,6 +16,8 @@ export const en = {
   ui: {
     pending: "in progress",
     loading: "Loading",
+    // The name of the nav that shows where a page sits (D-128).
+    breadcrumb: "Breadcrumb",
   },
   home: {
     heading: "Accessible Menu",
@@ -275,7 +277,7 @@ export const en = {
       lead: "Each change saves when you leave its field.",
       none: "No menus yet. Add your first one below.",
       nameLabel: "Menu name",
-      nameFor: "for {menu}",
+      labelFor: "for {menu}",
       moveUp: "Move up",
       moveDown: "Move down",
       remove: "Delete",
@@ -290,12 +292,18 @@ export const en = {
         other: "{count} menus",
       },
       // A delete that takes sections with it asks first, and names what goes
-      // (D-119). The question is the dialog's name.
+      // (D-119): its sections, and their dishes when they hold any. The
+      // question is the dialog's name.
       sectionCount: {
         one: "{count} section",
         other: "{count} sections",
       },
+      dishCount: {
+        one: "{count} dish",
+        other: "{count} dishes",
+      },
       deleteAsk: "Delete {menu}, with its {sections}?",
+      deleteAskBoth: "Delete {menu}, with its {sections} and {dishes}?",
       keep: "Keep",
       added: "{menu} added. {count}.",
       movedUp: "{menu} moved up. {position} of {total}.",
@@ -304,7 +312,9 @@ export const en = {
       alreadyLast: "{menu} is already last.",
       deleted: "{menu} deleted. Undo is available.",
       removed: "{menu} removed.",
-      notSaved: "Name of {menu} was not saved.",
+      notSaved: {
+        name: "Name of {menu} was not saved.",
+      },
       notAdded: "{menu} was not added.",
       notMoved: "{menu} was not moved.",
       notDeleted: "{menu} was not deleted.",
@@ -314,8 +324,9 @@ export const en = {
         nameTaken: "Another menu is called {menu}.",
         gone: "That menu is no longer here. Reload the page.",
         listChanged: "The list of menus changed. Reload the page.",
-        // The server found more sections than the owner was told about.
-        grew: "It has sections this page did not show. Press Delete again.",
+        // The database found more sections or dishes than the owner was
+        // told about.
+        grew: "It has sections or dishes this page did not show. Press Delete again.",
       },
       undo: {
         renamed: "Undo: renamed {from} to {to}",
@@ -326,8 +337,7 @@ export const en = {
         removed: "Undone. {menu} is removed.",
         restored: "Undone. {menu} is back, {position} of {total}.",
         movedBack: "Undone. {menu} is back at {position} of {total}.",
-        renameChanged:
-          "The name was changed again since, so nothing was undone.",
+        textChanged: "The name was changed again since, so nothing was undone.",
         restoreBlocked:
           "{menu} cannot come back while another menu is called {menu}.",
         renameBlocked:
@@ -342,7 +352,6 @@ export const en = {
     // for its menu, so it has no title or heading here.
     sections: {
       lead: "Sections are the headings on this menu, like Starters and Mains. Each change saves when you leave its field.",
-      backToMenus: "Back to Menus",
       none: "No sections yet. Add the first one below.",
       nameLabel: "Section name",
       noteLabel: "Section note",
@@ -358,14 +367,25 @@ export const en = {
       moveUp: "Move up",
       moveDown: "Move down",
       remove: "Delete",
-      // A row button's whole name: its visible label first, then its section.
+      // A row control's whole name: its visible label first, then its
+      // section.
       rowAction: "{action}, {section}",
+      // The link from a section's row to its own page (D-128).
+      editDishes: "Edit dishes",
       newLabel: "New section name",
       add: "Add section",
       count: {
         one: "{count} section",
         other: "{count} sections",
       },
+      // A delete that takes dishes with it asks first, and names what goes
+      // (D-119). The question is the dialog's name.
+      dishCount: {
+        one: "{count} dish",
+        other: "{count} dishes",
+      },
+      deleteAsk: "Delete {section}, with its {dishes}?",
+      keep: "Keep",
       added: "{section} added. {count}.",
       movedUp: "{section} moved up. {position} of {total}.",
       movedDown: "{section} moved down. {position} of {total}.",
@@ -388,8 +408,10 @@ export const en = {
         everyItemLength: "Keep this line to 120 characters.",
         nameTaken: "Another section is called {section}.",
         gone: "That section is no longer here. Reload the page.",
-        menuGone: "This menu is no longer here. Go back to Menus.",
+        parentGone: "This menu is no longer here. Go back to Menus.",
         listChanged: "The list of sections changed. Reload the page.",
+        // The database found more dishes than the owner was told about.
+        grew: "It has dishes this page did not show. Press Delete again.",
       },
       undo: {
         renamed: "Undo: renamed {from} to {to}",
@@ -410,6 +432,88 @@ export const en = {
           "{section} cannot come back while another section is called {section}.",
         renameBlocked:
           "The name {from} is taken by another section, so this was not undone.",
+        // Undo never deletes content: an added section that now holds dishes
+        // stays, and its Delete button is the way to remove it.
+        addGrew:
+          "{section} has dishes now, so it stays. To delete it, use its Delete button.",
+      },
+    },
+    // A section's own page: its dishes (D-128). The page is named for its
+    // section, so it has no title or heading here. A dish has only its name
+    // on this page; the rest is on the dish's own page.
+    dishes: {
+      lead: "Dishes are the items in this section, like soup or a salad. Each change saves when you leave its field.",
+      none: "No dishes yet. Add the first one below.",
+      nameLabel: "Dish name",
+      labelFor: "for {dish}",
+      moveUp: "Move up",
+      moveDown: "Move down",
+      remove: "Delete",
+      // A row button's whole name: its visible label first, then its dish.
+      rowAction: "{action}, {dish}",
+      newLabel: "New dish name",
+      add: "Add dish",
+      count: {
+        one: "{count} dish",
+        other: "{count} dishes",
+      },
+      added: "{dish} added. {count}.",
+      movedUp: "{dish} moved up. {position} of {total}.",
+      movedDown: "{dish} moved down. {position} of {total}.",
+      alreadyFirst: "{dish} is already first.",
+      alreadyLast: "{dish} is already last.",
+      deleted: "{dish} deleted. Undo is available.",
+      removed: "{dish} removed.",
+      notSaved: {
+        name: "Name of {dish} was not saved.",
+      },
+      notAdded: "{dish} was not added.",
+      notMoved: "{dish} was not moved.",
+      notDeleted: "{dish} was not deleted.",
+      errors: {
+        nameRequired: "A dish needs a name.",
+        nameLength: "Keep the name to 120 characters.",
+        nameTaken: "Another dish in this section is called {dish}.",
+        gone: "That dish is no longer here. Reload the page.",
+        parentGone: "This section is no longer here. Go back to Menus.",
+        listChanged: "The list of dishes changed. Reload the page.",
+      },
+      undo: {
+        renamed: "Undo: renamed {from} to {to}",
+        added: "Undo: added {dish}",
+        deleted: "Undo: deleted {dish}",
+        moved: "Undo: moved {dish}",
+        renamedBack: "Undone. The name is {from} again.",
+        removed: "Undone. {dish} is removed.",
+        restored: "Undone. {dish} is back, {position} of {total}.",
+        movedBack: "Undone. {dish} is back at {position} of {total}.",
+        textChanged: "The name was changed again since, so nothing was undone.",
+        restoreBlocked:
+          "{dish} cannot come back while another dish is called {dish}.",
+        renameBlocked:
+          "The name {from} is taken by another dish, so this was not undone.",
+      },
+      // Moving the section itself to another menu of the restaurant, from
+      // its own page (D-129). Nothing is sent until the button is pressed.
+      move: {
+        heading: "Move this section",
+        label: "Move to",
+        placeholder: "Choose a menu",
+        submit: "Move section",
+        choose: "Choose a menu first.",
+        moved: "{section} moved to {menu}. It is the last section there.",
+        notMoved: "{section} was not moved.",
+        errors: {
+          nameTaken: "{menu} already has a section called {section}.",
+          menuGone: "That menu is no longer here. Reload the page.",
+        },
+        undo: {
+          moved: "Undo: moved {section} to {menu}",
+          movedBack:
+            "Undone. {section} is back in {menu}, {position} of {total}.",
+          blocked:
+            "{section} cannot go back while {menu} has another section called {section}.",
+        },
       },
     },
   },

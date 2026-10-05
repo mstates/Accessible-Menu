@@ -1,14 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { ListedMenu, OwnerMenu } from "@/domain/menu";
+import type { Held, ListedMenu, OwnerMenu } from "@/domain/menu";
+import { listSectionDishes } from "./sections";
 
 // Owner-side reads and writes on menus, through the owner's own client so
 // row level security decides what is visible (D-75) and the table
 // constraints decide what is valid (migration 3). A delete marks the row and
 // keeps it, so Undo can bring it back; reads leave marked rows out. Owners
-// write name, sort, and deleted_at and nothing else, so nothing here can
-// publish. The only place the row shape is known; features see OwnerMenu,
-// and the list sees it with how many sections each menu holds (D-119).
+// write name, sort, and deleted_at as columns and nothing else, so nothing
+// here can publish. A delete goes through delete_with_contents(), which
+// counts what the menu holds in the statement that marks it (migration 5).
+// The only place the row shape is known; features see OwnerMenu, and the
+// list sees it with the sections and the dishes each menu holds (D-119).
 
 const columns = "id, name, sort";
 
@@ -29,6 +32,8 @@ export type MenuWriteError =
   | { kind: "name-taken" }
   | { kind: "not-found" }
   | { kind: "mismatch" }
+  // A delete would have taken more than the owner was told about.
+  | { kind: "grew" }
   | { kind: "failed" };
 
 export type MenuWriteResult<Value = unknown> =
@@ -53,16 +58,15 @@ const failed: MenuWriteResult<never> = { ok: false, error: { kind: "failed" } };
 // created_at and id settle ties the same way every time. A read that fails
 // throws: an error must never look like an empty list.
 //
-// Each menu comes with the number of its sections that are not deleted,
-// which decides whether a delete asks first and what the question says. The
-// API caps how many rows one read returns, so the read asks for the exact
-// total too: a count that is not whole would let a delete skip its
-// question, and that is an error here, never a guess.
+// Each menu comes with what it holds: its sections that are not deleted and
+// their dishes that are not deleted, which decides whether a delete asks
+// first and what the question says (D-119). The database counts the dishes
+// (migration 5), one row a section, and the rows are added up here.
 export async function listOwnerMenus(
   client: SupabaseClient,
   restaurantId: string,
 ): Promise<ListedMenu[]> {
-  const [menus, sections] = await Promise.all([
+  const [menus, counts] = await Promise.all([
     client
       .from("menus")
       .select(columns)
@@ -71,30 +75,45 @@ export async function listOwnerMenus(
       .order("sort")
       .order("created_at")
       .order("id"),
-    client
-      .from("sections")
-      .select("menu_id", { count: "exact" })
-      .eq("restaurant_id", restaurantId)
-      .is("deleted_at", null),
+    listSectionDishes(client, restaurantId),
   ]);
   if (menus.error) {
     throw new Error(`menus could not be read: ${menus.error.message}`);
   }
-  if (sections.error) {
-    throw new Error(`sections could not be counted: ${sections.error.message}`);
-  }
-  const held = z.array(z.object({ menu_id: z.string() })).parse(sections.data);
-  if (sections.count !== held.length) {
-    throw new Error("sections could not be counted: the read was cut short");
-  }
-  const counts = new Map<string, number>();
-  for (const { menu_id: menuId } of held) {
-    counts.set(menuId, (counts.get(menuId) ?? 0) + 1);
+  const held = new Map<string, Held>();
+  for (const { menuId, dishes } of counts) {
+    const soFar = held.get(menuId) ?? { sections: 0, dishes: 0 };
+    held.set(menuId, {
+      sections: soFar.sections + 1,
+      dishes: soFar.dishes + dishes,
+    });
   }
   return z
     .array(rowSchema)
     .parse(menus.data)
-    .map((row) => ({ ...toMenu(row), sections: counts.get(row.id) ?? 0 }));
+    .map((row) => ({
+      ...toMenu(row),
+      ...(held.get(row.id) ?? { sections: 0, dishes: 0 }),
+    }));
+}
+
+// The restaurant's menus that are not deleted, in the owner's order, with
+// nothing counted: what a section's page lists as the menus it can move to
+// (D-129). A read that fails throws.
+export async function listOwnerMenuNames(
+  client: SupabaseClient,
+  restaurantId: string,
+): Promise<OwnerMenu[]> {
+  const { data, error } = await client
+    .from("menus")
+    .select(columns)
+    .eq("restaurant_id", restaurantId)
+    .is("deleted_at", null)
+    .order("sort")
+    .order("created_at")
+    .order("id");
+  if (error) throw new Error(`menus could not be read: ${error.message}`);
+  return z.array(rowSchema).parse(data).map(toMenu);
 }
 
 // One menu of the restaurant that is not deleted, for its own page and for
@@ -118,21 +137,6 @@ export async function findOwnerMenu(
   if (!data) return "not-found";
   const row = rowSchema.safeParse(data);
   return row.success ? toMenu(row.data) : "failed";
-}
-
-// How many sections of one menu are not deleted, asked of the database at
-// the moment of a delete, whatever the page showed (D-119).
-export async function countOwnerMenuSections(
-  client: SupabaseClient,
-  menuId: string,
-): Promise<number | "failed"> {
-  const { count, error } = await client
-    .from("sections")
-    .select("id", { count: "exact", head: true })
-    .eq("menu_id", menuId)
-    .is("deleted_at", null);
-  if (error || count === null) return "failed";
-  return count;
 }
 
 // A new menu goes last. Two tabs adding at once can draw the same sort; the
@@ -193,24 +197,44 @@ export async function renameOwnerMenu(
   return row.success ? { ok: true, value: toMenu(row.data) } : failed;
 }
 
-// Marks a menu deleted, or brings it back. Bringing it back fails with
-// name-taken while another menu has its name.
-export async function setOwnerMenuDeleted(
+// Marks a menu deleted, through delete_with_contents(): the database counts
+// the menu's sections and their dishes in the statement that marks it, and
+// refuses when it holds more of either than the owner was told about
+// (D-119). A menu that is not in this restaurant, is already deleted, or is
+// not this owner's is not found.
+export async function deleteOwnerMenu(
   client: SupabaseClient,
   restaurantId: string,
   id: string,
-  deleted: boolean,
+  told: Held,
+): Promise<MenuWriteResult<null>> {
+  const { error } = await client.rpc("delete_with_contents", {
+    p_kind: "menu",
+    p_parent: restaurantId,
+    p_id: id,
+    p_sections: told.sections,
+    p_dishes: told.dishes,
+  });
+  if (!error) return { ok: true, value: null };
+  if (error.message === "delete_grew") {
+    return { ok: false, error: { kind: "grew" } };
+  }
+  return error.message === "delete_not_found" ? notFound : failed;
+}
+
+// Brings a deleted menu back. It fails with name-taken while another menu
+// has its name.
+export async function restoreOwnerMenu(
+  client: SupabaseClient,
+  restaurantId: string,
+  id: string,
 ): Promise<MenuWriteResult<OwnerMenu>> {
-  const update = client
+  const { data, error } = await client
     .from("menus")
-    .update({ deleted_at: deleted ? new Date().toISOString() : null })
+    .update({ deleted_at: null })
     .eq("id", id)
-    .eq("restaurant_id", restaurantId);
-  const { data, error } = await (
-    deleted
-      ? update.is("deleted_at", null)
-      : update.not("deleted_at", "is", null)
-  )
+    .eq("restaurant_id", restaurantId)
+    .not("deleted_at", "is", null)
     .select(columns)
     .maybeSingle();
   if (error) return refused(error.code);

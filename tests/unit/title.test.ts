@@ -21,6 +21,14 @@ describe("pageTitle", () => {
     );
   });
 
+  // A section's page (D-128): the section, its menu, the restaurant, the
+  // site.
+  it("names what a page sits inside right after the page", () => {
+    expect(pageTitle(en, "Starters", "Test Bistro", "Dinner")).toBe(
+      `Starters${sep}Dinner${sep}Test Bistro${sep}Accessible Menu`,
+    );
+  });
+
   it("keeps an outcome at the front, where it is heard first", () => {
     expect(pageTitle(en, strings.details.createdTitle, "Test Bistro")).toBe(
       `Restaurant created. Details${sep}Test Bistro${sep}Accessible Menu`,

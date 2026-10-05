@@ -17,6 +17,12 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 // a walk that tabs through every field proves that an unchanged field
 // writes nothing, and a test that presses Save or Move proves what the page
 // does when the save cannot land.
+//
+// What the gate may type (D-115, refined with the burst test of D-125): it
+// never types into a field that saves when it is left, since leaving it
+// would send what was typed. It may type into a list's add field, which
+// sends nothing until Enter or its button, and press Enter there; this
+// guard answers what that sends, and the test says it expects the writes.
 
 type Guard = {
   attempted: string[];

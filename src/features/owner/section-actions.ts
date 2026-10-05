@@ -1,39 +1,39 @@
 "use server";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { refresh } from "next/cache";
 import { z } from "zod";
-import { findOwnerMenu } from "@/core/supabase/menus";
 import {
   addOwnerSection,
+  deleteOwnerSection,
   listOwnerSections,
-  setOwnerSectionDeleted,
+  restoreOwnerSection,
   setOwnerSectionOrder,
   setOwnerSectionText,
   type SectionWriteError,
 } from "@/core/supabase/sections";
-import { mergeOrder } from "@/domain/menu";
+import { mergeOrder, type Held } from "@/domain/menu";
 import {
   cleanSectionText,
   SECTION_TEXTS,
   sectionTextProblem,
   type OwnerSection,
 } from "@/domain/section";
-import { ownerScope } from "./owner-scope";
-import type { SectionProblem } from "./section-messages";
+import type { ListProblem } from "./editing/list-words";
+import { menuScope } from "./owner-scope";
 
 // A menu's sections save through these (D-111), the same way the menus list
 // saves. Nothing here redirects: a missing session comes back as a result
 // and the typed text stays on screen. Every call that reached the database
 // with a live session ends with refresh(), so its own response carries the
 // re-rendered list. The code, the menu, and the ids are user input: they are
-// checked here, the menu is read as one of this restaurant's that is not
-// deleted before any write, and row level security decides whether the rows
-// are this owner's. A section never moves to another menu, and nothing here
-// can publish (migrations 3 and 4).
+// checked here and in menuScope, the menu is read as one of this
+// restaurant's that is not deleted before any write, and row level security
+// decides whether the rows are this owner's. A section moves to another
+// menu from its own page (dish-actions.ts), never from here, and nothing
+// here can publish (migrations 3 and 4).
 
 type ServerProblem = Exclude<
-  SectionProblem,
+  ListProblem,
   { kind: "unreachable" } | { kind: "out-of-date" }
 >;
 
@@ -43,34 +43,16 @@ export type SectionActionResult<Value = null> =
 const idSchema = z.uuid();
 const orderSchema = z.array(z.uuid()).min(1).max(500);
 const fieldSchema = z.enum(SECTION_TEXTS);
+const toldSchema = z.object({
+  sections: z.number().int().min(0),
+  dishes: z.number().int().min(0),
+});
 
 function refuse(problem: ServerProblem): { ok: false; problem: ServerProblem } {
   return { ok: false, problem };
 }
 
 const gone = refuse({ kind: "gone" });
-
-type MenuScope =
-  | { ok: true; client: SupabaseClient; menuId: string }
-  | { ok: false; problem: ServerProblem };
-
-// The owner's session and restaurant, then the menu: one of this
-// restaurant's, not deleted. A deleted menu's sections are hidden from its
-// owner, so a tab left open on one saves nothing more.
-async function menuScope(rawCode: string, rawMenu: string): Promise<MenuScope> {
-  const scope = await ownerScope(rawCode);
-  if (!scope.ok) return scope;
-  const menuId = idSchema.safeParse(rawMenu);
-  if (!menuId.success) return refuse({ kind: "menu-gone" });
-  const menu = await findOwnerMenu(
-    scope.client,
-    scope.restaurantId,
-    menuId.data,
-  );
-  if (menu === "failed") return refuse({ kind: "failed" });
-  if (menu === "not-found") return refuse({ kind: "menu-gone" });
-  return { ok: true, client: scope.client, menuId: menu.id };
-}
 
 // A row that is not there is "gone" for an ordinary save, and "changed" for
 // an Undo, whose change no longer stands.
@@ -85,6 +67,8 @@ function fromWrite(
       return { kind: missing };
     case "mismatch":
       return { kind: "mismatch" };
+    case "grew":
+      return { kind: "grew" };
     default:
       return { kind: "failed" };
   }
@@ -95,7 +79,7 @@ export async function addSection(
   rawCode: string,
   rawMenu: string,
   rawName: string,
-): Promise<SectionActionResult<{ section: OwnerSection; total: number }>> {
+): Promise<SectionActionResult<{ row: OwnerSection; total: number }>> {
   const scope = await menuScope(rawCode, rawMenu);
   if (!scope.ok) return scope;
   const name = cleanSectionText(
@@ -107,7 +91,10 @@ export async function addSection(
   const result = await addOwnerSection(scope.client, scope.menuId, name);
   refresh();
   if (!result.ok) return refuse(fromWrite(result.error, "gone"));
-  return { ok: true, value: result.value };
+  return {
+    ok: true,
+    value: { row: result.value.section, total: result.value.total },
+  };
 }
 
 // Writes a section's name, its note, or its every-dish line. With expected,
@@ -150,22 +137,35 @@ export async function setSectionText(
 }
 
 // Marks the section deleted. The row stays, so Undo can bring it back with
-// everything under it (WCAG 3.3.4). A section holds no dishes yet, so this
-// asks nothing; the confirmation arrives with the dishes (D-119).
+// everything under it (WCAG 3.3.4).
+//
+// A section that holds dishes asks first (D-119), and the rule is held by
+// the database, not only on the page. Every delete says how many dishes the
+// owner was told go with the section: none for a delete at once and for an
+// Undo of an add, the confirmation's number otherwise. The database counts
+// them in the statement that marks the section, and refuses a delete that
+// would take more (migration 5). The refresh brings the page the count it
+// missed, so the next press asks.
 export async function deleteSection(
   rawCode: string,
   rawMenu: string,
   rawId: string,
+  rawTold: Held,
 ): Promise<SectionActionResult> {
   const scope = await menuScope(rawCode, rawMenu);
   if (!scope.ok) return scope;
   const id = idSchema.safeParse(rawId);
   if (!id.success) return gone;
-  const result = await setOwnerSectionDeleted(
+  const told = toldSchema.safeParse(rawTold);
+  if (!told.success) {
+    refresh();
+    return refuse({ kind: "grew" });
+  }
+  const result = await deleteOwnerSection(
     scope.client,
     scope.menuId,
     id.data,
-    true,
+    told.data,
   );
   refresh();
   if (!result.ok) return refuse(fromWrite(result.error, "gone"));
@@ -186,12 +186,7 @@ export async function restoreSection(
   const id = idSchema.safeParse(rawId);
   const order = orderSchema.safeParse(rawOrder);
   if (!id.success || !order.success) return refuse({ kind: "changed" });
-  const result = await setOwnerSectionDeleted(
-    scope.client,
-    scope.menuId,
-    id.data,
-    false,
-  );
+  const result = await restoreOwnerSection(scope.client, scope.menuId, id.data);
   refresh();
   if (!result.ok) return refuse(fromWrite(result.error, "changed"));
 
