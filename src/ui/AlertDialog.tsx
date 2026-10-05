@@ -77,8 +77,9 @@ type AnswersProps = Pick<
 // goes to Keep: a dialog has to put focus somewhere inside itself, and this
 // effect runs before React Aria's own, which then finds focus inside and
 // leaves it there. And the double-tap guard starts counting: for about half
-// a second the confirming button takes no press, and looks and sounds as it
-// always does.
+// a second the confirming button takes no press from a mouse, a finger, or a
+// pen, and looks and sounds as it always does. A key or a screen reader's
+// press counts at once, so the button is told what kind of press it got.
 function Answers({ keepLabel, confirmLabel, onKeep, onConfirm }: AnswersProps) {
   const keepId = useId();
   const openedAt = useRef<number | null>(null);
@@ -93,8 +94,11 @@ function Answers({ keepLabel, confirmLabel, onKeep, onConfirm }: AnswersProps) {
         {keepLabel}
       </Button>
       <Button
-        onPress={() => {
-          if (confirmCounts(openedAt.current, performance.now())) onConfirm();
+        onPress={(event) => {
+          const now = performance.now();
+          if (confirmCounts(event.pointerType, openedAt.current, now)) {
+            onConfirm();
+          }
         }}
       >
         {confirmLabel}

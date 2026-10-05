@@ -33,12 +33,15 @@ import { expectWrites, guardWrites } from "./write-guard";
 // for this page run from owner-pages.spec.ts.
 //
 // The delete confirmation (D-119) is checked without a write: it is opened,
-// read, and left by Keep and by Escape, and the guard proves nothing was
-// sent. Two more tests press Delete for real, on the menu with sections,
-// through the dialog, and on a menu with none, and say they expect a write;
-// the guard holds the answer so the screen can be read while the delete is
-// on its way, then answers it as a failure, so the menu comes back. Which
-// menu holds sections and which holds none comes from the setup.
+// read, and left by Keep and by Escape, and a tap on its Delete inside the
+// double-tap guard is not taken; the write guard proves nothing was sent.
+// Four more tests press Delete for real and say they expect a write: three
+// through the dialog, on the menu with sections, by a key, by a tap once
+// the double-tap guard is over, and by a press with no pointer behind it,
+// and one on a menu with none. The write guard holds the answer so the
+// screen can be read while the delete is on its way, then answers it as a
+// failure, so the menu comes back. Which menu holds sections and which holds
+// none comes from the setup.
 
 const { code } = ownerEnv();
 const menusPath = restaurantMenusPath(code);
@@ -354,6 +357,17 @@ function deleteFailure(menu: string): string {
   return `${fill(strings.notDeleted, { menu })} ${editing.problems.outOfDate}`;
 }
 
+// The double-tap guard reads the page's clock (D-119). A test that presses
+// the confirmation's Delete installs Playwright's clock before the page
+// loads and stops it here, before its first press, so no time passes for
+// the page between one press and the next, however slow the runner is. A
+// clock cannot be stopped in its past, so it stops one second on.
+// Playwright's own waiting does not run on that clock.
+async function stopClock(page: Page): Promise<void> {
+  const now = await page.evaluate(() => Date.now());
+  await page.clock.pauseAt(now + 1000);
+}
+
 // The dialog's own reflow. The page check measures the document, and the
 // overlay around the dialog scrolls on its own, so it is measured here: it
 // never scrolls sideways, and scrolled to its top the question starts on
@@ -518,13 +532,16 @@ test("at the largest phone text size, the delete confirmation fits and scrolls f
 });
 
 // The double-tap guard (D-119). The press that opens the dialog can come
-// twice, and the dialog must not take the second one as its answer. Both
-// presses are made inside the page, one frame apart at most, so the second
-// lands within the guard however slow the runner is. It sends nothing, so
-// the write guard is the proof, and the test says it expects no write.
-test("a second press right after the dialog opens does not confirm the delete, and the button looks no different", async ({
+// twice, and the dialog must not take the second one as its answer. That is
+// a pointer's problem, so the guard holds back a mouse, a finger, and a pen,
+// and nothing else. Both presses here are real taps on a stopped clock, so
+// the second lands in the same instant as the first. Keep and Escape are
+// not held back: Escape is pressed in that same instant. Nothing is sent,
+// so the write guard is the proof, and the test says it expects no write.
+test("a second tap right after the dialog opens does not confirm the delete, and the button looks no different", async ({
   page,
 }) => {
+  await page.clock.install();
   const { withSections } = ownerFixture();
   const names = await openMenus(page);
   const rowDelete = rowButton(page, strings.remove, withSections.name);
@@ -533,29 +550,12 @@ test("a second press right after the dialog opens does not confirm the delete, a
     withSections.name,
     withSections.sections,
   );
-  const rowId = (await rowDelete.getAttribute("id")) ?? "";
 
-  const outcome = await page.evaluate(async (id) => {
-    const row = document.getElementById(id);
-    if (!row) return "no row";
-    row.focus();
-    row.click();
-    for (let frame = 0; frame < 300; frame += 1) {
-      const answers = document.querySelectorAll<HTMLElement>(
-        '[role="alertdialog"] button',
-      );
-      const second = answers[1];
-      if (answers.length === 2 && second) {
-        second.click();
-        return "pressed";
-      }
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-    }
-    return "no dialog";
-  }, rowId);
-  expect(outcome, "the dialog opened and its Delete was pressed at once").toBe(
-    "pressed",
-  );
+  await stopClock(page);
+  await rowDelete.tap();
+  await expect(keep, "the dialog opens with focus on Keep").toBeFocused();
+  await confirm.tap();
+  await expect(confirm, "the second tap landed on Delete").toBeFocused();
 
   await expect(dialog, "the dialog is still asking").toHaveCount(1);
   expect(await menuNames(page), "nothing was deleted").toEqual(names);
@@ -567,20 +567,23 @@ test("a second press right after the dialog opens does not confirm the delete, a
   ).toBe("1");
   await expect(log(page), "and nothing was said").toHaveText("");
 
-  await expect(keep).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(dialog, "Escape works at once").toHaveCount(0);
   await expect(rowDelete).toBeFocused();
 });
 
 // The delete itself, as far as the gate may take it: the press is real, the
-// guard holds its answer, and then answers it as an action the server does
-// not know, so the menu comes back. While the answer is held the screen is
-// what a confirmed delete shows: the dialog gone, the page live, the row
-// gone, focus in the next row's name field, and the sentence in the log.
-test("a confirmed delete closes the dialog first, moves focus to a name field, says so, and comes back when the server cannot take it", async ({
+// write guard holds its answer, and then answers it as an action the server
+// does not know, so the menu comes back. The press is a deliberate Tab then
+// Enter on a stopped clock, in the same instant the dialog opened: a key is
+// never held back, and never dropped without a word (D-119). While the
+// answer is held the screen is what a confirmed delete shows: the dialog
+// gone, the page live, the row gone, focus in the next row's name field,
+// and the sentence in the log.
+test("a delete confirmed by Tab then Enter, at once, closes the dialog first, moves focus to a name field, says so, and comes back when the server cannot take it", async ({
   page,
 }) => {
+  await page.clock.install();
   const writes = expectWrites(page, { hold: true });
   const { withSections } = ownerFixture();
   const names = await openMenus(page);
@@ -593,13 +596,14 @@ test("a confirmed delete closes the dialog first, moves focus to a name field, s
     withSections.sections,
   );
 
+  await stopClock(page);
   await rowDelete.focus();
   await page.keyboard.press("Enter");
   await expect(keep).toBeFocused();
-  // The double-tap guard: the dialog's Delete takes no press at first.
-  await page.waitForTimeout(CONFIRM_GUARD_MS + 100);
-  await confirm.focus();
+  await page.keyboard.press("Tab");
+  await expect(confirm).toBeFocused();
   await page.keyboard.press("Enter");
+  await page.clock.resume();
 
   await expect(dialog, "the dialog closes").toHaveCount(0);
   await expect
@@ -633,6 +637,94 @@ test("a confirmed delete closes the dialog first, moves focus to a name field, s
     log(page).getByText(failure, { exact: true }),
     "the failure is said once",
   ).toHaveCount(1);
+});
+
+// The other side of the double-tap guard: once its half second is over, a
+// tap on Delete is taken like any press. The clock stops before the dialog
+// opens and is moved on by exactly the guard, so this is the first instant
+// a tap counts.
+test("a tap on Delete once the double-tap guard is over confirms, and the menu comes back when the server cannot take it", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const writes = expectWrites(page, { hold: true });
+  const { withSections } = ownerFixture();
+  const names = await openMenus(page);
+  const index = names.indexOf(withSections.name);
+  const neighbor = names[index + 1] ?? names[index - 1] ?? "";
+  const rowDelete = rowButton(page, strings.remove, withSections.name);
+  const { dialog, keep, confirm } = confirmation(
+    page,
+    withSections.name,
+    withSections.sections,
+  );
+
+  await stopClock(page);
+  await rowDelete.tap();
+  await expect(keep).toBeFocused();
+  await page.clock.fastForward(CONFIRM_GUARD_MS);
+  await confirm.tap();
+  await page.clock.resume();
+
+  await expect(dialog, "the dialog closes").toHaveCount(0);
+  await expect
+    .poll(() => writes.answered.length, {
+      message: "the delete is on its way, and held",
+    })
+    .toBeGreaterThan(0);
+  expect(await menuNames(page), "the row is gone").toEqual(
+    names.filter((name) => name !== withSections.name),
+  );
+  await expect(
+    nameField(page, neighbor),
+    "focus is in the next row's name field",
+  ).toBeFocused();
+
+  writes.release();
+  await expect(savedStatus(page)).toHaveText(deleteFailure(withSections.name));
+  expect(await menuNames(page), "the menu is back").toEqual(names);
+  await expect(rowDelete, "focus is back on its Delete").toBeFocused();
+});
+
+// A press with no pointer behind it is what a screen reader sends, and what
+// React Aria calls virtual. It is never held back either (D-119): a screen
+// reader presses what its cursor is on, so a press on Delete was meant. Both
+// presses are made inside the page, the way element.click() makes them, on
+// a stopped clock, in the same instant. A real screen reader's press is
+// checked by hand.
+test("a press with no pointer behind it, the kind a screen reader sends, confirms the delete at once", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const writes = expectWrites(page, { hold: true });
+  const { withSections } = ownerFixture();
+  const names = await openMenus(page);
+  const rowDelete = rowButton(page, strings.remove, withSections.name);
+  const { dialog, keep, confirm } = confirmation(
+    page,
+    withSections.name,
+    withSections.sections,
+  );
+
+  await stopClock(page);
+  await rowDelete.evaluate((element: HTMLElement) => element.click());
+  await expect(keep, "the dialog opens with focus on Keep").toBeFocused();
+  await confirm.evaluate((element: HTMLElement) => element.click());
+  await page.clock.resume();
+
+  await expect(dialog, "the dialog closes").toHaveCount(0);
+  await expect
+    .poll(() => writes.answered.length, {
+      message: "the delete is on its way, and held",
+    })
+    .toBeGreaterThan(0);
+  expect(await menuNames(page), "the row is gone").toEqual(
+    names.filter((name) => name !== withSections.name),
+  );
+
+  writes.release();
+  await expect(savedStatus(page)).toHaveText(deleteFailure(withSections.name));
+  expect(await menuNames(page), "the menu is back").toEqual(names);
 });
 
 test("Delete on a menu with no sections asks nothing, and the menu comes back when the server cannot take it", async ({
