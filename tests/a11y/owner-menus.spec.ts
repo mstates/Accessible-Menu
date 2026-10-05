@@ -9,7 +9,6 @@ import {
 } from "../../src/features/owner/paths";
 import { CONFIRM_GUARD_MS } from "../../src/ui/alert-dialog-guard";
 import {
-  expectFocusResetThenSkipLink,
   expectNoAxeViolations,
   expectNoHorizontalScroll,
   expectRootAtLargest,
@@ -17,36 +16,29 @@ import {
   setLargestText,
 } from "./checks";
 import { ownerEnv, ownerFixture } from "./owner-env";
-import { expectBurstKeepsEveryName, expectRowHeadings } from "./owner-lists";
+import { listRowChecks, stopClock } from "./owner-lists";
 import { restaurantName } from "./pages";
 import { expectWrites, guardWrites } from "./write-guard";
 
-// The menus list, signed in as the test owner (D-100), on the three menus
-// the test restaurant was given by hand. The gate never writes and never
-// types into a field that saves (D-108, D-111, D-115): every test here runs
-// behind the write guard. Most only read. One presses Enter and Tab in a name
-// it does not change, and the guard proves nothing was sent. Two press a
-// Move button and say they expect a write; the guard answers it inside the
-// browser as an action the server does not know, which is how the failed
-// state is reached. Typing, real saves and the "Saved." they say (D-118),
-// add, a delete that lands, Undo with something to undo, and a name that is
-// taken are covered by the unit tests and by hand. The shared page checks
-// for this page run from owner-pages.spec.ts.
+// The menus list, signed in as the test owner (D-100), on the menus the
+// data file gave the test restaurant (D-126). The gate never writes and
+// never types into a field that saves (D-108, D-111, D-115): every test
+// here runs behind the write guard. The row tests every list shares run
+// from listRowChecks in owner-lists.ts; this file holds what is the menus
+// page's own. Typing, real saves and the "Saved." they say (D-118), add, a
+// delete that lands, Undo with something to undo, and a name that is taken
+// are covered by the unit tests and by hand. The shared page checks for
+// this page run from owner-pages.spec.ts.
 //
-// One test types: three names into the add field, each with Enter, without
-// waiting. An add field sends nothing until Enter, and the guard answers
-// what Enter sends, so nothing typed reaches the server (D-115, D-125).
-//
-// The delete confirmation (D-119) is checked without a write: it is opened,
-// read, and left by Keep and by Escape, and a tap on its Delete inside the
-// double-tap guard is not taken; the write guard proves nothing was sent.
-// Four more tests press Delete for real and say they expect a write: three
-// through the dialog, on the menu with sections, by a key, by a tap once
-// the double-tap guard is over, and by a press with no pointer behind it,
-// and one on a menu with none. The write guard holds the answer so the
-// screen can be read while the delete is on its way, then answers it as a
-// failure, so the menu comes back. Which menu holds sections and which holds
-// none comes from the setup.
+// The delete confirmation (D-119) is one piece for every list, and its
+// clock tests run here: a tap on its Delete inside the double-tap guard is
+// not taken, with the write guard as the proof that nothing was sent; and
+// two tests press Delete for real and say they expect a write, by a tap
+// once the double-tap guard is over and by a press with no pointer behind
+// it. The write guard holds the answer so the screen can be read while the
+// delete is on its way, then answers it as a failure, so the menu comes
+// back. Which menu holds sections and which holds none comes from the
+// setup.
 
 const { code } = ownerEnv();
 const menusPath = restaurantMenusPath(code);
@@ -56,6 +48,40 @@ const editing = en.owner.editing;
 const nav = en.owner.restaurants.nav;
 
 guardWrites();
+
+listRowChecks({
+  noun: "menu",
+  plural: "menus",
+  words: strings,
+  path: () => menusPath,
+  h1: () => strings.heading,
+  // The name field and Move up, Move down, and Delete; the add field, Add,
+  // and Undo.
+  rowControls: 4,
+  pageControls: 3,
+  rowLink: {
+    label: strings.editSections,
+    target: () => {
+      const { withSections } = ownerFixture();
+      return {
+        name: withSections.name,
+        path: restaurantMenuPath(code, withSections.id),
+      };
+    },
+  },
+  // The restaurant nav's Details link.
+  leaveLink: (page) => page.locator(`nav a[href="${details}"]`),
+  deletes: {
+    asking: () => {
+      const { withSections } = ownerFixture();
+      return {
+        name: withSections.name,
+        question: deleteQuestion(withSections),
+      };
+    },
+    empty: () => ownerFixture().empty.name,
+  },
+});
 
 function rows(page: Page) {
   return page.locator("main ul > li");
@@ -98,10 +124,6 @@ async function openMenus(page: Page): Promise<string[]> {
   return names;
 }
 
-function movedDownFailure(menu: string): string {
-  return `${fill(strings.notMoved, { menu })} ${editing.problems.outOfDate}`;
-}
-
 test("the menus page is named for itself, and the nav marks Menus as the current page", async ({
   page,
 }) => {
@@ -119,213 +141,6 @@ test("the menus page is named for itself, and the nav marks Menus as the current
     nav.details,
   );
 });
-
-test("every field and button names its menu, and no two controls share a name", async ({
-  page,
-}) => {
-  const names = await openMenus(page);
-  for (const menu of names) {
-    await expect(
-      page.getByRole("textbox", {
-        name: `${strings.nameLabel} ${fill(strings.labelFor, { menu })}`,
-        exact: true,
-      }),
-    ).toHaveCount(1);
-    for (const label of [strings.moveUp, strings.moveDown, strings.remove]) {
-      await expect(rowButton(page, label, menu)).toHaveCount(1);
-    }
-  }
-
-  const snapshot = await page.locator("main").ariaSnapshot();
-  const controls = [
-    ...snapshot.matchAll(/- (?:textbox|button) "([^"]*)"/g),
-  ].map((match) => match[1] ?? "");
-  expect(
-    controls.length,
-    "every row's field and three buttons, the add field and button, and Undo",
-  ).toBe(names.length * 4 + 3);
-  expect(new Set(controls).size, "no two controls share a name").toBe(
-    controls.length,
-  );
-});
-
-test("the first row cannot move up, the last cannot move down, and both buttons still take focus", async ({
-  page,
-}) => {
-  const names = await openMenus(page);
-  const first = names[0] ?? "";
-  const middle = names[1] ?? "";
-  const last = names[names.length - 1] ?? "";
-  const edges = [
-    rowButton(page, strings.moveUp, first),
-    rowButton(page, strings.moveDown, last),
-  ];
-  for (const button of edges) {
-    await expect(button).toHaveAttribute("aria-disabled", "true");
-    expect(
-      await button.evaluate((element) => element.hasAttribute("disabled")),
-      "an edge button is dimmed, not removed from the tab order",
-    ).toBe(false);
-    await button.focus();
-    await expect(button).toBeFocused();
-  }
-  for (const label of [strings.moveUp, strings.moveDown]) {
-    await expect(rowButton(page, label, middle)).not.toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-  }
-});
-
-test("pressing Move up on the first row sends nothing and says it is already first", async ({
-  page,
-}) => {
-  const names = await openMenus(page);
-  const first = names[0] ?? "";
-  await rowButton(page, strings.moveUp, first).focus();
-  await page.keyboard.press("Enter");
-  await expect(log(page)).toHaveText(
-    fill(strings.alreadyFirst, { menu: first }),
-  );
-  expect(await menuNames(page)).toEqual(names);
-});
-
-// The first gate test to press Enter in a field that saves (D-118). It types
-// nothing, so nothing may be sent or said; the write guard is the proof
-// that nothing was sent. The dimmed Move up after it says one sentence at
-// once, so the log is read after the commit has run.
-test("Enter and Tab on an unchanged name send nothing and say nothing", async ({
-  page,
-}) => {
-  const names = await openMenus(page);
-  const first = names[0] ?? "";
-  const middle = names[1] ?? "";
-  const field = page.getByRole("textbox", {
-    name: `${strings.nameLabel} ${fill(strings.labelFor, { menu: middle })}`,
-    exact: true,
-  });
-  await field.focus();
-  await page.keyboard.press("Enter");
-  await expect(field).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(field).not.toBeFocused();
-
-  await rowButton(page, strings.moveUp, first).focus();
-  await page.keyboard.press("Enter");
-  await expect(log(page)).toHaveText(
-    fill(strings.alreadyFirst, { menu: first }),
-  );
-  await expect(savedStatus(page)).toHaveText(editing.saved);
-  expect(await menuNames(page)).toEqual(names);
-});
-
-test("the saved status is never spoken, the log is polite and empty, and Undo starts with nothing to undo", async ({
-  page,
-}) => {
-  await openMenus(page);
-  const status = savedStatus(page);
-  await expect(status).toHaveCount(1);
-  await expect(status).toHaveAttribute("aria-live", "off");
-  await expect(status).toHaveText(editing.saved);
-
-  const region = log(page);
-  await expect(region).toHaveCount(1);
-  await expect(region).toHaveAttribute("aria-live", "polite");
-  await expect(region).toHaveText("");
-
-  const undo = page.getByRole("button", { name: editing.undo, exact: true });
-  await expect(undo).toHaveCount(1);
-  await expect(undo).toHaveAttribute("aria-disabled", "true");
-  await undo.focus();
-  await page.keyboard.press("Enter");
-  await expect(region).toHaveText(editing.nothingToUndo);
-  await expect(undo).toBeFocused();
-});
-
-// The one way the gate sees a failed save: the press is real, and the guard
-// answers it as an action the server does not know (Q-41).
-test("a move the server cannot take goes back, is said once, and keeps focus on its button", async ({
-  page,
-}) => {
-  const writes = expectWrites(page);
-  const names = await openMenus(page);
-  const menu = names[0] ?? "";
-  const down = rowButton(page, strings.moveDown, menu);
-  await down.focus();
-  await page.keyboard.press("Enter");
-
-  const failure = movedDownFailure(menu);
-  await expect(savedStatus(page)).toHaveText(failure);
-  expect(await menuNames(page), "the list is back in its order").toEqual(names);
-  await expect(
-    log(page).getByText(
-      fill(strings.movedDown, { menu, position: 2, total: names.length }),
-      { exact: true },
-    ),
-    "the move was said when it was made",
-  ).toHaveCount(1);
-  await expect(
-    log(page).getByText(failure, { exact: true }),
-    "the failure is said once",
-  ).toHaveCount(1);
-  await expect(down, "focus is on the button that was pressed").toBeFocused();
-  await expect(
-    page.getByRole("button", { name: editing.reload, exact: true }),
-    "a page that is out of date offers Reload",
-  ).toHaveCount(1);
-  expect(
-    writes.answered.length,
-    "the save was sent and answered in the browser",
-  ).toBeGreaterThan(0);
-  await expectNoAxeViolations(page);
-  await expectNoHorizontalScroll(page);
-});
-
-test("a link pressed while a save is on its way waits, and stays when the save fails", async ({
-  page,
-}) => {
-  const writes = expectWrites(page, { hold: true });
-  const names = await openMenus(page);
-  const menu = names[0] ?? "";
-  const name = await restaurantName(page);
-  await rowButton(page, strings.moveDown, menu).focus();
-  await page.keyboard.press("Enter");
-  await expect
-    .poll(() => writes.answered.length, {
-      message: "the save is on its way, and held",
-    })
-    .toBeGreaterThan(0);
-  await expect(savedStatus(page)).toHaveText(editing.saving);
-
-  const link = page
-    .getByRole("navigation", { name, exact: true })
-    .locator(`a[href="${details}"]`);
-  await link.click();
-  await expect(savedStatus(page), "the link waits for the save").toHaveText(
-    editing.saving,
-  );
-  expect(new URL(page.url()).pathname).toBe(menusPath);
-
-  writes.release();
-  const failure = movedDownFailure(menu);
-  await expect(savedStatus(page)).toHaveText(failure);
-  expect(
-    new URL(page.url()).pathname,
-    "the page stays, so the failure is not left behind",
-  ).toBe(menusPath);
-  await expect(page.locator("main h1")).toHaveText(strings.heading);
-  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
-  await expect(link, "focus stays on the link").toBeFocused();
-  await expect(page.locator('header [role="status"]')).toHaveText("");
-});
-
-// The link from a menu's row to its own page (D-122).
-function sectionsLink(page: Page, menu: string) {
-  return page.getByRole("link", {
-    name: fill(strings.rowAction, { action: strings.editSections, menu }),
-    exact: true,
-  });
-}
 
 function nameField(page: Page, menu: string) {
   return page.getByRole("textbox", {
@@ -373,17 +188,6 @@ function deleteFailure(menu: string): string {
   return `${fill(strings.notDeleted, { menu })} ${editing.problems.outOfDate}`;
 }
 
-// The double-tap guard reads the page's clock (D-119). A test that presses
-// the confirmation's Delete installs Playwright's clock before the page
-// loads and stops it here, before its first press, so no time passes for
-// the page between one press and the next, however slow the runner is. A
-// clock cannot be stopped in its past, so it stops one second on.
-// Playwright's own waiting does not run on that clock.
-async function stopClock(page: Page): Promise<void> {
-  const now = await page.evaluate(() => Date.now());
-  await page.clock.pauseAt(now + 1000);
-}
-
 // The dialog's own reflow. The page check measures the document, and the
 // overlay around the dialog scrolls on its own, so it is measured here: it
 // never scrolls sideways, and scrolled to its top the question starts on
@@ -408,95 +212,6 @@ async function expectDialogFits(dialog: Locator) {
     "the question starts on screen",
   ).toBeGreaterThanOrEqual(0);
 }
-
-test("every row links to its menu's own page, by a name that says which menu", async ({
-  page,
-}) => {
-  const { withSections } = ownerFixture();
-  const names = await openMenus(page);
-  const targets: string[] = [];
-  for (const menu of names) {
-    const link = sectionsLink(page, menu);
-    await expect(link).toHaveCount(1);
-    await expect(link, "the visible words start the name").toHaveText(
-      strings.editSections,
-    );
-    targets.push((await link.getAttribute("href")) ?? "");
-  }
-  expect(new Set(targets).size, "each link goes to its own page").toBe(
-    names.length,
-  );
-
-  const target = restaurantMenuPath(code, withSections.id);
-  const link = sectionsLink(page, withSections.name);
-  await expect(link).toHaveAttribute("href", target);
-  await link.click();
-  await page.waitForURL(`**${target}`);
-  await expectFocusResetThenSkipLink(page);
-  await expect(page.locator("main h1")).toHaveText(withSections.name);
-});
-
-test("Delete on a menu with sections asks first, with focus on Keep, and Keep or Escape sends nothing", async ({
-  page,
-}) => {
-  const { withSections } = ownerFixture();
-  const names = await openMenus(page);
-  const rowDelete = rowButton(page, strings.remove, withSections.name);
-  const { dialog, keep, confirm } = confirmation(page, withSections);
-
-  await rowDelete.focus();
-  await page.keyboard.press("Enter");
-  await expect(dialog, "an alert dialog named by its question").toHaveCount(1);
-  await expect(dialog.getByRole("heading", { level: 2 })).toHaveText(
-    deleteQuestion(withSections),
-  );
-  await expect(keep, "focus starts on Keep").toBeFocused();
-
-  await page.keyboard.press("Tab");
-  await expect(confirm).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(keep, "Tab stays inside the dialog").toBeFocused();
-  await page.keyboard.press("Shift+Tab");
-  await expect(confirm).toBeFocused();
-
-  // The page behind is inert, and the log is not: a save that lands while
-  // the dialog is open is still heard (D-123). This pins the mark React
-  // Aria leaves alone, which is not public.
-  for (const behind of ["header", "main h1", "main ul"]) {
-    expect(
-      await page
-        .locator(behind)
-        .first()
-        .evaluate((element) => element.closest("[inert]") !== null),
-      `${behind} is inert behind the dialog`,
-    ).toBe(true);
-  }
-  expect(
-    await log(page).evaluate(
-      (element) => element.closest('[inert], [aria-hidden="true"]') === null,
-    ),
-    "the log stays heard behind the dialog",
-  ).toBe(true);
-  await expectNoAxeViolations(page);
-
-  await keep.focus();
-  await page.keyboard.press("Enter");
-  await expect(dialog).toHaveCount(0);
-  await expect(rowDelete, "Keep returns focus to Delete").toBeFocused();
-  await expect(page.locator("[inert]"), "the page is live again").toHaveCount(
-    0,
-  );
-
-  await page.keyboard.press("Enter");
-  await expect(keep).toBeFocused();
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
-  await expect(rowDelete, "Escape returns focus to Delete").toBeFocused();
-
-  expect(await menuNames(page), "nothing was deleted").toEqual(names);
-  await expect(log(page), "and nothing was said").toHaveText("");
-  await expect(savedStatus(page)).toHaveText(editing.saved);
-});
 
 test("the delete confirmation fits and scrolls from its top, before and after text spacing", async ({
   page,
@@ -570,69 +285,6 @@ test("a second tap right after the dialog opens does not confirm the delete, and
   await page.keyboard.press("Escape");
   await expect(dialog, "Escape works at once").toHaveCount(0);
   await expect(rowDelete).toBeFocused();
-});
-
-// The delete itself, as far as the gate may take it: the press is real, the
-// write guard holds its answer, and then answers it as an action the server
-// does not know, so the menu comes back. The press is a deliberate Tab then
-// Enter on a stopped clock, in the same instant the dialog opened: a key is
-// never held back, and never dropped without a word (D-119). While the
-// answer is held the screen is what a confirmed delete shows: the dialog
-// gone, the page live, the row gone, focus in the next row's name field,
-// and the sentence in the log.
-test("a delete confirmed by Tab then Enter, at once, closes the dialog first, moves focus to a name field, says so, and comes back when the server cannot take it", async ({
-  page,
-}) => {
-  await page.clock.install();
-  const writes = expectWrites(page, { hold: true });
-  const { withSections } = ownerFixture();
-  const names = await openMenus(page);
-  const index = names.indexOf(withSections.name);
-  const neighbor = names[index + 1] ?? names[index - 1] ?? "";
-  const rowDelete = rowButton(page, strings.remove, withSections.name);
-  const { dialog, keep, confirm } = confirmation(page, withSections);
-
-  await stopClock(page);
-  await rowDelete.focus();
-  await page.keyboard.press("Enter");
-  await expect(keep).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(confirm).toBeFocused();
-  await page.keyboard.press("Enter");
-  await page.clock.resume();
-
-  await expect(dialog, "the dialog closes").toHaveCount(0);
-  await expect
-    .poll(() => writes.answered.length, {
-      message: "the delete is on its way, and held",
-    })
-    .toBeGreaterThan(0);
-  await expect(page.locator("[inert]"), "the page is live again").toHaveCount(
-    0,
-  );
-  expect(await menuNames(page), "the row is gone").toEqual(
-    names.filter((name) => name !== withSections.name),
-  );
-  await expect(
-    nameField(page, neighbor),
-    "focus is in the next row's name field",
-  ).toBeFocused();
-  await expect(
-    log(page).getByText(fill(strings.deleted, { menu: withSections.name }), {
-      exact: true,
-    }),
-    "the delete is said once",
-  ).toHaveCount(1);
-
-  writes.release();
-  const failure = deleteFailure(withSections.name);
-  await expect(savedStatus(page)).toHaveText(failure);
-  expect(await menuNames(page), "the menu is back").toEqual(names);
-  await expect(rowDelete, "focus is back on its Delete").toBeFocused();
-  await expect(
-    log(page).getByText(failure, { exact: true }),
-    "the failure is said once",
-  ).toHaveCount(1);
 });
 
 // The other side of the double-tap guard: once its half second is over, a
@@ -713,57 +365,4 @@ test("a press with no pointer behind it, the kind a screen reader sends, confirm
   writes.release();
   await expect(savedStatus(page)).toHaveText(deleteFailure(withSections.name));
   expect(await menuNames(page), "the menu is back").toEqual(names);
-});
-
-test("Delete on a menu with no sections asks nothing, and the menu comes back when the server cannot take it", async ({
-  page,
-}) => {
-  const writes = expectWrites(page, { hold: true });
-  const { empty } = ownerFixture();
-  const names = await openMenus(page);
-  const rowDelete = rowButton(page, strings.remove, empty.name);
-
-  await rowDelete.focus();
-  await page.keyboard.press("Enter");
-  await expect
-    .poll(() => writes.answered.length, {
-      message: "the delete is on its way, and held",
-    })
-    .toBeGreaterThan(0);
-  await expect(
-    page.getByRole("alertdialog"),
-    "an empty menu goes at once",
-  ).toHaveCount(0);
-  expect(await menuNames(page), "the row is gone").toEqual(
-    names.filter((name) => name !== empty.name),
-  );
-  await expect(
-    log(page).getByText(fill(strings.deleted, { menu: empty.name }), {
-      exact: true,
-    }),
-  ).toHaveCount(1);
-
-  writes.release();
-  const failure = deleteFailure(empty.name);
-  await expect(savedStatus(page)).toHaveText(failure);
-  expect(await menuNames(page), "the menu is back").toEqual(names);
-  await expect(rowDelete, "focus is back on its Delete").toBeFocused();
-  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
-});
-
-// D-128: every row has a visible heading with its saved name.
-test("every menu's row has one heading, its saved name", async ({ page }) => {
-  await expectRowHeadings(page, menusPath);
-});
-
-test("three menus added with Enter without waiting each stay on the page, are sent in turn, and are said once", async ({
-  page,
-}) => {
-  await expectBurstKeepsEveryName(page, menusPath, {
-    newLabel: strings.newLabel,
-    removeName: (menu) =>
-      fill(strings.rowAction, { action: editing.removeUnsaved, menu }),
-    notAdded: (menu) => fill(strings.notAdded, { menu }),
-    removed: (menu) => fill(strings.removed, { menu }),
-  });
 });
