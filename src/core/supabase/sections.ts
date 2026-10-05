@@ -89,23 +89,25 @@ export async function listOwnerSections(
 // A new section goes last, with a name only. The trigger takes its
 // restaurant from the menu. Two tabs adding at once can draw the same sort;
 // the read's tie-break keeps the order steady and the next reorder
-// renumbers.
+// renumbers. The same read counts the live sections, so an add can say how
+// many there are once it is in, whatever waited ahead of it on the page
+// (D-125).
 export async function addOwnerSection(
   client: SupabaseClient,
   menuId: string,
   name: string,
-): Promise<SectionWriteResult<OwnerSection>> {
+): Promise<SectionWriteResult<{ section: OwnerSection; total: number }>> {
   const last = await client
     .from("sections")
-    .select("sort")
+    .select("sort", { count: "exact" })
     .eq("menu_id", menuId)
     .is("deleted_at", null)
     .order("sort", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (last.error) return failed;
-  const highest = z.object({ sort: z.number() }).safeParse(last.data);
-  const sort = (highest.success ? highest.data.sort : 0) + 1;
+    .limit(1);
+  if (last.error || last.count === null) return failed;
+  const highest = z.array(z.object({ sort: z.number() })).safeParse(last.data);
+  const top = highest.success ? highest.data[0] : undefined;
+  const sort = (top ? top.sort : 0) + 1;
 
   const { data, error } = await client
     .from("sections")
@@ -114,7 +116,12 @@ export async function addOwnerSection(
     .single();
   if (error) return error.message === NO_MENU ? notFound : refused(error.code);
   const row = rowSchema.safeParse(data);
-  return row.success ? { ok: true, value: toSection(row.data) } : failed;
+  return row.success
+    ? {
+        ok: true,
+        value: { section: toSection(row.data), total: last.count + 1 },
+      }
+    : failed;
 }
 
 // Writes one of a section's texts. Under row level security a section the

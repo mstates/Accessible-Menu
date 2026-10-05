@@ -58,7 +58,6 @@ export default async function RestaurantMenusPage({ params }: Props) {
       <MenuList
         strings={strings}
         editing={en.owner.editing}
-        pendingLabel={en.ui.pending}
         code={restaurant.code}
         menus={menus}
       />

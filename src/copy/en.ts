@@ -243,6 +243,12 @@ export const en = {
       savedAgain: "All changes saved.",
       // Said once when a field's save lands; the saved status is never spoken.
       fieldSaved: "Saved.",
+      // A name sent from the add field shows at once as a row with this
+      // under it, until it lands (D-125).
+      notSavedYet: "Not saved yet.",
+      // The one button on an added row that failed: it was never saved, so
+      // it is removed, not deleted, and nothing is left to undo.
+      removeUnsaved: "Remove",
       tryAgain: "Try again",
       reload: "Reload",
       undo: "Undo",
@@ -292,6 +298,7 @@ export const en = {
       alreadyFirst: "{menu} is already first.",
       alreadyLast: "{menu} is already last.",
       deleted: "{menu} deleted. Undo is available.",
+      removed: "{menu} removed.",
       notSaved: "Name of {menu} was not saved.",
       notAdded: "{menu} was not added.",
       notMoved: "{menu} was not moved.",
@@ -360,6 +367,7 @@ export const en = {
       alreadyFirst: "{section} is already first.",
       alreadyLast: "{section} is already last.",
       deleted: "{section} deleted. Undo is available.",
+      removed: "{section} removed.",
       notSaved: {
         name: "Name of {section} was not saved.",
         note: "Note for {section} was not saved.",

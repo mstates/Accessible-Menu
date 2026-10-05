@@ -16,11 +16,14 @@ import {
 // restaurant's code must be the configured one (D-100), and it must have
 // the menus the menus checks read and the sections the sections checks
 // read. Messages name counts, codes, and the test menus' names, never a
-// token. A failure after sign-in signs out first, since the teardown has no
-// session file to work from yet.
+// token, and say how to fix the data: one file, run by hand in the SQL
+// editor, since the gate never writes (D-126). A failure after sign-in signs
+// out first, since the teardown has no session file to work from yet.
 
 const MENUS_NEEDED = 3;
 const SECTIONS_NEEDED = 3;
+const FIX_DATA =
+  "Run supabase/checks/ci_diner.sql in the Supabase SQL editor, then re-run the failed jobs.";
 
 const listedMenus = z.array(z.object({ id: z.string(), name: z.string() }));
 const heldSections = z.array(z.object({ menu_id: z.string() }));
@@ -67,8 +70,8 @@ setup(
         );
       }
       // The menus checks read three rows: a first, a last, and one between
-      // with both moves on. The gate never writes, so the menus were made by
-      // hand, and their absence stops the run here with the reason.
+      // with both moves on. The gate never writes, so the menus come from
+      // the data file, and their absence stops the run here with the reason.
       const menus = await supabase
         .from("menus")
         .select("id", { count: "exact", head: true })
@@ -79,14 +82,14 @@ setup(
       const count = menus.count ?? 0;
       if (count < MENUS_NEEDED) {
         throw new Error(
-          `the test restaurant (${env.code}) needs three menus, found ${count}. See the Build plan, Phase 1, the menus note (Michael, by hand).`,
+          `the test restaurant (${env.code}) needs three menus, found ${count}. ${FIX_DATA}`,
         );
       }
       // The sections checks read one menu with a first section, a last one,
       // and one between, and the delete checks also need a menu with none.
       // Which menus those are is found here, in the order the page shows
       // them, and handed to the specs, since a menu's page is named by its
-      // id. The gate never writes, so the sections were made by hand.
+      // id. The gate never writes, so the sections come from the data file.
       const menuRows = await supabase
         .from("menus")
         .select("id, name")
@@ -122,7 +125,7 @@ setup(
           .map((menu) => `${menu.name} ${menu.sections}`)
           .join(", ");
         throw new Error(
-          `the test restaurant (${env.code}) needs one menu with three sections and one menu with none; found ${found}. See the Build plan, Phase 1, the sections note (Michael, by hand).`,
+          `the test restaurant (${env.code}) needs one menu with three sections and one menu with none; found ${found}. ${FIX_DATA}`,
         );
       }
       const fixture: OwnerFixture = {

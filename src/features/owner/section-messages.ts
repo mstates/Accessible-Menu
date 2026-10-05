@@ -85,6 +85,17 @@ export function sectionCount(strings: SectionStrings, count: number): string {
   });
 }
 
+// An add that landed, with how many sections the menu has now: "Mains
+// added. 2 sections." The number comes from the server, so adds waiting
+// behind one another never count wrong (D-125).
+export function addedSentence(
+  strings: SectionStrings,
+  section: string,
+  total: number,
+): string {
+  return fill(strings.added, { section, count: sectionCount(strings, total) });
+}
+
 // What was not saved, by field: "Note for Starters was not saved."
 export function notSavedSentence(
   strings: SectionStrings,

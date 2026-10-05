@@ -90,11 +90,12 @@ function fromWrite(
   }
 }
 
+// The added section, and how many sections the menu has now that it is in.
 export async function addSection(
   rawCode: string,
   rawMenu: string,
   rawName: string,
-): Promise<SectionActionResult<OwnerSection>> {
+): Promise<SectionActionResult<{ section: OwnerSection; total: number }>> {
   const scope = await menuScope(rawCode, rawMenu);
   if (!scope.ok) return scope;
   const name = cleanSectionText(

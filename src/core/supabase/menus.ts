@@ -137,22 +137,24 @@ export async function countOwnerMenuSections(
 
 // A new menu goes last. Two tabs adding at once can draw the same sort; the
 // read's tie-break keeps the order steady and the next reorder renumbers.
+// The same read counts the live menus, so an add can say how many there are
+// once it is in, whatever waited ahead of it on the page (D-125).
 export async function addOwnerMenu(
   client: SupabaseClient,
   restaurantId: string,
   name: string,
-): Promise<MenuWriteResult<OwnerMenu>> {
+): Promise<MenuWriteResult<{ menu: OwnerMenu; total: number }>> {
   const last = await client
     .from("menus")
-    .select("sort")
+    .select("sort", { count: "exact" })
     .eq("restaurant_id", restaurantId)
     .is("deleted_at", null)
     .order("sort", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (last.error) return failed;
-  const highest = z.object({ sort: z.number() }).safeParse(last.data);
-  const sort = (highest.success ? highest.data.sort : 0) + 1;
+    .limit(1);
+  if (last.error || last.count === null) return failed;
+  const highest = z.array(z.object({ sort: z.number() })).safeParse(last.data);
+  const top = highest.success ? highest.data[0] : undefined;
+  const sort = (top ? top.sort : 0) + 1;
 
   const { data, error } = await client
     .from("menus")
@@ -161,7 +163,9 @@ export async function addOwnerMenu(
     .single();
   if (error) return refused(error.code);
   const row = rowSchema.safeParse(data);
-  return row.success ? { ok: true, value: toMenu(row.data) } : failed;
+  return row.success
+    ? { ok: true, value: { menu: toMenu(row.data), total: last.count + 1 } }
+    : failed;
 }
 
 // Under row level security a menu the caller does not own matches zero rows

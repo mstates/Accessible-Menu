@@ -76,10 +76,11 @@ function fromWrite(
   }
 }
 
+// The added menu, and how many menus there are now that it is in.
 export async function addMenu(
   rawCode: string,
   rawName: string,
-): Promise<MenuActionResult<OwnerMenu>> {
+): Promise<MenuActionResult<{ menu: OwnerMenu; total: number }>> {
   const scope = await ownerScope(rawCode);
   if (!scope.ok) return scope;
   const name = readName(rawName);

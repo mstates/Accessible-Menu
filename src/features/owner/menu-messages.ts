@@ -69,6 +69,17 @@ export function menuCount(strings: MenuStrings, count: number): string {
   });
 }
 
+// An add that landed, with how many menus there are now: "Brunch added. 4
+// menus." The number comes from the server, so adds waiting behind one
+// another never count wrong (D-125).
+export function addedSentence(
+  strings: MenuStrings,
+  menu: string,
+  total: number,
+): string {
+  return fill(strings.added, { menu, count: menuCount(strings, total) });
+}
+
 // What a delete asks before it takes sections with it (D-119), which is
 // also the confirmation's name: "Delete Lunch, with its 4 sections?"
 export function deleteQuestion(

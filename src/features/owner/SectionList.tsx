@@ -23,6 +23,19 @@ import { Button } from "@/ui/Button";
 import { TextField } from "@/ui/TextField";
 import { AutosaveTextField } from "./editing/AutosaveTextField";
 import { commitOf } from "./editing/commit";
+import {
+  addFailed,
+  addLanded,
+  addSentAgain,
+  addsAsRows,
+  addsShown,
+  enterAdd,
+  failureKeyOf,
+  isAddFailure,
+  removeAdd,
+  settleAdds,
+  type PendingAdd,
+} from "./editing/pending-adds";
 import { SavedStatus } from "./editing/SavedStatus";
 import {
   afterUndo,
@@ -40,13 +53,13 @@ import {
   setSectionText,
 } from "./section-actions";
 import {
+  addedSentence,
   edgeSentence,
   failureSentence,
   movedSentence,
   notSavedSentence,
   notUndoneSentence,
   problemText,
-  sectionCount,
   sectionUndoSchema,
   undoLabel,
   undoneSentence,
@@ -57,7 +70,6 @@ import {
 type Props = {
   strings: Copy["owner"]["sections"];
   editing: Copy["owner"]["editing"];
-  pendingLabel: string;
   code: string;
   menuId: string;
   // The menu's sections that are not deleted, in order, as the server holds
@@ -104,7 +116,10 @@ function buttonId(id: string, action: Direction | "delete"): string {
 // section holds no dishes yet, and Undo brings it back (D-119). One saved
 // status and one Undo sit above the list. The status is never spoken; a
 // field that saves, a failure, a move, a delete, an add, and an Undo are
-// said once through the log at the end (D-118).
+// said once through the log at the end (D-118). A name added with Enter
+// leaves the field at once and shows as a row marked not saved yet, its add
+// waiting its turn behind every save before it; nothing typed is dropped or
+// erased (D-125).
 //
 // The handlers below repeat MenuList's, in the same order under the same
 // names. This is their second use; the third, the dishes inside a section,
@@ -120,7 +135,6 @@ export function SectionList(props: Props) {
 function SectionRows({
   strings,
   editing: words,
-  pendingLabel,
   code,
   menuId,
   sections,
@@ -131,7 +145,17 @@ function SectionRows({
   const [shown, change] = useOptimistic(sections, applyChange);
   const [newName, setNewName] = useState("");
   const [blankAdd, setBlankAdd] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+
+  // Names sent from the add field that the list does not show yet (D-125).
+  // Each new list from the server holds every add that had landed by then,
+  // so those rows give way to their real ones in the same render.
+  const [adds, setAdds] = useState<PendingAdd[]>([]);
+  const [listed, setListed] = useState(sections);
+  if (listed !== sections) {
+    setListed(sections);
+    setAdds(settleAdds);
+  }
+  const lastAdd = useRef(0);
 
   // Where focus belongs after the list next changes. React moves a row's
   // node when the row travels down, and the browser drops focus when it
@@ -447,8 +471,10 @@ function SectionRows({
   // The add form is an explicit submit, Enter or the button. A name that was
   // typed and not added counts as a failed save: a link stays and the leave
   // warning shows. An empty submit has nothing to lose, so it only says why.
+  // A name that passes leaves the field at once and shows as a row marked
+  // not saved yet; its add is sent in turn, behind every save before it, so
+  // an add pressed while another is on its way is never dropped (D-125).
   function add() {
-    if (adding) return;
     const value = cleanSectionText("name", newName);
     const refuse = (problem: SectionProblem, name: string) => {
       const text = describe(problem, name);
@@ -473,48 +499,81 @@ function SectionRows({
       refuse({ kind: "invalid", rule }, value);
       return;
     }
-    const other = nameTaken(shown, null, value);
+    const other = nameTaken([...shown, ...addsAsRows(adds)], null, value);
     if (other) {
       refuse({ kind: "name-taken" }, other.name);
       return;
     }
-    const count = shown.length + 1;
-    setAdding(true);
+    lastAdd.current += 1;
+    const key = String(lastAdd.current);
+    setNewName("");
+    editing.reset(ADD_KEY);
+    setAdds((current) => enterAdd(current, key, value));
+    send(key, value);
+  }
+
+  // One add, sent once every save before it has finished. It says its own
+  // sentence when it lands, with the count the server gives. A failure keeps
+  // the row, with its error, and leaves focus where the owner has it.
+  function send(key: string, value: string) {
     startTransition(async () => {
       await editing.run(async () => {
         const result = await editing.call(() =>
           addSection(code, menuId, value),
         );
-        setAdding(false);
         if (!result.ok) {
-          refuse(result.problem, value);
+          const text = describe(result.problem, value);
+          setAdds((current) => addFailed(current, key));
+          editing.failField(failureKeyOf(key), {
+            fieldId: addFieldId,
+            problem: text,
+            sentence: failureSentence(
+              fill(strings.notAdded, { section: value }),
+              text,
+            ),
+            value,
+          });
           return;
         }
-        setNewName("");
-        editing.reset(ADD_KEY);
+        const { section, total } = result.value;
+        setAdds((current) => addLanded(current, key, section.id));
+        editing.reset(failureKeyOf(key));
         editing.landed();
         undo.replace(
           pushUndo<SectionUndo>(undo.peek(), {
             kind: "add",
-            id: result.value.id,
-            name: result.value.name,
+            id: section.id,
+            name: section.name,
           }),
         );
-        announce(
-          fill(strings.added, {
-            section: result.value.name,
-            count: sectionCount(strings, count),
-          }),
-        );
+        announce(addedSentence(strings, section.name, total));
       });
     });
   }
 
+  // A failed add's Remove. It was never saved, so nothing is sent and there
+  // is nothing to undo. Focus goes to the add field, where it can be typed
+  // again.
+  function removeUnsaved(entry: PendingAdd) {
+    setAdds((current) => removeAdd(current, entry.key));
+    editing.reset(failureKeyOf(entry.key));
+    document.getElementById(addFieldId)?.focus();
+    announce(fill(strings.removed, { section: entry.name }));
+  }
+
   // Focus goes to the first failed field, so it never rests on a control
   // that is about to leave the page, and every failed field is sent again.
+  // Failed adds go first, in the order they were added, each from its own
+  // place in the list.
   function tryAgain() {
     editing.focusFirstFailed();
+    for (const entry of adds) {
+      if (entry.phase !== "failed") continue;
+      setAdds((current) => addSentAgain(current, entry.key));
+      send(entry.key, entry.name);
+    }
     for (const key of Object.keys(editing.peek().failures)) {
+      if (isAddFailure(key)) continue;
       if (key === ADD_KEY) {
         add();
         continue;
@@ -530,6 +589,7 @@ function SectionRows({
 
   const newest = newestUndo(undo.stack);
   const addProblem = editing.failures[ADD_KEY]?.problem ?? blankAdd;
+  const unsaved = addsShown(adds, new Set(shown.map((section) => section.id)));
 
   return (
     <>
@@ -547,7 +607,7 @@ function SectionRows({
         </Button>
       </div>
 
-      {shown.length > 0 ? (
+      {shown.length + unsaved.length > 0 ? (
         <ul className="mt-6 flex flex-col gap-4">
           {shown.map((section, index) => {
             // Every field and button names its section. A field's label is
@@ -624,6 +684,45 @@ function SectionRows({
               </li>
             );
           })}
+          {unsaved.map((entry) => {
+            // A name sent from the add field, not in the list yet (D-125).
+            // Until it lands it is text only: no field and no buttons, so
+            // nothing can rename, move, or delete it. A failed one shows its
+            // error and the one button that takes it out.
+            const problem =
+              entry.phase === "failed"
+                ? editing.failures[failureKeyOf(entry.key)]?.problem
+                : undefined;
+            return (
+              <li
+                key={`add-${entry.key}`}
+                className="flex flex-col gap-3 rounded border border-dashed border-border p-4"
+              >
+                <p className="font-semibold">{entry.name}</p>
+                {entry.phase === "landed" ? null : (
+                  <p className="text-sm text-foreground-muted">
+                    {words.notSavedYet}
+                  </p>
+                )}
+                {problem ? (
+                  <p className="text-sm font-semibold">{problem}</p>
+                ) : null}
+                {entry.phase === "failed" ? (
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      aria-label={fill(strings.rowAction, {
+                        action: words.removeUnsaved,
+                        section: entry.name,
+                      })}
+                      onPress={() => removeUnsaved(entry)}
+                    >
+                      {words.removeUnsaved}
+                    </Button>
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <p className="mt-6">{strings.none}</p>
@@ -652,9 +751,7 @@ function SectionRows({
           errorMessage={addProblem ?? undefined}
         />
         <div>
-          <Button type="submit" isPending={adding} pendingLabel={pendingLabel}>
-            {strings.add}
-          </Button>
+          <Button type="submit">{strings.add}</Button>
         </div>
       </Form>
     </>

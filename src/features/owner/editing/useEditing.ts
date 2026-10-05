@@ -14,17 +14,18 @@ import { useAnnounce } from "@/core/a11y/announcer";
 import { useNavigationGuard, type NavigationGuard } from "@/ui/NavigationGuard";
 import { useReportPending } from "@/ui/NavigationStatus";
 import { afterHold, leaveOf } from "./leave";
+import { saveQueue } from "./queue";
 import { saysSaved, saysSavedAgain, type Landing } from "./spoken";
 import { statusOf } from "./status";
 
 // The state every editing screen keeps (D-111): what is on its way, what
 // failed, what the owner typed and has not saved, and the rules that follow
 // from it. Saves run one after another, in the order they were made, and
-// each one records its own outcome before the next starts. A save that
-// throws, a dropped connection or an action the server no longer knows,
-// becomes a result and never reaches the error boundary (Q-41). The status
-// is never spoken; a field whose save lands says "Saved." once, and a
-// failure is said once, through the page's log (D-118). A link waits for
+// each one records its own outcome before the next starts (queue.ts). A
+// save that throws, a dropped connection or an action the server no longer
+// knows, becomes a result and never reaches the error boundary (Q-41). The
+// status is never spoken; a field whose save lands says "Saved." once, and
+// a failure is said once, through the page's log (D-118). A link waits for
 // saves on their way and stays when one has failed, and leaving the document
 // with anything unsaved raises the browser's own warning.
 
@@ -101,7 +102,7 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
     failed: 0,
     owed: false,
   });
-  const tail = useRef<Promise<void>>(Promise.resolve());
+  const [queue] = useState(saveQueue);
 
   const status = statusOf({
     inFlight,
@@ -125,20 +126,15 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
     async (work: () => Promise<void>): Promise<void> => {
       live.current.inFlight += 1;
       addInFlight(1);
-      const before = tail.current;
-      let finish = () => {};
-      tail.current = new Promise<void>((resolve) => {
-        finish = resolve;
+      await queue.run(async () => {
+        try {
+          await work();
+        } finally {
+          live.current.inFlight -= 1;
+        }
       });
-      await before;
-      try {
-        await work();
-      } finally {
-        live.current.inFlight -= 1;
-        finish();
-      }
     },
-    [addInFlight],
+    [addInFlight, queue],
   );
 
   // Calls a server action and turns anything thrown into a result.
@@ -307,7 +303,7 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
       }
       const failedBefore = live.current.failed;
       setHolding(true);
-      void tail.current.then(() => {
+      void queue.idle().then(() => {
         const next = afterHold({
           failedFields: Object.keys(live.current.failures).length,
           failedWhileHeld: live.current.failed !== failedBefore,
@@ -321,7 +317,7 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
       });
       return "hold";
     },
-    [announce, focusFirstFailed, router],
+    [announce, focusFirstFailed, queue, router],
   );
   useNavigationGuard(guard);
 
