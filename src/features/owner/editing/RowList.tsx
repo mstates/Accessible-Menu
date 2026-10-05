@@ -15,18 +15,23 @@ type Props<
   Row extends ListRow,
   Field extends string,
   Other extends { kind: string },
+  OwnField extends string,
 > = {
-  list: RowListState<Row, Field, Other>;
+  list: RowListState<Row, Field, Other, OwnField>;
+  // A lead for the rows, between the status and the list. A page whose
+  // own texts come first puts what it says about its rows here, right above
+  // them.
+  intro?: string;
   // What the screen adds after the add form: a section's page puts the
   // section's move here, under the same status and the same Undo.
   children?: ReactNode;
 };
 
-// One editing list on the page (D-128): the saved status and Undo, then the
-// rows, then the add form. Every list is drawn here, so every row is the
-// same row: a heading with the saved name, the name field, any other text
-// the row has, then the link to the row's own page, Move up, Move down, and
-// Delete.
+// One editing list on the page (D-128): the page's own texts when it has
+// them (D-135), the saved status and Undo, then the rows, then the add
+// form. Every list is drawn here, so every row is the same row: a heading
+// with the saved name, the name field, any other text the row has, then the
+// link to the row's own page, Move up, Move down, and Delete.
 //
 // The heading is what a screen reader moves by, row to row, once a list is
 // long. It shows the saved name, never what is being typed, as the buttons'
@@ -37,12 +42,32 @@ export function RowList<
   Row extends ListRow,
   Field extends string,
   Other extends { kind: string } = never,
->({ list, children }: Props<Row, Field, Other>) {
-  const { words, fields, link, editing, shown, unsaved } = list;
+  OwnField extends string = never,
+>({ list, intro, children }: Props<Row, Field, Other, OwnField>) {
+  const { words, fields, link, editing, shown, unsaved, own } = list;
   const { strings, editing: editingWords } = words;
 
   return (
     <>
+      {own ? (
+        // The page is the record these texts belong to, so their labels do
+        // not name it.
+        <div className="mt-6 flex flex-col gap-4">
+          {own.fields.map((field) => {
+            const spec = own.words.fields[field];
+            return (
+              <AutosaveTextField
+                key={field}
+                {...own.fieldOf(field)}
+                label={spec.label}
+                description={spec.hint}
+                multiline={spec.multiline}
+              />
+            );
+          })}
+        </div>
+      ) : null}
+
       <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
         <SavedStatus
           strings={editingWords}
@@ -59,6 +84,8 @@ export function RowList<
           {list.undoText ?? editingWords.undo}
         </Button>
       </div>
+
+      {intro ? <p className="mt-6 text-foreground-muted">{intro}</p> : null}
 
       {shown.length + unsaved.length > 0 ? (
         <ul className="mt-6 flex flex-col gap-4">

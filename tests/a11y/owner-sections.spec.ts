@@ -22,8 +22,8 @@ import { guardWrites } from "./write-guard";
 // clock tests run on the menus page, since the dialog is one piece for
 // every list. This file holds what is a menu's page's own. Typing, real
 // saves and the "Saved." they say (D-118), add, a delete that lands, Undo
-// with something to undo, a name that is taken, and a note that is too long
-// are covered by the unit tests and by hand. Which section holds dishes and
+// with something to undo, and a name that is taken are covered by the unit
+// tests and by hand. Which section holds dishes and
 // which holds none comes from the setup.
 //
 // A menu's page is named by its id, which the setup finds and writes down,
@@ -68,23 +68,10 @@ listRowChecks({
   words: strings,
   path: sectionsPath,
   h1: () => ownerFixture().withSections.name,
-  rowFields: [
-    {
-      name: (section) =>
-        `${strings.noteLabel} ${fill(strings.labelFor, { section })}`,
-      hint: strings.noteHint,
-      multiline: true,
-    },
-    {
-      name: (section) =>
-        `${strings.everyItemLabel} ${fill(strings.everyItemIn, { section })}`,
-      hint: strings.everyItemHint,
-      multiline: false,
-    },
-  ],
-  // The name, the note, the every-dish line, and Move up, Move down, and
-  // Delete; the add field, Add, and Undo.
-  rowControls: 6,
+  // The name field and Move up, Move down, and Delete; the add field, Add,
+  // and Undo. A section's note and every-dish line are on its own page
+  // (D-135), so its row is the row every list has.
+  rowControls: 4,
   pageControls: 3,
   rowLink: {
     label: strings.editDishes,

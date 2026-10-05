@@ -66,10 +66,11 @@ listRowChecks({
   words: strings,
   path: dishesPath,
   h1: () => ownerFixture().withDishes.name,
-  // The name field and Move up, Move down, and Delete; the add field, Add,
-  // Undo, and the move's Select and button.
+  // The name field and Move up, Move down, and Delete; the section's note
+  // and every-dish line, the add field, Add, Undo, and the move's Select
+  // and button.
   rowControls: 4,
-  pageControls: 5,
+  pageControls: 7,
   // The breadcrumb's link to the section's menu.
   leaveLink: (page) =>
     breadcrumb(page).getByRole("link", {
@@ -119,6 +120,22 @@ async function dishNames(page: Page): Promise<string[]> {
     .evaluateAll((fields) =>
       fields.map((field) => (field as HTMLInputElement).value),
     );
+}
+
+// The section's own texts at the top of its page (D-135). The page is the
+// section, so their names do not repeat it.
+function noteField(page: Page) {
+  return page.getByRole("textbox", {
+    name: strings.section.noteLabel,
+    exact: true,
+  });
+}
+
+function everyItemField(page: Page) {
+  return page.getByRole("textbox", {
+    name: strings.section.everyItemLabel,
+    exact: true,
+  });
 }
 
 // The list is ready to press once the page has hydrated.
@@ -189,6 +206,94 @@ test("a section's page is named for its section, its title names its menu, the b
     }),
     "the breadcrumb comes before the h1",
   ).toBe(true);
+});
+
+// D-135, and WCAG 3.3.2: the sentence that says how the page saves comes
+// right after the h1, before the first field it governs; then the
+// section's two texts, then the status and Undo, then the dishes' own lead
+// right above the dishes.
+test("the section's note and every-dish line come first, after the sentence that says how they save, each with its hint", async ({
+  page,
+}) => {
+  await openDishes(page);
+  const note = noteField(page);
+  const everyItem = everyItemField(page);
+  await expect(note).toHaveCount(1);
+  await expect(everyItem).toHaveCount(1);
+  await expect(note).toHaveAccessibleDescription(strings.section.noteHint);
+  await expect(everyItem).toHaveAccessibleDescription(
+    strings.section.everyItemHint,
+  );
+  expect(
+    await note.evaluate((element) => element.tagName),
+    "the note takes several lines",
+  ).toBe("TEXTAREA");
+  expect(
+    await everyItem.evaluate((element) => element.tagName),
+    "the every-dish line is one line",
+  ).toBe("INPUT");
+
+  const main = page.locator("main");
+  const inOrder = [
+    main.locator("h1"),
+    main.getByText(strings.section.lead, { exact: true }),
+    note,
+    everyItem,
+    savedStatus(page),
+    main.getByText(strings.lead, { exact: true }),
+    rows(page).first(),
+  ];
+  for (const [index, locator] of inOrder.entries()) {
+    await expect(locator).toHaveCount(1);
+    const before = inOrder[index - 1];
+    if (!before) continue;
+    const next = await locator.elementHandle();
+    expect(
+      await before.evaluate(
+        (element, after) =>
+          after !== null &&
+          Boolean(
+            element.compareDocumentPosition(after) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+          ),
+        next,
+      ),
+      "the h1, the lead, the note, the every-dish line, the status, the dishes' lead, then the dishes, in that order",
+    ).toBe(true);
+  }
+});
+
+// It types nothing, so nothing may be sent or said; the write guard is the
+// proof that nothing was sent (D-118). Enter commits the every-dish line,
+// which is one line; in the note Enter is a line break, which would be
+// typing, so the note is only left, with Tab. The dimmed Move up after it
+// says one sentence at once, so the log is read after every commit has run.
+test("Tab through the section's unchanged note and Enter in its unchanged every-dish line send nothing and say nothing", async ({
+  page,
+}) => {
+  const names = await openDishes(page);
+  const first = names[0] ?? "";
+  const note = noteField(page);
+  const everyItem = everyItemField(page);
+
+  await note.focus();
+  await page.keyboard.press("Tab");
+  await expect(everyItem, "the every-dish line comes next").toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(everyItem).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(everyItem).not.toBeFocused();
+
+  await page
+    .getByRole("button", {
+      name: fill(strings.rowAction, { action: strings.moveUp, dish: first }),
+      exact: true,
+    })
+    .press("Enter");
+  await expect(log(page)).toHaveText(
+    fill(strings.alreadyFirst, { dish: first }),
+  );
+  await expect(savedStatus(page)).toHaveText(editing.saved);
 });
 
 // D-128: the row headings are checked with every list's; the page's one

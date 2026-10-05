@@ -119,10 +119,32 @@ export type OtherUndo<Other> = {
   >;
 };
 
+// The page's own texts, when the page is about one record and lists what it
+// holds: on a section's page, the section's note and its every-dish line
+// above its dishes (D-135). They are not a row of the list, but they share
+// its saved status, its queue, and its Undo (D-111), and they save, fail,
+// and are tried again the way a row's texts are.
+export type OwnTexts<OwnField extends string> = {
+  // The record: its id, and the name its sentences carry.
+  row: ListRow;
+  fields: readonly OwnField[];
+  words: ListWords<OwnField>;
+  valueOf: (field: OwnField) => string;
+  clean: (field: OwnField, value: string) => string;
+  rule: (field: OwnField, value: string) => string | null;
+  // With expected, the write is an Undo, as for a row's text.
+  setText: (
+    field: OwnField,
+    value: string,
+    expected?: string,
+  ) => Promise<ListResult<Record<OwnField, string>>>;
+};
+
 export type RowListConfig<
   Row extends ListRow,
   Field extends string,
   Other extends { kind: string } = never,
+  OwnField extends string = never,
 > = {
   words: ListWords<Field>;
   // The start of every element id: "menu-<id>-name", "menu-new-name".
@@ -144,6 +166,7 @@ export type RowListConfig<
   // The link to the row's own page, one level down.
   link?: { label: string; href: (row: Row) => string };
   other?: OtherUndo<Other>;
+  own?: OwnTexts<OwnField>;
 };
 
 type Direction = "up" | "down";
@@ -166,6 +189,24 @@ function applyChange<Row extends ListRow>(
 // the numbers its question shows, which stay as they were while it is open.
 type Asking = { id: string; name: string; held: Held };
 
+// Where a text lives, a row of the list or the page's own record, and all a
+// save of it needs to know: its key in the editing state, its element id,
+// its saved value, its rules and words, how it is sent, and the Undo entry
+// it leaves.
+type TextHome<F extends string> = {
+  row: ListRow;
+  words: ListWords<F>;
+  key: (field: F) => string;
+  id: (field: F) => string;
+  saved: (field: F) => string;
+  clean: (field: F, value: string) => string;
+  rule: (field: F, value: string) => string | null;
+  // The row of the list that already has this name, for a row's name only.
+  taken: (field: F, value: string) => ListRow | null;
+  send: (field: F, value: string) => Promise<ListResult<Record<F, string>>>;
+  entry: (field: F, from: string, to: string) => ListUndo;
+};
+
 const NAME = "name";
 const ADD_KEY = "add";
 
@@ -173,17 +214,22 @@ export function useRowList<
   Row extends ListRow,
   Field extends string,
   Other extends { kind: string } = never,
->(config: RowListConfig<Row, Field, Other>) {
-  const { words, idPrefix, rows, fields, actions, other } = config;
+  OwnField extends string = never,
+>(config: RowListConfig<Row, Field, Other, OwnField>) {
+  const { words, idPrefix, rows, fields, actions, other, own } = config;
   const announce = useAnnounce();
   const editing = useEditing(words.editing);
   const otherSchema = other?.schema;
+  const ownFields = own?.fields;
   const schema = useMemo(() => {
-    const list = listUndoSchema(fields.filter((field) => field !== NAME));
+    const list = listUndoSchema(
+      fields.filter((field) => field !== NAME),
+      ownFields,
+    );
     return (otherSchema ? z.union([list, otherSchema]) : list) as z.ZodType<
       ListUndo | Other
     >;
-  }, [fields, otherSchema]);
+  }, [fields, ownFields, otherSchema]);
   const undo = useUndoStack(config.undoKey, schema);
   const [shown, change] = useOptimistic(rows, applyChange<Row>);
   const [newName, setNewName] = useState("");
@@ -234,30 +280,81 @@ export function useRowList<
     return problemText(words, problem, name);
   }
 
-  function failText(
-    row: Row,
-    field: Field,
+  // A row's texts live in the row, and save through the list's own action.
+  function rowHome(row: Row): TextHome<Field> {
+    return {
+      row,
+      words,
+      key: (field) => fieldKey(field, row.id),
+      id: (field) => fieldId(field, row.id),
+      saved: (field) => config.valueOf(row, field),
+      clean: config.clean,
+      rule: config.rule,
+      taken: (field, value) =>
+        field === NAME ? nameTaken(shown, row.id, value) : null,
+      send: (field, value) => actions.setText(row.id, field, value),
+      entry: (field, from, to) =>
+        field === NAME
+          ? { kind: "rename", id: row.id, from, to }
+          : { kind: "text", field, id: row.id, name: row.name, from, to },
+    };
+  }
+
+  // The page's own texts live on the page, above the list, and save
+  // through their own action.
+  function ownHome(texts: OwnTexts<OwnField>): TextHome<OwnField> {
+    return {
+      row: texts.row,
+      words: texts.words,
+      key: (field) => `own:${field}`,
+      id: (field) => `${idPrefix}-own-${field}`,
+      saved: texts.valueOf,
+      clean: texts.clean,
+      rule: texts.rule,
+      taken: () => null,
+      send: (field, value) => texts.setText(field, value),
+      entry: (field, from, to) => ({
+        kind: "own",
+        field,
+        id: texts.row.id,
+        name: texts.row.name,
+        from,
+        to,
+      }),
+    };
+  }
+
+  function failText<F extends string>(
+    home: TextHome<F>,
+    field: F,
     problem: ListProblem,
     name: string,
     value: string,
   ) {
-    const text = describe(problem, name);
-    editing.failField(fieldKey(field, row.id), {
-      fieldId: fieldId(field, row.id),
+    const text = problemText(home.words, problem, name);
+    editing.failField(home.key(field), {
+      fieldId: home.id(field),
       problem: text,
-      sentence: failureSentence(notSavedSentence(words, field, row.name), text),
+      sentence: failureSentence(
+        notSavedSentence(home.words, field, home.row.name),
+        text,
+      ),
       value,
     });
   }
 
-  // One of a row's texts was committed. Nothing is sent unless the value
-  // changed. Try again passes force, which sends the value that failed once
-  // more.
-  function commitText(row: Row, field: Field, force = false) {
-    const key = fieldKey(field, row.id);
+  // One text was committed, a row's or the page's own. Nothing is sent
+  // unless the value changed. Try again passes force, which sends the value
+  // that failed once more.
+  function commitText<F extends string>(
+    home: TextHome<F>,
+    field: F,
+    force = false,
+  ) {
+    const key = home.key(field);
     const now = editing.peek();
     const typed = now.drafts[key] ?? null;
-    const saved = config.valueOf(row, field);
+    const saved = home.saved(field);
     const decision = commitOf(
       {
         saved,
@@ -265,7 +362,7 @@ export function useRowList<
         inFlight: now.sent[key] ?? null,
         failed: force ? null : (now.failures[key]?.value ?? null),
       },
-      (value) => config.clean(field, value),
+      (value) => home.clean(field, value),
     );
     if (decision.kind === "nothing") return;
     if (decision.kind === "reset") {
@@ -273,48 +370,30 @@ export function useRowList<
       return;
     }
     const value = decision.value;
-    const rule = config.rule(field, value);
+    const rule = home.rule(field, value);
     if (rule) {
-      failText(row, field, { kind: "invalid", rule }, value, value);
+      failText(home, field, { kind: "invalid", rule }, value, value);
       return;
     }
-    if (field === NAME) {
-      const taken = nameTaken(shown, row.id, value);
-      if (taken) {
-        failText(row, field, { kind: "name-taken" }, taken.name, value);
-        return;
-      }
+    const taken = home.taken(field, value);
+    if (taken) {
+      failText(home, field, { kind: "name-taken" }, taken.name, value);
+      return;
     }
     editing.sending(key, value);
     startTransition(async () => {
       await editing.run(async () => {
-        const result = await editing.call(() =>
-          actions.setText(row.id, field, value),
-        );
+        const result = await editing.call(() => home.send(field, value));
         editing.answered(key);
         if (!result.ok) {
-          failText(row, field, result.problem, value, value);
+          failText(home, field, result.problem, value, value);
           return;
         }
         editing.landedField(key, typed);
         undo.replace(
           pushUndo<ListUndo | Other>(
             undo.peek(),
-            field === NAME
-              ? {
-                  kind: "rename",
-                  id: row.id,
-                  from: row.name,
-                  to: result.value[nameField],
-                }
-              : {
-                  kind: "text",
-                  field,
-                  id: row.id,
-                  name: row.name,
-                  from: saved,
-                  to: result.value[field],
-                },
+            home.entry(field, saved, result.value[field]),
           ),
         );
       });
@@ -465,6 +544,12 @@ export function useRowList<
     remove(row, index, asking.held);
   }
 
+  // The words an entry's sentences are said in: the page's own texts have
+  // theirs, and every other change is the list's.
+  function wordsOf(entry: ListUndo): ListWords {
+    return entry.kind === "own" && own ? own.words : words;
+  }
+
   // The inverse of one change, and where it left the row in the list.
   async function reverse(
     entry: ListUndo,
@@ -486,6 +571,14 @@ export function useRowList<
         // Only if the field still holds what that change wrote.
         const result = await editing.call(() =>
           actions.setText(entry.id, entry.field as Field, entry.from, entry.to),
+        );
+        return result.ok ? { ok: true, ...nowhere } : result;
+      }
+      case "own": {
+        // The same, for a text of the page's own record.
+        if (!own) return { ok: false, problem: { kind: "gone" } };
+        const result = await editing.call(() =>
+          own.setText(entry.field as OwnField, entry.from, entry.to),
         );
         return result.ok ? { ok: true, ...nowhere } : result;
       }
@@ -551,15 +644,16 @@ export function useRowList<
           }
           return;
         }
+        const said = wordsOf(entry);
         const result = await reverse(entry);
         if (result.ok) {
           undo.replace(afterUndo(undo.peek(), "applied"));
           editing.landed();
-          announce(undoneSentence(words, entry, result.position, result.total));
+          announce(undoneSentence(said, entry, result.position, result.total));
           return;
         }
         undo.replace(afterUndo(undo.peek(), undoOutcome(result.problem)));
-        editing.failChange(notUndoneSentence(words, entry, result.problem));
+        editing.failChange(notUndoneSentence(said, entry, result.problem));
       });
     });
   }
@@ -666,11 +760,21 @@ export function useRowList<
         add();
         continue;
       }
+      if (own) {
+        const home = ownHome(own);
+        const field = own.fields.find(
+          (candidate) => home.key(candidate) === key,
+        );
+        if (field) {
+          commitText(home, field, true);
+          continue;
+        }
+      }
       for (const row of shown) {
         const field = fields.find(
           (candidate) => fieldKey(candidate, row.id) === key,
         );
-        if (field) commitText(row, field, true);
+        if (field) commitText(rowHome(row), field, true);
       }
     }
   }
@@ -684,18 +788,31 @@ export function useRowList<
     else editing.type(ADD_KEY, value);
   }
 
-  // What one field of one row shows, and what it does when it is typed in
-  // or committed.
-  function fieldOf(row: Row, name: Field) {
-    const key = fieldKey(name, row.id);
+  // What one text shows, and what it does when it is typed in or
+  // committed.
+  function textOf<F extends string>(home: TextHome<F>, field: F) {
+    const key = home.key(field);
     return {
-      id: fieldId(name, row.id),
-      value: editing.drafts[key] ?? config.valueOf(row, name),
+      id: home.id(field),
+      value: editing.drafts[key] ?? home.saved(field),
       error: editing.failures[key]?.problem ?? null,
       onChange: (value: string) => editing.type(key, value),
-      onCommit: () => commitText(row, name),
+      onCommit: () => commitText(home, field),
     };
   }
+
+  function fieldOf(row: Row, field: Field) {
+    return textOf(rowHome(row), field);
+  }
+
+  // The page's own texts, drawn above the list, or null when it has none.
+  const ownTexts = own
+    ? {
+        fields: own.fields,
+        words: own.words,
+        fieldOf: (field: OwnField) => textOf(ownHome(own), field),
+      }
+    : null;
 
   // A change the screen made that is not the list's own goes on the same
   // Undo stack.
@@ -716,7 +833,7 @@ export function useRowList<
     // The Undo control's whole name, or null when there is nothing to undo.
     undoText: newest
       ? isListUndo(newest)
-        ? undoLabel(words, newest)
+        ? undoLabel(wordsOf(newest), newest)
         : (other?.label(newest) ?? null)
       : null,
     addFieldId,
@@ -726,6 +843,7 @@ export function useRowList<
     question: asking ? deleteQuestion(words, asking.name, asking.held) : null,
     asks: config.held !== undefined,
     fieldOf,
+    own: ownTexts,
     buttonId,
     unsavedProblem: (entry: PendingAdd) =>
       entry.phase === "failed"
@@ -748,4 +866,5 @@ export type RowListState<
   Row extends ListRow,
   Field extends string,
   Other extends { kind: string } = never,
-> = ReturnType<typeof useRowList<Row, Field, Other>>;
+  OwnField extends string = never,
+> = ReturnType<typeof useRowList<Row, Field, Other, OwnField>>;

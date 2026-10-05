@@ -5,6 +5,7 @@ import type { Copy } from "@/copy";
 import { Announcer, useAnnounce } from "@/core/a11y/announcer";
 import type { OwnerDish } from "@/domain/dish";
 import type { OwnerMenu } from "@/domain/menu";
+import type { OwnerSection } from "@/domain/section";
 import {
   addDish,
   deleteDish,
@@ -12,10 +13,11 @@ import {
   orderDishes,
   renameDish,
   restoreDish,
+  setOwnSectionText,
 } from "./dish-actions";
 import { RowList } from "./editing/RowList";
 import { useRowList } from "./editing/useRowList";
-import { dishList } from "./lists";
+import { dishList, sectionTexts, type SectionOwnText } from "./lists";
 import { MoveSection } from "./MoveSection";
 import {
   moveNotUndone,
@@ -27,9 +29,14 @@ import {
 
 type Props = {
   strings: Copy["owner"]["dishes"];
+  // The section's own words: what the log says about its note and its
+  // every-dish line, and their rules.
+  sectionStrings: Copy["owner"]["sections"];
   editing: Copy["owner"]["editing"];
   code: string;
-  section: { id: string; name: string };
+  // The section, with its note and its every-dish line as the server holds
+  // them.
+  section: OwnerSection;
   // The menu the section is in, and the restaurant's other menus.
   menu: OwnerMenu;
   otherMenus: OwnerMenu[];
@@ -43,12 +50,13 @@ type Props = {
 // notice.
 const AFTER_THE_TITLE_MS = 100;
 
-// The dishes of one section (D-111, D-128): the shared list, with one field
-// a row, its name. A dish holds nothing, so its delete asks nothing and
-// Undo brings it back (D-119). A dish has no page of its own yet, so its
-// row has no link. Under the list sits the section's move to another menu
-// (D-129), which shares the list's saved status, its queue, and its Undo:
-// one of each a screen (D-111).
+// A section's own page (D-111, D-128, D-135): the section's note and its
+// every-dish line first, then the dishes, the shared list with one field a
+// row, its name. A dish holds nothing, so its delete asks nothing and Undo
+// brings it back (D-119). A dish has no page of its own yet, so its row has
+// no link. Under the list sits the section's move to another menu (D-129).
+// The section's texts and its move share the list's saved status, its
+// queue, and its Undo: one of each a screen (D-111).
 export function DishList(props: Props) {
   return (
     <Announcer>
@@ -59,6 +67,7 @@ export function DishList(props: Props) {
 
 function DishRows({
   strings,
+  sectionStrings,
   editing,
   code,
   section,
@@ -69,6 +78,10 @@ function DishRows({
   const words = useMemo(
     () => dishList.words(strings, editing),
     [strings, editing],
+  );
+  const ownWords = useMemo(
+    () => sectionTexts.words(sectionStrings, strings, editing),
+    [sectionStrings, strings, editing],
   );
   const sectionGone = strings.errors.parentGone;
 
@@ -97,7 +110,7 @@ function DishRows({
     owed.current = { menuId, sentence };
   }
 
-  const list = useRowList<OwnerDish, "name", SectionMove>({
+  const list = useRowList<OwnerDish, "name", SectionMove, SectionOwnText>({
     words,
     idPrefix: dishList.idPrefix,
     // Kept by the section, not by its menu: the page and its Undo stay with
@@ -115,6 +128,16 @@ function DishRows({
       remove: (id) => deleteDish(code, section.id, id),
       restore: (id, order) => restoreDish(code, section.id, id, order),
       order: (ids) => orderDishes(code, section.id, ids),
+    },
+    own: {
+      row: { id: section.id, name: section.name },
+      fields: sectionTexts.fields,
+      words: ownWords,
+      valueOf: (field) => section[field],
+      clean: sectionTexts.clean,
+      rule: sectionTexts.rule,
+      setText: (field, value, expected) =>
+        setOwnSectionText(code, section.id, field, value, expected),
     },
     other: {
       schema: sectionMoveSchema,
@@ -148,7 +171,7 @@ function DishRows({
   });
 
   return (
-    <RowList list={list}>
+    <RowList list={list} intro={strings.lead}>
       <MoveSection
         strings={strings.move}
         editing={editing}

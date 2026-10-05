@@ -3,7 +3,6 @@ import { cleanDishName, dishNameProblem } from "@/domain/dish";
 import { cleanMenuName, menuNameProblem } from "@/domain/menu";
 import {
   cleanSectionText,
-  SECTION_TEXTS,
   sectionTextProblem,
   type SectionText,
 } from "@/domain/section";
@@ -50,9 +49,9 @@ export const menuList: ListKind<"name", Copy["owner"]["menus"]> = {
   }),
 };
 
-export const sectionList: ListKind<SectionText, Copy["owner"]["sections"]> = {
+export const sectionList: ListKind<"name", Copy["owner"]["sections"]> = {
   idPrefix: "section",
-  fields: SECTION_TEXTS,
+  fields: NAME_ONLY,
   clean: cleanSectionText,
   rule: sectionTextProblem,
   words: (strings, editing) => ({
@@ -66,23 +65,58 @@ export const sectionList: ListKind<SectionText, Copy["owner"]["sections"]> = {
         suffix: strings.labelFor,
         notSaved: strings.notSaved.name,
       },
-      // The note takes several lines and saves only when it is left.
+    },
+  }),
+};
+
+// The texts of a section besides its name.
+export const SECTION_OWN_TEXTS = [
+  "note",
+  "everyItem",
+] as const satisfies readonly SectionText[];
+export type SectionOwnText = (typeof SECTION_OWN_TEXTS)[number];
+
+// A section's own texts, at the top of its own page, above its dishes
+// (D-120, D-135): the note, which takes several lines and saves only when
+// it is left, and the line shown with every dish. The page is the section,
+// so a label does not name it, while every sentence the log says still
+// does, since a sentence is heard on its own. The sentences, the rules, and
+// their messages are the section's, from its slice of copy; the labels and
+// hints are the page's. A section that is gone, or whose menu is, is the
+// page's own parent gone, so it is said in the page's words.
+export const sectionTexts = {
+  fields: SECTION_OWN_TEXTS,
+  clean: cleanSectionText,
+  rule: sectionTextProblem,
+  words: (
+    sections: Copy["owner"]["sections"],
+    dishes: Copy["owner"]["dishes"],
+    editing: EditingStrings,
+  ): ListWords<SectionOwnText> => ({
+    noun: "section",
+    strings: {
+      ...sections,
+      errors: { ...sections.errors, parentGone: dishes.errors.parentGone },
+    },
+    editing,
+    rules: sections.errors,
+    fields: {
       note: {
-        label: strings.noteLabel,
-        suffix: strings.labelFor,
-        hint: strings.noteHint,
+        label: dishes.section.noteLabel,
+        suffix: "",
+        hint: dishes.section.noteHint,
         multiline: true,
-        notSaved: strings.notSaved.note,
-        changed: strings.undo.note,
-        back: strings.undo.noteBack,
+        notSaved: sections.notSaved.note,
+        changed: sections.undo.note,
+        back: sections.undo.noteBack,
       },
       everyItem: {
-        label: strings.everyItemLabel,
-        suffix: strings.everyItemIn,
-        hint: strings.everyItemHint,
-        notSaved: strings.notSaved.everyItem,
-        changed: strings.undo.everyItem,
-        back: strings.undo.everyItemBack,
+        label: dishes.section.everyItemLabel,
+        suffix: "",
+        hint: dishes.section.everyItemHint,
+        notSaved: sections.notSaved.everyItem,
+        changed: sections.undo.everyItem,
+        back: sections.undo.everyItemBack,
       },
     },
   }),

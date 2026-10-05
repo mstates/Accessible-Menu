@@ -349,21 +349,16 @@ export const en = {
       },
     },
     // A menu's own page: its sections (D-120 to D-122). The page is named
-    // for its menu, so it has no title or heading here.
+    // for its menu, so it has no title or heading here. A section's note
+    // and its every-dish line are on the section's own page (D-135); the
+    // sentences about them stay here, with the section's other words.
     sections: {
-      lead: "Sections are the headings on this menu, like Starters and Mains. Each change saves when you leave its field.",
+      lead: "Sections are the headings on this menu, like Starters and Mains. Edit dishes opens a section's own page, with its dishes and its note. Each change saves when you leave its field.",
       none: "No sections yet. Add the first one below.",
       nameLabel: "Section name",
-      noteLabel: "Section note",
-      // Follows the label of the name and the note in hidden text, so every
-      // field names its section.
+      // Follows the name's label in hidden text, so every row's field names
+      // its section.
       labelFor: "for {section}",
-      noteHint:
-        "For the whole section. Diners read it once, under the section name.",
-      everyItemLabel: "Shown with every dish",
-      everyItemIn: "in {section}",
-      everyItemHint:
-        'For an option or side, like "Add spaghetti to any dish for 3 dollars." Diners read it with each dish in this section. Allergens still go on each dish.',
       moveUp: "Move up",
       moveDown: "Move down",
       remove: "Delete",
@@ -442,7 +437,7 @@ export const en = {
     // section, so it has no title or heading here. A dish has only its name
     // on this page; the rest is on the dish's own page.
     dishes: {
-      lead: "Dishes are the items in this section, like soup or a salad. Each change saves when you leave its field.",
+      lead: "Dishes are the items in this section, like soup or a salad.",
       none: "No dishes yet. Add the first one below.",
       nameLabel: "Dish name",
       labelFor: "for {dish}",
@@ -492,6 +487,18 @@ export const en = {
           "{dish} cannot come back while another dish is called {dish}.",
         renameBlocked:
           "The name {from} is taken by another dish, so this was not undone.",
+      },
+      // The section's own texts, at the top of its page (D-120, D-135).
+      // The page is the section, so the labels do not name it. The lead
+      // comes before the first field it governs.
+      section: {
+        lead: "Each change saves when you leave its field.",
+        noteLabel: "Note",
+        noteHint:
+          "For the whole section. Diners read it once, under the section name.",
+        everyItemLabel: "Shown with every dish",
+        everyItemHint:
+          'For an option or side, like "Add spaghetti to any dish for 3 dollars." Diners read it with each dish in this section. Allergens still go on each dish.',
       },
       // Moving the section itself to another menu of the restaurant, from
       // its own page (D-129). Nothing is sent until the button is pressed.

@@ -14,7 +14,6 @@ import {
 import { mergeOrder, type Held } from "@/domain/menu";
 import {
   cleanSectionText,
-  SECTION_TEXTS,
   sectionTextProblem,
   type OwnerSection,
 } from "@/domain/section";
@@ -29,8 +28,9 @@ import { menuScope } from "./owner-scope";
 // checked here and in menuScope, the menu is read as one of this
 // restaurant's that is not deleted before any write, and row level security
 // decides whether the rows are this owner's. A section moves to another
-// menu from its own page (dish-actions.ts), never from here, and nothing
-// here can publish (migrations 3 and 4).
+// menu, and its note and every-dish line are written, from its own page
+// (dish-actions.ts), never from here, and nothing here can publish
+// (migrations 3 and 4).
 
 type ServerProblem = Exclude<
   ListProblem,
@@ -42,7 +42,6 @@ export type SectionActionResult<Value = null> =
 
 const idSchema = z.uuid();
 const orderSchema = z.array(z.uuid()).min(1).max(500);
-const fieldSchema = z.enum(SECTION_TEXTS);
 const toldSchema = z.object({
   sections: z.number().int().min(0),
   dishes: z.number().int().min(0),
@@ -97,34 +96,33 @@ export async function addSection(
   };
 }
 
-// Writes a section's name, its note, or its every-dish line. With expected,
-// the write is an Undo: it happens only if the text is still the one the
-// change wrote, and never writes over a newer change.
-export async function setSectionText(
+// Writes a section's name. With expected, the write is an Undo: it happens
+// only if the name is still the one the change wrote, and never writes over
+// a newer change. A section's note and its every-dish line are written from
+// the section's own page (D-135).
+export async function renameSection(
   rawCode: string,
   rawMenu: string,
   rawId: string,
-  rawField: string,
-  rawValue: string,
+  rawName: string,
   expected?: string,
 ): Promise<SectionActionResult<OwnerSection>> {
   const scope = await menuScope(rawCode, rawMenu);
   if (!scope.ok) return scope;
   const id = idSchema.safeParse(rawId);
-  const field = fieldSchema.safeParse(rawField);
-  if (!id.success || !field.success) return gone;
-  // A value that is not text is not a cleared field: a blank note means
-  // none, so only a string may say so.
-  if (typeof rawValue !== "string") return refuse({ kind: "failed" });
-  const value = cleanSectionText(field.data, rawValue);
-  const rule = sectionTextProblem(field.data, value);
+  if (!id.success) return gone;
+  const name = cleanSectionText(
+    "name",
+    typeof rawName === "string" ? rawName : "",
+  );
+  const rule = sectionTextProblem("name", name);
   if (rule) return refuse({ kind: "invalid", rule });
   const result = await setOwnerSectionText(
     scope.client,
     scope.menuId,
     id.data,
-    field.data,
-    value,
+    "name",
+    name,
     typeof expected === "string" ? expected : undefined,
   );
   refresh();

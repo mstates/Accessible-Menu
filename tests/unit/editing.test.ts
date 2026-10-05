@@ -36,7 +36,9 @@ import {
 import {
   dishList,
   menuList,
+  SECTION_OWN_TEXTS,
   sectionList,
+  sectionTexts,
 } from "../../src/features/owner/lists";
 import {
   moveNotUndone,
@@ -58,10 +60,14 @@ const dishes = en.owner.dishes;
 const menuWords = menuList.words(strings, editing);
 const sectionWords = sectionList.words(sections, editing);
 const dishWords = dishList.words(dishes, editing);
+// A section's note and every-dish line, on its own page (D-135).
+const ownWords = sectionTexts.words(sections, dishes, editing);
 
-// The stored shape of each list's Undo entries.
+// The stored shape of each list's Undo entries. A section's page keeps the
+// section's own texts on its dishes' stack.
 const menuUndoSchema = listUndoSchema([]);
-const sectionUndoSchema = listUndoSchema(["note", "everyItem"]);
+const sectionUndoSchema = listUndoSchema([]);
+const sectionPageUndoSchema = listUndoSchema([], SECTION_OWN_TEXTS);
 
 describe("when a field saves (D-111)", () => {
   const untouched = {
@@ -582,7 +588,7 @@ const sectionRenamed: ListUndo = {
   to: "Entrees",
 };
 const sectionNoted: ListUndo = {
-  kind: "text",
+  kind: "own",
   field: "note",
   id: "a",
   name: "Starters",
@@ -590,7 +596,7 @@ const sectionNoted: ListUndo = {
   to: "Fried in peanut oil.",
 };
 const sectionLined: ListUndo = {
-  kind: "text",
+  kind: "own",
   field: "everyItem",
   id: "a",
   name: "Starters",
@@ -619,12 +625,6 @@ describe("what the sections list says", () => {
   it("names each kind of change on the Undo control", () => {
     expect(undoLabel(sectionWords, sectionRenamed)).toBe(
       "Undo: renamed Mains to Entrees",
-    );
-    expect(undoLabel(sectionWords, sectionNoted)).toBe(
-      "Undo: changed the note for Starters",
-    );
-    expect(undoLabel(sectionWords, sectionLined)).toBe(
-      "Undo: changed the line for every dish in Starters",
     );
     expect(undoLabel(sectionWords, sectionAdded)).toBe("Undo: added Desserts");
     expect(undoLabel(sectionWords, sectionDeleted)).toBe(
@@ -663,24 +663,6 @@ describe("what the sections list says", () => {
         problemText(sectionWords, { kind: "name-taken" }, "Starters"),
       ),
     ).toBe("Name of Mains was not saved. Another section is called Starters.");
-    expect(
-      failureSentence(
-        notSavedSentence(sectionWords, "note", "Starters"),
-        problemText(sectionWords, { kind: "invalid", rule: "noteLength" }, ""),
-      ),
-    ).toBe("Note for Starters was not saved. Keep the note to 500 characters.");
-    expect(
-      failureSentence(
-        notSavedSentence(sectionWords, "everyItem", "Starters"),
-        problemText(
-          sectionWords,
-          { kind: "invalid", rule: "everyItemLength" },
-          "",
-        ),
-      ),
-    ).toBe(
-      "The line for every dish in Starters was not saved. Keep this line to 120 characters.",
-    );
   });
 
   it.each<[ListProblem, string]>([
@@ -702,12 +684,6 @@ describe("what the sections list says", () => {
   it("says what Undo put back", () => {
     expect(undoneSentence(sectionWords, sectionRenamed, 0, 0)).toBe(
       "Undone. The name is Mains again.",
-    );
-    expect(undoneSentence(sectionWords, sectionNoted, 0, 0)).toBe(
-      "Undone. The note for Starters is as it was.",
-    );
-    expect(undoneSentence(sectionWords, sectionLined, 0, 0)).toBe(
-      "Undone. The line for every dish in Starters is as it was.",
     );
     expect(undoneSentence(sectionWords, sectionAdded, 0, 0)).toBe(
       "Undone. Desserts is removed.",
@@ -733,12 +709,10 @@ describe("what the sections list says", () => {
     );
   });
 
-  it("says when a text was changed again since, so nothing is written over", () => {
-    for (const entry of [sectionRenamed, sectionNoted, sectionLined]) {
-      expect(notUndoneSentence(sectionWords, entry, { kind: "changed" })).toBe(
-        sections.undo.textChanged,
-      );
-    }
+  it("says when a name was changed again since, so nothing is written over", () => {
+    expect(
+      notUndoneSentence(sectionWords, sectionRenamed, { kind: "changed" }),
+    ).toBe(sections.undo.textChanged);
   });
 
   it("says when a change can no longer be undone", () => {
@@ -755,32 +729,126 @@ describe("what the sections list says", () => {
       notUndoneSentence(sectionWords, sectionDeleted, { kind: "unreachable" }),
     ).toBe(`${editing.notUndone} ${editing.problems.unreachable}`);
     expect(
-      notUndoneSentence(sectionWords, sectionNoted, { kind: "parent-gone" }),
+      notUndoneSentence(sectionWords, sectionRenamed, { kind: "parent-gone" }),
     ).toBe(`${editing.notUndone} ${sections.errors.parentGone}`);
   });
 
-  it("keeps its Undo stack through storage, the two text changes included", () => {
-    const stack = [
-      sectionRenamed,
-      sectionNoted,
-      sectionLined,
-      sectionAdded,
-      sectionDeleted,
-      sectionMoved,
-    ];
+  it("keeps its Undo stack through storage", () => {
+    const stack = [sectionRenamed, sectionAdded, sectionDeleted, sectionMoved];
     expect(readUndo(JSON.stringify(stack), sectionUndoSchema)).toEqual(stack);
   });
 
-  it("reads a menus stack, or a text change to a field it does not know, as empty", () => {
+  it("reads a stack holding a note changed on a menu's page, before D-135, as empty", () => {
     expect(
       readUndo(
-        '[{"kind":"text","field":"name","id":"a","name":"x","from":"","to":"y"}]',
+        '[{"kind":"text","field":"note","id":"a","name":"Starters","from":"","to":"y"}]',
         sectionUndoSchema,
       ),
     ).toEqual([]);
     expect(readUndo(JSON.stringify([sectionNoted]), menuUndoSchema)).toEqual(
       [],
     );
+  });
+});
+
+// A section's note and its every-dish line, at the top of its own page
+// (D-120, D-135). Their labels are the page's and do not name the section;
+// every sentence the log says still does.
+describe("what a section's own texts say on its page", () => {
+  it("are labelled plainly, with their hints and no hidden suffix", () => {
+    expect(ownWords.fields.note).toMatchObject({
+      label: "Note",
+      suffix: "",
+      hint: dishes.section.noteHint,
+      multiline: true,
+    });
+    expect(ownWords.fields.everyItem).toMatchObject({
+      label: "Shown with every dish",
+      suffix: "",
+      hint: dishes.section.everyItemHint,
+    });
+    expect(ownWords.fields.everyItem.multiline).toBeUndefined();
+  });
+
+  it("names each change on the Undo control", () => {
+    expect(undoLabel(ownWords, sectionNoted)).toBe(
+      "Undo: changed the note for Starters",
+    );
+    expect(undoLabel(ownWords, sectionLined)).toBe(
+      "Undo: changed the line for every dish in Starters",
+    );
+  });
+
+  it("names the field and the problem when a save fails", () => {
+    expect(
+      failureSentence(
+        notSavedSentence(ownWords, "note", "Starters"),
+        problemText(ownWords, { kind: "invalid", rule: "noteLength" }, ""),
+      ),
+    ).toBe("Note for Starters was not saved. Keep the note to 500 characters.");
+    expect(
+      failureSentence(
+        notSavedSentence(ownWords, "everyItem", "Starters"),
+        problemText(ownWords, { kind: "invalid", rule: "everyItemLength" }, ""),
+      ),
+    ).toBe(
+      "The line for every dish in Starters was not saved. Keep this line to 120 characters.",
+    );
+  });
+
+  it("says a section that is gone in the page's own words", () => {
+    expect(problemText(ownWords, { kind: "parent-gone" }, "")).toBe(
+      dishes.errors.parentGone,
+    );
+    expect(
+      notUndoneSentence(ownWords, sectionNoted, { kind: "parent-gone" }),
+    ).toBe(`${editing.notUndone} ${dishes.errors.parentGone}`);
+  });
+
+  it("says what Undo put back", () => {
+    expect(undoneSentence(ownWords, sectionNoted, 0, 0)).toBe(
+      "Undone. The note for Starters is as it was.",
+    );
+    expect(undoneSentence(ownWords, sectionLined, 0, 0)).toBe(
+      "Undone. The line for every dish in Starters is as it was.",
+    );
+  });
+
+  it("says when a text was changed again since, so nothing is written over", () => {
+    for (const entry of [sectionNoted, sectionLined]) {
+      expect(notUndoneSentence(ownWords, entry, { kind: "changed" })).toBe(
+        sections.undo.textChanged,
+      );
+    }
+  });
+
+  it("are kept on the section's page's Undo stack with its dishes' changes", () => {
+    const stack: ListUndo[] = [
+      { kind: "rename", id: "d", from: "Soup", to: "Soup of the day" },
+      sectionNoted,
+      { kind: "add", id: "e", name: "House salad" },
+      sectionLined,
+    ];
+    expect(readUndo(JSON.stringify(stack), sectionPageUndoSchema)).toEqual(
+      stack,
+    );
+    expect(
+      readUndo(JSON.stringify(stack), listUndoSchema([])),
+      "a dishes stack with no own texts reads it as empty",
+    ).toEqual([]);
+    expect(
+      isListUndo(sectionNoted),
+      "a change the list itself takes back",
+    ).toBe(true);
+  });
+
+  it("reads an own change to a field the page does not have as empty", () => {
+    expect(
+      readUndo(
+        '[{"kind":"own","field":"name","id":"a","name":"Starters","from":"","to":"y"}]',
+        sectionPageUndoSchema,
+      ),
+    ).toEqual([]);
   });
 });
 

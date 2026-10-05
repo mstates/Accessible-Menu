@@ -57,9 +57,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-// One section's own page (D-128): its dishes, and its move to another menu
-// (D-129). The page is named for the section, in the title and in the h1,
-// and the title names its menu right after it. Menus stays marked in the
+// One section's own page (D-128): its note and its every-dish line (D-135),
+// its dishes, and its move to another menu (D-129). The page is named for
+// the section, in the title and in the h1, and the title names its menu
+// right after it. Menus stays marked in the
 // restaurant's nav as the part this page sits inside, and the breadcrumb
 // above the h1 leads back to the menu and to Menus. The dishes and the
 // restaurant's other menus are read on every render, and every save ends
@@ -106,12 +107,20 @@ export default async function RestaurantSectionPage({ params }: Props) {
         current={section.name}
       />
       <h1 className="mt-2 text-3xl font-bold">{section.name}</h1>
-      <p className="mt-6 text-foreground-muted">{strings.lead}</p>
+      {/* Said before the first field it governs (WCAG 3.3.2): the
+          section's note and its every-dish line come right after it. */}
+      <p className="mt-6 text-foreground-muted">{strings.section.lead}</p>
       <DishList
         strings={strings}
+        sectionStrings={en.owner.sections}
         editing={en.owner.editing}
         code={restaurant.code}
-        section={{ id: section.id, name: section.name }}
+        section={{
+          id: section.id,
+          name: section.name,
+          note: section.note,
+          everyItem: section.everyItem,
+        }}
         menu={menu}
         otherMenus={menus.filter((other) => other.id !== menu.id)}
         dishes={dishes}

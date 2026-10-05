@@ -12,8 +12,8 @@ import {
   addSection,
   deleteSection,
   orderSections,
+  renameSection,
   restoreSection,
-  setSectionText,
 } from "./section-actions";
 
 type Props = {
@@ -27,12 +27,11 @@ type Props = {
   sections: ListedSection[];
 };
 
-// The sections of one menu (D-111, D-120, D-128): the shared list, with
-// three fields a row: the name, the note, which takes several lines and
-// saves only when it is left, and the line shown with every dish. Each row
-// links to the section's own page, where its dishes are. Delete on a
-// section that holds dishes asks first, and names them; an empty section
-// goes at once (D-119).
+// The sections of one menu (D-111, D-128): the shared list, with one field
+// a row, its name, so a section's row is the row every list has. Each row
+// links to the section's own page, where its dishes are, and its note and
+// its every-dish line (D-135). Delete on a section that holds dishes asks
+// first, and names them; an empty section goes at once (D-119).
 export function SectionList(props: Props) {
   return (
     <Announcer>
@@ -52,13 +51,13 @@ function SectionRows({ strings, editing, code, menuId, sections }: Props) {
     undoKey: `undo:${code}:menu:${menuId}`,
     rows: sections,
     fields: sectionList.fields,
-    valueOf: (section, field) => section[field],
+    valueOf: (section) => section.name,
     clean: sectionList.clean,
     rule: sectionList.rule,
     actions: {
       add: (name) => addSection(code, menuId, name),
-      setText: (id, field, value, expected) =>
-        setSectionText(code, menuId, id, field, value, expected),
+      setText: (id, _field, value, expected) =>
+        renameSection(code, menuId, id, value, expected),
       remove: (id, told) => deleteSection(code, menuId, id, told),
       restore: (id, order) => restoreSection(code, menuId, id, order),
       order: (ids) => orderSections(code, menuId, ids),

@@ -14,17 +14,25 @@ import {
   listOwnerSections,
   moveOwnerSection,
   setOwnerSectionOrder,
+  setOwnerSectionText,
   type SectionWriteError,
 } from "@/core/supabase/sections";
 import { cleanDishName, dishNameProblem, type OwnerDish } from "@/domain/dish";
 import { mergeOrder } from "@/domain/menu";
+import {
+  cleanSectionText,
+  sectionTextProblem,
+  type OwnerSection,
+} from "@/domain/section";
 import type { ListProblem } from "./editing/list-words";
+import { SECTION_OWN_TEXTS } from "./lists";
 import { sectionScope } from "./owner-scope";
 import type { MoveProblem } from "./section-move";
 
 // A section's own page saves through these (D-111, D-128): its dishes, the
-// same way the menus and the sections lists save, and the section's move to
-// another menu (D-129). Nothing here redirects: a missing session comes
+// same way the menus and the sections lists save, the section's note and
+// its every-dish line (D-135), and the section's move to another menu
+// (D-129). Nothing here redirects: a missing session comes
 // back as a result and the typed text stays on screen. Every call that
 // reached the database with a live session ends with refresh(), so its own
 // response carries the re-rendered page. The code, the section, and the ids
@@ -51,6 +59,7 @@ export type MoveActionResult<Value> =
   { ok: true; value: Value } | { ok: false; problem: ServerMoveProblem };
 
 const idSchema = z.uuid();
+const ownTextSchema = z.enum(SECTION_OWN_TEXTS);
 const orderSchema = z.array(z.uuid()).min(1).max(500);
 
 function refuse(problem: ServerProblem): { ok: false; problem: ServerProblem } {
@@ -101,6 +110,50 @@ export async function addDish(
     ok: true,
     value: { row: result.value.dish, total: result.value.total },
   };
+}
+
+// Writes the section's note or its every-dish line, from the top of its own
+// page (D-120, D-135). The section is read through sectionScope like every
+// save here, so the write follows it to whatever menu it is in now, and a
+// section that is gone says so in this page's words. With expected, the
+// write is an Undo: it happens only if the text is still the one the change
+// wrote, and never writes over a newer change.
+export async function setOwnSectionText(
+  rawCode: string,
+  rawSection: string,
+  rawField: string,
+  rawValue: string,
+  expected?: string,
+): Promise<DishActionResult<OwnerSection>> {
+  const scope = await sectionScope(rawCode, rawSection);
+  if (!scope.ok) return scope;
+  const field = ownTextSchema.safeParse(rawField);
+  if (!field.success) return gone;
+  // A value that is not text is not a cleared field: a blank note means
+  // none, so only a string may say so.
+  if (typeof rawValue !== "string") return refuse({ kind: "failed" });
+  const value = cleanSectionText(field.data, rawValue);
+  const rule = sectionTextProblem(field.data, value);
+  if (rule) return refuse({ kind: "invalid", rule });
+  const result = await setOwnerSectionText(
+    scope.client,
+    scope.menuId,
+    scope.sectionId,
+    field.data,
+    value,
+    typeof expected === "string" ? expected : undefined,
+  );
+  refresh();
+  if (!result.ok) {
+    // Neither text has a name to collide with: a section that is not there
+    // is the page's own parent gone, and for an Undo, a change that no
+    // longer stands.
+    if (result.error.kind !== "not-found") return refuse({ kind: "failed" });
+    return refuse({
+      kind: expected === undefined ? "parent-gone" : "changed",
+    });
+  }
+  return { ok: true, value: result.value };
 }
 
 // With expected, the rename is an Undo: it happens only if the name is still
