@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { cache } from "react";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
 import { menuOrigin } from "@/core/config";
-import { getOwnerRestaurantByCode } from "@/core/supabase/restaurants";
-import { createSupabaseServerClient } from "@/core/supabase/server";
-import { isMenuCode, menuUrl, normalizeMenuCode } from "@/domain/menu-url";
+import { menuUrl } from "@/domain/menu-url";
 import { updateRestaurant } from "@/features/owner/actions";
+import { loadRestaurant } from "@/features/owner/load-restaurant";
 import { dashboardPath } from "@/features/owner/paths";
 import { RestaurantForm } from "@/features/owner/RestaurantForm";
 import { RestaurantNav } from "@/features/owner/RestaurantNav";
@@ -21,21 +19,6 @@ type Props = {
 };
 
 const strings = en.owner.restaurants;
-
-// One read per request, shared by the metadata and the page. The session is
-// read first, so a signed-in owner with a bad code gets the 404 page, never
-// a bounce through sign-in. The path segment is user input: it is checked
-// before any query, and row level security hides rows that are not this
-// owner's, so a wrong owner and an unknown code look the same (D-89).
-const loadRestaurant = cache(async (rawCode: string) => {
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase.auth.getClaims();
-  const email = data?.claims.email ?? null;
-  if (!email) return { email, restaurant: null };
-  const code = normalizeMenuCode(rawCode);
-  if (!isMenuCode(code)) return { email, restaurant: null };
-  return { email, restaurant: await getOwnerRestaurantByCode(supabase, code) };
-});
 
 // The outcome of a redirect lands in the title, which a full load and Next's
 // route announcer both read on arrival.

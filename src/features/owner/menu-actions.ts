@@ -5,22 +5,22 @@ import { z } from "zod";
 import { en } from "@/copy";
 import {
   addOwnerMenu,
+  countOwnerMenuSections,
   listOwnerMenus,
   renameOwnerMenu,
   setOwnerMenuDeleted,
   setOwnerMenuOrder,
   type MenuWriteError,
 } from "@/core/supabase/menus";
-import { findOwnerRestaurantId } from "@/core/supabase/restaurants";
-import { createSupabaseServerClient } from "@/core/supabase/server";
 import {
   cleanMenuName,
+  deleteTakesMore,
   menuNameSchema,
   mergeOrder,
   type OwnerMenu,
 } from "@/domain/menu";
-import { isMenuCode, normalizeMenuCode } from "@/domain/menu-url";
 import type { MenuProblem } from "./menu-messages";
+import { ownerScope } from "./owner-scope";
 
 // The menus list saves through these (D-111). A failed save must never leave
 // the page, so nothing here redirects: a missing session comes back as a
@@ -28,8 +28,9 @@ import type { MenuProblem } from "./menu-messages";
 // database with a live session ends with refresh(), so its own response
 // carries the re-rendered list; without a session the page's own redirect
 // would run, so those paths return before it. The code and the ids are user
-// input: they are checked here, and row level security decides whether the
-// rows are this owner's. Nothing here can publish (migration 3).
+// input: they are checked here and in ownerScope, and row level security
+// decides whether the rows are this owner's. Nothing here can publish
+// (migration 3).
 
 type ServerProblem = Exclude<
   MenuProblem,
@@ -42,24 +43,13 @@ export type MenuActionResult<Value = null> =
 const nameSchema = menuNameSchema(en.owner.menus.errors);
 const idSchema = z.uuid();
 const orderSchema = z.array(z.uuid()).min(1).max(500);
+const toldSchema = z.number().int().min(0);
 
 function refuse(problem: ServerProblem): { ok: false; problem: ServerProblem } {
   return { ok: false, problem };
 }
 
 const gone = refuse({ kind: "gone" });
-
-async function ownerScope(rawCode: string) {
-  const client = await createSupabaseServerClient();
-  const { data } = await client.auth.getClaims();
-  if (!data?.claims.email) return refuse({ kind: "signed-out" });
-  const code = typeof rawCode === "string" ? normalizeMenuCode(rawCode) : "";
-  if (!isMenuCode(code)) return gone;
-  const restaurant = await findOwnerRestaurantId(client, code);
-  if (restaurant === "failed") return refuse({ kind: "failed" });
-  if (restaurant === "not-found") return gone;
-  return { ok: true as const, client, restaurantId: restaurant.id };
-}
 
 function readName(raw: unknown): { name: string } | ServerProblem {
   const parsed = nameSchema.safeParse(raw);
@@ -136,14 +126,34 @@ export async function renameMenu(
 
 // Marks the menu deleted. The row stays, so Undo can bring it back with
 // everything under it (WCAG 3.3.4).
+//
+// A delete that takes content with it asks first (D-119), and the rule is
+// held here, not only on the page. Every delete says how many sections the
+// owner was told about: none for a delete at once and for an Undo of an
+// add, the confirmation's number otherwise. The sections are counted now,
+// and a delete that would take more than that is refused. So a page that is
+// out of date, after another tab or a restored one, never deletes sections
+// nobody was asked about, and an Undo never deletes content at all. The
+// refresh brings the page the count it missed, so the next press asks.
 export async function deleteMenu(
   rawCode: string,
   rawId: string,
+  rawTold: number,
 ): Promise<MenuActionResult> {
   const scope = await ownerScope(rawCode);
   if (!scope.ok) return scope;
   const id = idSchema.safeParse(rawId);
   if (!id.success) return gone;
+  const told = toldSchema.safeParse(rawTold);
+  const live = await countOwnerMenuSections(scope.client, id.data);
+  if (live === "failed") {
+    refresh();
+    return refuse({ kind: "failed" });
+  }
+  if (!told.success || deleteTakesMore(live, told.data)) {
+    refresh();
+    return refuse({ kind: "grew" });
+  }
   const result = await setOwnerMenuDeleted(
     scope.client,
     scope.restaurantId,

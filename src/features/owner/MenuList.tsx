@@ -8,19 +8,24 @@ import {
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 import { Form } from "react-aria-components";
 import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
 import { Announcer, useAnnounce } from "@/core/a11y/announcer";
 import {
   cleanMenuName,
+  deleteAsksFirst,
   inOrder,
   menuNameSchema,
   moveInOrder,
   nameTaken,
+  type ListedMenu,
   type OwnerMenu,
 } from "@/domain/menu";
+import { AlertDialog } from "@/ui/AlertDialog";
 import { Button } from "@/ui/Button";
+import { PageLink } from "@/ui/PageLink";
 import { TextField } from "@/ui/TextField";
 import { AutosaveTextField } from "./editing/AutosaveTextField";
 import { commitOf } from "./editing/commit";
@@ -41,6 +46,7 @@ import {
   restoreMenu,
 } from "./menu-actions";
 import {
+  deleteQuestion,
   edgeSentence,
   failureSentence,
   menuCount,
@@ -53,6 +59,7 @@ import {
   type MenuProblem,
   type MenuUndo,
 } from "./menu-messages";
+import { restaurantMenuPath } from "./paths";
 
 type Props = {
   strings: Copy["owner"]["menus"];
@@ -60,8 +67,9 @@ type Props = {
   pendingLabel: string;
   code: string;
   // The restaurant's menus that are not deleted, in order, as the server
-  // holds them. Every save ends with a refresh, so this is always the truth.
-  menus: OwnerMenu[];
+  // holds them, each with how many sections it holds. Every save ends with
+  // a refresh, so this is always the truth.
+  menus: ListedMenu[];
 };
 
 type Direction = "up" | "down";
@@ -71,11 +79,15 @@ type Direction = "up" | "down";
 type ListChange =
   { kind: "order"; ids: string[] } | { kind: "remove"; id: string };
 
-function applyChange(menus: OwnerMenu[], change: ListChange): OwnerMenu[] {
+function applyChange(menus: ListedMenu[], change: ListChange): ListedMenu[] {
   return change.kind === "remove"
     ? menus.filter((menu) => menu.id !== change.id)
     : inOrder(menus, change.ids);
 }
+
+// The delete the confirmation is asking about: which menu, and the name and
+// the number its question shows, which stay as they were while it is open.
+type Asking = { id: string; name: string; sections: number };
 
 const ADD_KEY = "add";
 const addFieldId = "menu-new-name";
@@ -93,11 +105,14 @@ function buttonId(id: string, action: Direction | "delete"): string {
 }
 
 // The menus of one restaurant (D-111): each name is a real field that saves
-// when focus leaves it or on Enter, and only if it changed. Move up and Move
-// down are buttons in every row (D-112); Delete asks nothing and Undo brings
-// the menu back. One saved status and one Undo sit above the list. The
-// status is never spoken; a name that saves, a failure, a move, a delete, an
-// add, and an Undo are said once through the log at the end (D-118).
+// when focus leaves it or on Enter, and only if it changed. Each row links
+// to the menu's own page, where its sections are (D-122). Move up and Move
+// down are buttons in every row (D-112). Delete on an empty menu asks
+// nothing; on a menu that holds sections it asks first, and either way Undo
+// brings the menu back with everything under it (D-119). One saved status
+// and one Undo sit above the list. The status is never spoken; a name that
+// saves, a failure, a move, a delete, an add, and an Undo are said once
+// through the log at the end (D-118).
 export function MenuList(props: Props) {
   return (
     <Announcer>
@@ -124,6 +139,7 @@ function MenuRows({
   const [newName, setNewName] = useState("");
   const [blankAdd, setBlankAdd] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [asking, setAsking] = useState<Asking | null>(null);
 
   // Where focus belongs after the list next changes. React moves a row's
   // node when the row travels down, and the browser drops focus when it
@@ -267,18 +283,27 @@ function MenuRows({
     });
   }
 
-  function remove(menu: OwnerMenu, index: number) {
-    const ids = shown.map((entry) => entry.id);
+  // Where a delete sends focus: the next row's name field, the one before
+  // it for the last row, the add field when no row is left.
+  function afterDelete(index: number): string {
     const neighbor = shown[index + 1] ?? shown[index - 1];
-    focusNext.current = {
-      id: neighbor ? nameId(neighbor.id) : addFieldId,
-      force: true,
-    };
+    return neighbor ? nameId(neighbor.id) : addFieldId;
+  }
+
+  // The delete itself. told is how many sections the owner was told go with
+  // the menu: none for a delete at once, the confirmation's number
+  // otherwise. The server counts them again and refuses a delete that would
+  // take more (D-119).
+  function remove(menu: OwnerMenu, index: number, told: number) {
+    const ids = shown.map((entry) => entry.id);
+    focusNext.current = { id: afterDelete(index), force: true };
     announce(fill(strings.deleted, { menu: menu.name }));
     startTransition(async () => {
       change({ kind: "remove", id: menu.id });
       await editing.run(async () => {
-        const result = await editing.call(() => deleteMenu(code, menu.id));
+        const result = await editing.call(() =>
+          deleteMenu(code, menu.id, told),
+        );
         if (!result.ok) {
           focusNext.current = { id: buttonId(menu.id, "delete"), force: true };
           editing.failChange(
@@ -303,6 +328,61 @@ function MenuRows({
     });
   }
 
+  // A menu's Delete button. A menu with sections asks first, and names what
+  // goes; an empty one goes at once (D-119).
+  function pressDelete(menu: ListedMenu, index: number) {
+    if (!deleteAsksFirst(menu.sections)) {
+      remove(menu, index, 0);
+      return;
+    }
+    setAsking({ id: menu.id, name: menu.name, sections: menu.sections });
+  }
+
+  // Every way out of the confirmation is this one: the dialog closes first,
+  // in its own commit, and only then is focus placed, by id. While a React
+  // Aria modal is open the page behind it is inert, so a focus call made
+  // before it has closed moves nothing and is lost. React Aria's own
+  // restore runs a frame later and only if focus fell to the body, and it
+  // returns to whatever had focus when the dialog opened, which is not
+  // always the Delete button: Safari does not focus a clicked button, and a
+  // screen reader's click may not move focus. Placed here, focus lands the
+  // same way in every browser, and that restore finds nothing to do.
+  function leaveAsking(focusId: string) {
+    flushSync(() => setAsking(null));
+    const target =
+      document.getElementById(focusId) ?? document.getElementById(addFieldId);
+    target?.focus();
+  }
+
+  // Keep, or Escape: nothing is sent, and focus is back on the Delete
+  // button that asked.
+  function keep() {
+    if (asking) leaveAsking(buttonId(asking.id, "delete"));
+  }
+
+  // The owner said Delete. The menu is read from the list as it is now, not
+  // as it was when the dialog opened; a save landing behind the dialog may
+  // have shown it is gone. Focus goes where a delete sends it, and then the
+  // same delete runs that an empty menu gets, carrying the number of
+  // sections the question named.
+  function confirmDelete() {
+    if (!asking) return;
+    const index = shown.findIndex((entry) => entry.id === asking.id);
+    const menu = shown[index];
+    if (!menu) {
+      leaveAsking(addFieldId);
+      editing.failChange(
+        failureSentence(
+          fill(strings.notDeleted, { menu: asking.name }),
+          strings.errors.gone,
+        ),
+      );
+      return;
+    }
+    leaveAsking(afterDelete(index));
+    remove(menu, index, asking.sections);
+  }
+
   // The inverse of one change, and where it left the menu in the list.
   async function reverse(
     entry: MenuUndo,
@@ -321,7 +401,9 @@ function MenuRows({
         return result.ok ? { ok: true, ...nowhere } : result;
       }
       case "add": {
-        const result = await editing.call(() => deleteMenu(code, entry.id));
+        // Undo never deletes content: it says the menu holds no sections,
+        // and the server refuses if it does by now (D-119).
+        const result = await editing.call(() => deleteMenu(code, entry.id, 0));
         return result.ok ? { ok: true, ...nowhere } : result;
       }
       case "delete": {
@@ -351,8 +433,8 @@ function MenuRows({
   // Undo waits for saves on their way, then takes back the newest change:
   // it runs in the same queue as every save, so the entry it reads is the
   // newest once the saves before it have recorded theirs. A change that no
-  // longer stands is dropped; one blocked by a taken name keeps its entry;
-  // either way it says so.
+  // longer stands is dropped, and so is an added menu that has sections by
+  // now; one blocked by a taken name keeps its entry; either way it says so.
   function undoNewest() {
     if (editing.peek().inFlight === 0 && !newestUndo(undo.peek())) {
       announce(words.nothingToUndo);
@@ -378,7 +460,10 @@ function MenuRows({
         const outcome: UndoOutcome =
           kind === "name-taken"
             ? "blocked"
-            : kind === "changed" || kind === "gone" || kind === "mismatch"
+            : kind === "changed" ||
+                kind === "gone" ||
+                kind === "mismatch" ||
+                kind === "grew"
               ? "stale"
               : "failed";
         undo.replace(afterUndo(undo.peek(), outcome));
@@ -490,10 +575,12 @@ function MenuRows({
         <ul className="mt-6 flex flex-col gap-4">
           {shown.map((menu, index) => {
             const key = fieldKey(menu.id);
-            // Each row button's name is its visible label, then its menu:
+            // Each row control's name is its visible label, then its menu:
             // "Move up, Dinner". It is set whole, as a label, because hidden
             // text after the visible words would be read with a space in
-            // front of the comma.
+            // front of the comma. The link to the menu's own page is named
+            // the same way, and it is a PageLink, so it waits for a save on
+            // its way and stays when one has failed.
             const named = (action: string) =>
               fill(strings.rowAction, { action, menu: menu.name });
             return (
@@ -511,6 +598,13 @@ function MenuRows({
                   onCommit={() => commitName(menu)}
                 />
                 <div className="flex flex-wrap gap-3">
+                  <PageLink
+                    href={restaurantMenuPath(code, menu.id)}
+                    aria-label={named(strings.editSections)}
+                    className="inline-flex min-h-11 items-center text-link underline"
+                  >
+                    {strings.editSections}
+                  </PageLink>
                   <Button
                     id={buttonId(menu.id, "up")}
                     aria-label={named(strings.moveUp)}
@@ -532,7 +626,7 @@ function MenuRows({
                   <Button
                     id={buttonId(menu.id, "delete")}
                     aria-label={named(strings.remove)}
-                    onPress={() => remove(menu, index)}
+                    onPress={() => pressDelete(menu, index)}
                   >
                     {strings.remove}
                   </Button>
@@ -573,6 +667,17 @@ function MenuRows({
           </Button>
         </div>
       </Form>
+
+      <AlertDialog
+        isOpen={asking !== null}
+        title={
+          asking ? deleteQuestion(strings, asking.name, asking.sections) : ""
+        }
+        keepLabel={strings.keep}
+        confirmLabel={strings.remove}
+        onKeep={keep}
+        onConfirm={confirmDelete}
+      />
     </>
   );
 }

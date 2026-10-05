@@ -20,6 +20,15 @@ import {
 // nothing. Nothing here is visible; every message has a visible counterpart
 // on the page. React Aria's own announcer is private (D-109), so this one is
 // ours.
+//
+// The log has to stay heard under a dialog. While a React Aria modal is
+// open everything outside it is made inert, and a save can land behind it:
+// a "Saved." or a failure added to an inert log would never be spoken, and
+// the sentence that follows the dialog's own answer might not be either.
+// React Aria leaves alone what carries its top-layer mark, the way it does
+// for its own announcer, so the log carries it. The mark is React Aria's
+// and not public, so the gate pins it: with the confirmation open, the page
+// behind is inert and this log is not (D-123).
 
 const MESSAGE_LIFETIME_MS = 7000;
 
@@ -59,6 +68,7 @@ export function Announcer({ children }: { children: ReactNode }) {
         role="log"
         aria-live="polite"
         aria-relevant="additions"
+        data-react-aria-top-layer="true"
         className="sr-only"
       >
         {messages.map((message) => (

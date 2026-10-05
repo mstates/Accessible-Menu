@@ -43,6 +43,8 @@ export type MenuProblem =
   | { kind: "gone" }
   | { kind: "changed" }
   | { kind: "mismatch" }
+  // A delete would have taken more sections than the owner was told about.
+  | { kind: "grew" }
   | { kind: "failed" }
   | { kind: "unreachable" }
   | { kind: "out-of-date" };
@@ -67,6 +69,20 @@ export function menuCount(strings: MenuStrings, count: number): string {
   });
 }
 
+// What a delete asks before it takes sections with it (D-119), which is
+// also the confirmation's name: "Delete Lunch, with its 4 sections?"
+export function deleteQuestion(
+  strings: MenuStrings,
+  menu: string,
+  sections: number,
+): string {
+  const counted = fill(
+    sections === 1 ? strings.sectionCount.one : strings.sectionCount.other,
+    { count: sections },
+  );
+  return fill(strings.deleteAsk, { menu, sections: counted });
+}
+
 // What went wrong, in words. The name is the one the owner typed or the menu
 // it concerns, for the sentence about a name already in use.
 export function problemText(
@@ -88,6 +104,8 @@ export function problemText(
       return editing.stale;
     case "mismatch":
       return strings.errors.listChanged;
+    case "grew":
+      return strings.errors.grew;
     case "failed":
       return editing.problems.failed;
     case "unreachable":
@@ -156,12 +174,17 @@ export function undoneSentence(
 
 // What Undo says when it could not: a taken name keeps the entry, a change
 // that no longer stands drops it, and anything else is an ordinary failure.
+// An added menu that now holds sections no longer stands as the change it
+// was: Undo never deletes content, so it says where the Delete button is.
 export function notUndoneSentence(
   strings: MenuStrings,
   editing: EditingStrings,
   entry: MenuUndo,
   problem: MenuProblem,
 ): string {
+  if (problem.kind === "grew" && entry.kind === "add") {
+    return fill(strings.undo.addGrew, { menu: entry.name });
+  }
   if (problem.kind === "name-taken") {
     return entry.kind === "rename"
       ? fill(strings.undo.renameBlocked, { from: entry.from })

@@ -5,18 +5,25 @@ import { z } from "zod";
 import {
   cookieJar,
   ownerEnv,
+  ownerFixturePath,
   ownerStatePath,
   toStorageState,
+  type OwnerFixture,
 } from "./owner-env";
 
 // Signs in the test owner in Node, with no browser, and fails closed before
 // any page loads: the user must hold exactly one membership, that
 // restaurant's code must be the configured one (D-100), and it must have
-// the menus the menus checks read. Messages name counts and codes, never a
+// the menus the menus checks read and the sections the sections checks
+// read. Messages name counts, codes, and the test menus' names, never a
 // token. A failure after sign-in signs out first, since the teardown has no
 // session file to work from yet.
 
 const MENUS_NEEDED = 3;
+const SECTIONS_NEEDED = 3;
+
+const listedMenus = z.array(z.object({ id: z.string(), name: z.string() }));
+const heldSections = z.array(z.object({ menu_id: z.string() }));
 
 const memberships = z.array(
   z.object({
@@ -26,7 +33,7 @@ const memberships = z.array(
 );
 
 setup(
-  "the test owner signs in and holds exactly one restaurant, with its menus",
+  "the test owner signs in and holds exactly one restaurant, with its menus and sections",
   async ({ baseURL }) => {
     if (!baseURL) throw new Error("the owner checks need a baseURL");
     const env = ownerEnv();
@@ -75,6 +82,54 @@ setup(
           `the test restaurant (${env.code}) needs three menus, found ${count}. See the Build plan, Phase 1, the menus note (Michael, by hand).`,
         );
       }
+      // The sections checks read one menu with a first section, a last one,
+      // and one between, and the delete checks also need a menu with none.
+      // Which menus those are is found here, in the order the page shows
+      // them, and handed to the specs, since a menu's page is named by its
+      // id. The gate never writes, so the sections were made by hand.
+      const menuRows = await supabase
+        .from("menus")
+        .select("id, name")
+        .is("deleted_at", null)
+        .order("sort")
+        .order("created_at")
+        .order("id");
+      if (menuRows.error) {
+        throw new Error(`could not read menus: ${menuRows.error.message}`);
+      }
+      const sectionRows = await supabase
+        .from("sections")
+        .select("menu_id")
+        .is("deleted_at", null);
+      if (sectionRows.error) {
+        throw new Error(
+          `could not read sections: ${sectionRows.error.message}`,
+        );
+      }
+      const held = new Map<string, number>();
+      for (const row of heldSections.parse(sectionRows.data)) {
+        held.set(row.menu_id, (held.get(row.menu_id) ?? 0) + 1);
+      }
+      const listed = listedMenus
+        .parse(menuRows.data)
+        .map((menu) => ({ ...menu, sections: held.get(menu.id) ?? 0 }));
+      const withSections = listed.find(
+        (menu) => menu.sections >= SECTIONS_NEEDED,
+      );
+      const empty = listed.find((menu) => menu.sections === 0);
+      if (!withSections || !empty) {
+        const found = listed
+          .map((menu) => `${menu.name} ${menu.sections}`)
+          .join(", ");
+        throw new Error(
+          `the test restaurant (${env.code}) needs one menu with three sections and one menu with none; found ${found}. See the Build plan, Phase 1, the sections note (Michael, by hand).`,
+        );
+      }
+      const fixture: OwnerFixture = {
+        withSections,
+        empty: { id: empty.id, name: empty.name },
+      };
+      writeFileSync(ownerFixturePath, JSON.stringify(fixture), { mode: 0o600 });
       writeFileSync(
         ownerStatePath,
         JSON.stringify(toStorageState(jar.cookies, baseURL)),

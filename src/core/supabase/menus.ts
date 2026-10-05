@@ -1,13 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { OwnerMenu } from "@/domain/menu";
+import type { ListedMenu, OwnerMenu } from "@/domain/menu";
 
 // Owner-side reads and writes on menus, through the owner's own client so
 // row level security decides what is visible (D-75) and the table
 // constraints decide what is valid (migration 3). A delete marks the row and
 // keeps it, so Undo can bring it back; reads leave marked rows out. Owners
 // write name, sort, and deleted_at and nothing else, so nothing here can
-// publish. The only place the row shape is known; features see OwnerMenu.
+// publish. The only place the row shape is known; features see OwnerMenu,
+// and the list sees it with how many sections each menu holds (D-119).
 
 const columns = "id, name, sort";
 
@@ -51,20 +52,87 @@ const failed: MenuWriteResult<never> = { ok: false, error: { kind: "failed" } };
 // alone is not a total order, since owners can write it directly, so
 // created_at and id settle ties the same way every time. A read that fails
 // throws: an error must never look like an empty list.
+//
+// Each menu comes with the number of its sections that are not deleted,
+// which decides whether a delete asks first and what the question says. The
+// API caps how many rows one read returns, so the read asks for the exact
+// total too: a count that is not whole would let a delete skip its
+// question, and that is an error here, never a guess.
 export async function listOwnerMenus(
   client: SupabaseClient,
   restaurantId: string,
-): Promise<OwnerMenu[]> {
+): Promise<ListedMenu[]> {
+  const [menus, sections] = await Promise.all([
+    client
+      .from("menus")
+      .select(columns)
+      .eq("restaurant_id", restaurantId)
+      .is("deleted_at", null)
+      .order("sort")
+      .order("created_at")
+      .order("id"),
+    client
+      .from("sections")
+      .select("menu_id", { count: "exact" })
+      .eq("restaurant_id", restaurantId)
+      .is("deleted_at", null),
+  ]);
+  if (menus.error) {
+    throw new Error(`menus could not be read: ${menus.error.message}`);
+  }
+  if (sections.error) {
+    throw new Error(`sections could not be counted: ${sections.error.message}`);
+  }
+  const held = z.array(z.object({ menu_id: z.string() })).parse(sections.data);
+  if (sections.count !== held.length) {
+    throw new Error("sections could not be counted: the read was cut short");
+  }
+  const counts = new Map<string, number>();
+  for (const { menu_id: menuId } of held) {
+    counts.set(menuId, (counts.get(menuId) ?? 0) + 1);
+  }
+  return z
+    .array(rowSchema)
+    .parse(menus.data)
+    .map((row) => ({ ...toMenu(row), sections: counts.get(row.id) ?? 0 }));
+}
+
+// One menu of the restaurant that is not deleted, for its own page and for
+// every write on its sections. Row level security hides a menu that is not
+// this owner's, so that, a deleted menu, and an id that matches nothing all
+// read the same. A read that failed is told apart, so a save can say which
+// it was and a page can throw.
+export async function findOwnerMenu(
+  client: SupabaseClient,
+  restaurantId: string,
+  id: string,
+): Promise<OwnerMenu | "not-found" | "failed"> {
   const { data, error } = await client
     .from("menus")
     .select(columns)
+    .eq("id", id)
     .eq("restaurant_id", restaurantId)
     .is("deleted_at", null)
-    .order("sort")
-    .order("created_at")
-    .order("id");
-  if (error) throw new Error(`menus could not be read: ${error.message}`);
-  return z.array(rowSchema).parse(data).map(toMenu);
+    .maybeSingle();
+  if (error) return "failed";
+  if (!data) return "not-found";
+  const row = rowSchema.safeParse(data);
+  return row.success ? toMenu(row.data) : "failed";
+}
+
+// How many sections of one menu are not deleted, asked of the database at
+// the moment of a delete, whatever the page showed (D-119).
+export async function countOwnerMenuSections(
+  client: SupabaseClient,
+  menuId: string,
+): Promise<number | "failed"> {
+  const { count, error } = await client
+    .from("sections")
+    .select("id", { count: "exact", head: true })
+    .eq("menu_id", menuId)
+    .is("deleted_at", null);
+  if (error || count === null) return "failed";
+  return count;
 }
 
 // A new menu goes last. Two tabs adding at once can draw the same sort; the

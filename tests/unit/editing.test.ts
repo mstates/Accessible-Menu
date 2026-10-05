@@ -16,6 +16,7 @@ import {
   UNDO_LIMIT,
 } from "../../src/features/owner/editing/undo";
 import {
+  deleteQuestion,
   edgeSentence,
   failureSentence,
   menuCount,
@@ -28,9 +29,12 @@ import {
   type MenuProblem,
   type MenuUndo,
 } from "../../src/features/owner/menu-messages";
+import * as sectionWords from "../../src/features/owner/section-messages";
+import { cleanSectionText } from "../../src/domain/section";
 
 const strings = en.owner.menus;
 const editing = en.owner.editing;
+const sections = en.owner.sections;
 
 describe("when a field saves (D-111)", () => {
   const untouched = {
@@ -406,5 +410,313 @@ describe("what the menus list says", () => {
     expect(
       notUndoneSentence(strings, editing, deleted, { kind: "unreachable" }),
     ).toBe(`${editing.notUndone} ${editing.problems.unreachable}`);
+  });
+});
+
+describe("what a delete asks and when it is refused (D-119)", () => {
+  it("names the menu and what goes with it", () => {
+    expect(deleteQuestion(strings, "Lunch", 4)).toBe(
+      "Delete Lunch, with its 4 sections?",
+    );
+    expect(deleteQuestion(strings, "Kids", 1)).toBe(
+      "Delete Kids, with its 1 section?",
+    );
+  });
+
+  it("says why a delete from a page that is out of date did not happen", () => {
+    expect(
+      failureSentence(
+        "Dinner was not deleted.",
+        problemText(strings, editing, { kind: "grew" }, "Dinner"),
+      ),
+    ).toBe(
+      "Dinner was not deleted. It has sections this page did not show. Press Delete again.",
+    );
+  });
+
+  it("says an added menu stays once it holds sections, since Undo never deletes content", () => {
+    expect(notUndoneSentence(strings, editing, added, { kind: "grew" })).toBe(
+      "Lunch has sections now, so it stays. To delete it, use its Delete button.",
+    );
+  });
+
+  it("drops that entry, so Undo moves on to the change before", () => {
+    expect(afterUndo([renamed, added], "stale")).toEqual([renamed]);
+  });
+});
+
+// A note and an every-dish line start empty and may be emptied again.
+describe("when an optional field saves", () => {
+  const empty = { saved: "", draft: null, inFlight: null, failed: null };
+  const note = (value: string) => cleanSectionText("note", value);
+
+  it("writes nothing for an empty field that was left empty", () => {
+    expect(commitOf(empty, note)).toEqual({ kind: "nothing" });
+    expect(commitOf({ ...empty, draft: "  \n " }, note)).toEqual({
+      kind: "reset",
+    });
+  });
+
+  it("sends a first note, cleaned, with its line break kept", () => {
+    expect(
+      commitOf({ ...empty, draft: " Fried in peanut oil.\r\nAsk us. " }, note),
+    ).toEqual({ kind: "send", value: "Fried in peanut oil.\nAsk us." });
+  });
+
+  it("sends an emptied note, which clears it", () => {
+    expect(
+      commitOf({ ...empty, saved: "Fried in peanut oil.", draft: "" }, note),
+    ).toEqual({ kind: "send", value: "" });
+  });
+
+  it("writes nothing when a note only gained a line break at its end", () => {
+    expect(
+      commitOf(
+        {
+          ...empty,
+          saved: "Fried in peanut oil.",
+          draft: "Fried in peanut oil.\n",
+        },
+        note,
+      ),
+    ).toEqual({ kind: "reset" });
+  });
+});
+
+const sectionRenamed: sectionWords.SectionUndo = {
+  kind: "rename",
+  id: "a",
+  from: "Mains",
+  to: "Entrees",
+};
+const sectionNoted: sectionWords.SectionUndo = {
+  kind: "text",
+  field: "note",
+  id: "a",
+  name: "Starters",
+  from: "",
+  to: "Fried in peanut oil.",
+};
+const sectionLined: sectionWords.SectionUndo = {
+  kind: "text",
+  field: "everyItem",
+  id: "a",
+  name: "Starters",
+  from: "Add spaghetti for 3 dollars.",
+  to: "",
+};
+const sectionAdded: sectionWords.SectionUndo = {
+  kind: "add",
+  id: "c",
+  name: "Desserts",
+};
+const sectionDeleted: sectionWords.SectionUndo = {
+  kind: "delete",
+  id: "a",
+  name: "Starters",
+  order: ["a", "b", "c"],
+};
+const sectionMoved: sectionWords.SectionUndo = {
+  kind: "move",
+  id: "a",
+  name: "Starters",
+  order: ["a", "b", "c"],
+};
+
+describe("what the sections list says", () => {
+  it("names each kind of change on the Undo control", () => {
+    expect(sectionWords.undoLabel(sections, sectionRenamed)).toBe(
+      "Undo: renamed Mains to Entrees",
+    );
+    expect(sectionWords.undoLabel(sections, sectionNoted)).toBe(
+      "Undo: changed the note for Starters",
+    );
+    expect(sectionWords.undoLabel(sections, sectionLined)).toBe(
+      "Undo: changed the line for every dish in Starters",
+    );
+    expect(sectionWords.undoLabel(sections, sectionAdded)).toBe(
+      "Undo: added Desserts",
+    );
+    expect(sectionWords.undoLabel(sections, sectionDeleted)).toBe(
+      "Undo: deleted Starters",
+    );
+    expect(sectionWords.undoLabel(sections, sectionMoved)).toBe(
+      "Undo: moved Starters",
+    );
+  });
+
+  it("counts sections in words", () => {
+    expect(sectionWords.sectionCount(sections, 1)).toBe("1 section");
+    expect(sectionWords.sectionCount(sections, 3)).toBe("3 sections");
+  });
+
+  it("says where a moved section is, and when it is at the edge", () => {
+    expect(sectionWords.movedSentence(sections, "down", "Starters", 2, 3)).toBe(
+      "Starters moved down. 2 of 3.",
+    );
+    expect(sectionWords.movedSentence(sections, "up", "Mains", 1, 3)).toBe(
+      "Mains moved up. 1 of 3.",
+    );
+    expect(sectionWords.edgeSentence(sections, "up", "Starters")).toBe(
+      "Starters is already first.",
+    );
+    expect(sectionWords.edgeSentence(sections, "down", "Desserts")).toBe(
+      "Desserts is already last.",
+    );
+  });
+
+  it("names the field and the problem when a save fails", () => {
+    expect(
+      sectionWords.failureSentence(
+        sectionWords.notSavedSentence(sections, "name", "Mains"),
+        sectionWords.problemText(
+          sections,
+          editing,
+          { kind: "name-taken" },
+          "Starters",
+        ),
+      ),
+    ).toBe("Name of Mains was not saved. Another section is called Starters.");
+    expect(
+      sectionWords.failureSentence(
+        sectionWords.notSavedSentence(sections, "note", "Starters"),
+        sectionWords.problemText(
+          sections,
+          editing,
+          { kind: "invalid", rule: "noteLength" },
+          "",
+        ),
+      ),
+    ).toBe("Note for Starters was not saved. Keep the note to 500 characters.");
+    expect(
+      sectionWords.failureSentence(
+        sectionWords.notSavedSentence(sections, "everyItem", "Starters"),
+        sectionWords.problemText(
+          sections,
+          editing,
+          { kind: "invalid", rule: "everyItemLength" },
+          "",
+        ),
+      ),
+    ).toBe(
+      "The line for every dish in Starters was not saved. Keep this line to 120 characters.",
+    );
+  });
+
+  it.each<[sectionWords.SectionProblem, string]>([
+    [{ kind: "signed-out" }, editing.problems.signedOut],
+    [{ kind: "invalid", rule: "nameRequired" }, sections.errors.nameRequired],
+    [{ kind: "invalid", rule: "nameLength" }, sections.errors.nameLength],
+    [{ kind: "gone" }, sections.errors.gone],
+    [{ kind: "menu-gone" }, sections.errors.menuGone],
+    [{ kind: "changed" }, editing.stale],
+    [{ kind: "mismatch" }, sections.errors.listChanged],
+    [{ kind: "failed" }, editing.problems.failed],
+    [{ kind: "unreachable" }, editing.problems.unreachable],
+    [{ kind: "out-of-date" }, editing.problems.outOfDate],
+  ])("has words for %j", (problem, text) => {
+    expect(sectionWords.problemText(sections, editing, problem, "Mains")).toBe(
+      text,
+    );
+  });
+
+  it("says what Undo put back", () => {
+    expect(sectionWords.undoneSentence(sections, sectionRenamed, 0, 0)).toBe(
+      "Undone. The name is Mains again.",
+    );
+    expect(sectionWords.undoneSentence(sections, sectionNoted, 0, 0)).toBe(
+      "Undone. The note for Starters is as it was.",
+    );
+    expect(sectionWords.undoneSentence(sections, sectionLined, 0, 0)).toBe(
+      "Undone. The line for every dish in Starters is as it was.",
+    );
+    expect(sectionWords.undoneSentence(sections, sectionAdded, 0, 0)).toBe(
+      "Undone. Desserts is removed.",
+    );
+    expect(sectionWords.undoneSentence(sections, sectionDeleted, 1, 3)).toBe(
+      "Undone. Starters is back, 1 of 3.",
+    );
+    expect(sectionWords.undoneSentence(sections, sectionMoved, 1, 3)).toBe(
+      "Undone. Starters is back at 1 of 3.",
+    );
+  });
+
+  it("says why Undo could not, when a name is taken", () => {
+    expect(
+      sectionWords.notUndoneSentence(sections, editing, sectionDeleted, {
+        kind: "name-taken",
+      }),
+    ).toBe(
+      "Starters cannot come back while another section is called Starters.",
+    );
+    expect(
+      sectionWords.notUndoneSentence(sections, editing, sectionRenamed, {
+        kind: "name-taken",
+      }),
+    ).toBe(
+      "The name Mains is taken by another section, so this was not undone.",
+    );
+  });
+
+  it("says when a text was changed again since, so nothing is written over", () => {
+    for (const entry of [sectionRenamed, sectionNoted, sectionLined]) {
+      expect(
+        sectionWords.notUndoneSentence(sections, editing, entry, {
+          kind: "changed",
+        }),
+      ).toBe(sections.undo.textChanged);
+    }
+  });
+
+  it("says when a change can no longer be undone", () => {
+    expect(
+      sectionWords.notUndoneSentence(sections, editing, sectionAdded, {
+        kind: "gone",
+      }),
+    ).toBe(editing.stale);
+    expect(
+      sectionWords.notUndoneSentence(sections, editing, sectionMoved, {
+        kind: "mismatch",
+      }),
+    ).toBe(editing.stale);
+  });
+
+  it("says when the Undo itself did not get through", () => {
+    expect(
+      sectionWords.notUndoneSentence(sections, editing, sectionDeleted, {
+        kind: "unreachable",
+      }),
+    ).toBe(`${editing.notUndone} ${editing.problems.unreachable}`);
+    expect(
+      sectionWords.notUndoneSentence(sections, editing, sectionNoted, {
+        kind: "menu-gone",
+      }),
+    ).toBe(`${editing.notUndone} ${sections.errors.menuGone}`);
+  });
+
+  it("keeps its Undo stack through storage, the two text changes included", () => {
+    const stack = [
+      sectionRenamed,
+      sectionNoted,
+      sectionLined,
+      sectionAdded,
+      sectionDeleted,
+      sectionMoved,
+    ];
+    expect(
+      readUndo(JSON.stringify(stack), sectionWords.sectionUndoSchema),
+    ).toEqual(stack);
+  });
+
+  it("reads a menus stack, or a text change to a field it does not know, as empty", () => {
+    expect(
+      readUndo(
+        '[{"kind":"text","field":"name","id":"a","name":"x","from":"","to":"y"}]',
+        sectionWords.sectionUndoSchema,
+      ),
+    ).toEqual([]);
+    expect(readUndo(JSON.stringify([sectionNoted]), menuUndoSchema)).toEqual(
+      [],
+    );
   });
 });

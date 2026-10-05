@@ -419,3 +419,136 @@ describe("the owner boundary on menus (D-82, D-85)", () => {
     expect(body).toMatch(/m\.deleted_at is null/);
   });
 });
+
+describe("the owner boundary on sections (D-85, D-121)", () => {
+  const file = "20261004000002_sections.sql";
+  const sections = readFileSync(join(dir, file), "utf8");
+  const neverWritten = ["id", "restaurant_id", "created_at", "updated_at"];
+
+  function columnsOf(privilege: string): string[] {
+    const match = sql.match(
+      new RegExp(
+        `grant ${privilege} \\(([^)]*)\\) on public\\.sections to authenticated;`,
+      ),
+    );
+    expect(match, `no ${privilege} column list on sections`).not.toBeNull();
+    return (match?.[1] ?? "").split(",").map((column) => column.trim());
+  }
+
+  it("replaces the table-wide writes with column lists", () => {
+    expect(sql).toMatch(
+      /revoke insert, update, delete on public\.sections from authenticated;/,
+    );
+    expect(columnsOf("insert")).toEqual(["menu_id", "name", "sort"]);
+    expect(columnsOf("update")).toEqual([
+      "name",
+      "note",
+      "every_item",
+      "sort",
+      "deleted_at",
+    ]);
+    for (const column of neverWritten) {
+      expect(columnsOf("insert")).not.toContain(column);
+      expect(columnsOf("update")).not.toContain(column);
+    }
+  });
+
+  // The gap the menus plan named: a member of two restaurants pointing a
+  // section at the other one. Neither link is writable after insert, and the
+  // restaurant is never writable at all, since the trigger fills it.
+  it("never lets an owner write a section's menu or restaurant after insert", () => {
+    expect(columnsOf("update")).not.toContain("menu_id");
+    expect(columnsOf("update")).not.toContain("restaurant_id");
+    expect(columnsOf("insert")).not.toContain("restaurant_id");
+  });
+
+  it("brings every section in line with its menu before the column lists, and its items after it", () => {
+    const realign = sections.indexOf(
+      "update public.sections s\n  set restaurant_id = m.restaurant_id",
+    );
+    const follow = sections.indexOf(
+      "update public.items i\n  set restaurant_id = s.restaurant_id",
+    );
+    const revoke = sections.indexOf(
+      "revoke insert, update, delete on public.sections from authenticated;",
+    );
+    expect(realign).toBeGreaterThan(-1);
+    expect(follow).toBeGreaterThan(realign);
+    expect(revoke).toBeGreaterThan(follow);
+  });
+
+  it("gives owners no delete on sections from this migration on", () => {
+    const from = files.indexOf(file);
+    expect(from).toBeGreaterThan(-1);
+    const later = files
+      .slice(from)
+      .map((name) => readFileSync(join(dir, name), "utf8"))
+      .join("\n");
+    expect(later).not.toMatch(/grant [^;]*\bdelete\b[^;]*public\.sections\b/);
+  });
+
+  it("leaves the published views alone, and names the new columns in none", () => {
+    expect(sections).not.toMatch(/\bview\b/);
+    for (const view of views) {
+      expect(viewBody(view)).not.toMatch(/\bevery_item\b/);
+      expect(viewBody(view)).not.toMatch(/\bdeleted_at\b/);
+    }
+  });
+
+  it("adds the line shown with every dish", () => {
+    expect(sections).toMatch(
+      /alter table public\.sections add column every_item text;/,
+    );
+  });
+
+  it("holds the three text rules as table constraints, with existing rows brought inside first", () => {
+    const fixName = sections.indexOf("update public.sections\n  set name =");
+    const fixNote = sections.indexOf("update public.sections\n  set note =");
+    const constraints = sections.indexOf("add constraint sections_name_text");
+    expect(fixName).toBeGreaterThan(-1);
+    expect(fixNote).toBeGreaterThan(fixName);
+    expect(constraints).toBeGreaterThan(fixNote);
+    expect(sections).toMatch(
+      /sections_name_text\s+check \(name ~ '\\S' and name !~ '\[\[:cntrl:\]\]' and length\(name\) <= 60\)/,
+    );
+    expect(sections).toMatch(
+      /sections_note_text\s+check \(note ~ '\\S'\s+and translate\(note, chr\(10\), ' '\) !~ '\[\[:cntrl:\]\]'\s+and length\(note\) <= 500\)/,
+    );
+    expect(sections).toMatch(
+      /sections_every_item_text\s+check \(every_item ~ '\\S' and every_item !~ '\[\[:cntrl:\]\]'\s+and length\(every_item\) <= 120\)/,
+    );
+  });
+
+  it("keeps a deleted section and frees its name", () => {
+    expect(sections).toMatch(
+      /alter table public\.sections add column deleted_at timestamptz;/,
+    );
+    const numbering = sections.indexOf("do $$");
+    const index = sections.indexOf("create unique index sections_name_key");
+    expect(numbering).toBeGreaterThan(-1);
+    expect(index).toBeGreaterThan(numbering);
+    expect(sections).toMatch(
+      /create unique index sections_name_key\s+on public\.sections \(menu_id, lower\(btrim\(name\)\)\)\s+where deleted_at is null;/,
+    );
+  });
+
+  it("orders sections through one function, open to authenticated only", () => {
+    const grants = [...sql.matchAll(/grant [^;]*set_section_order[^;]*;/g)].map(
+      (match) => match[0],
+    );
+    expect(grants).toHaveLength(1);
+    expect(grants[0]).toMatch(/to authenticated;$/);
+    expect(sections).toMatch(
+      /revoke all on function public\.set_section_order\(uuid, uuid\[\]\) from public, anon;/,
+    );
+    const body = sections.slice(
+      sections.indexOf("create function public.set_section_order"),
+    );
+    expect(body).not.toMatch(/security definer/);
+    expect(body).toMatch(/for update;/);
+    expect(body).toMatch(/coalesce\(array_ndims\(p_ids\), 0\) <> 1/);
+    expect(body).toMatch(/cardinality\(p_ids\) <> live/);
+    expect(body).toMatch(/s\.deleted_at is null/);
+    expect(body).toMatch(/s\.menu_id = p_menu/);
+  });
+});

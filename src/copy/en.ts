@@ -268,14 +268,24 @@ export const en = {
       moveUp: "Move up",
       moveDown: "Move down",
       remove: "Delete",
-      // A row button's whole name: its visible label first, then its menu.
+      // A row control's whole name: its visible label first, then its menu.
       rowAction: "{action}, {menu}",
+      // The link from a menu's row to its own page (D-122).
+      editSections: "Edit sections",
       newLabel: "New menu name",
       add: "Add menu",
       count: {
         one: "{count} menu",
         other: "{count} menus",
       },
+      // A delete that takes sections with it asks first, and names what goes
+      // (D-119). The question is the dialog's name.
+      sectionCount: {
+        one: "{count} section",
+        other: "{count} sections",
+      },
+      deleteAsk: "Delete {menu}, with its {sections}?",
+      keep: "Keep",
       added: "{menu} added. {count}.",
       movedUp: "{menu} moved up. {position} of {total}.",
       movedDown: "{menu} moved down. {position} of {total}.",
@@ -292,6 +302,8 @@ export const en = {
         nameTaken: "Another menu is called {menu}.",
         gone: "That menu is no longer here. Reload the page.",
         listChanged: "The list of menus changed. Reload the page.",
+        // The server found more sections than the owner was told about.
+        grew: "It has sections this page did not show. Press Delete again.",
       },
       undo: {
         renamed: "Undo: renamed {from} to {to}",
@@ -308,6 +320,83 @@ export const en = {
           "{menu} cannot come back while another menu is called {menu}.",
         renameBlocked:
           "The name {from} is taken by another menu, so this was not undone.",
+        // Undo never deletes content: an added menu that now holds sections
+        // stays, and its Delete button is the way to remove it.
+        addGrew:
+          "{menu} has sections now, so it stays. To delete it, use its Delete button.",
+      },
+    },
+    // A menu's own page: its sections (D-120 to D-122). The page is named
+    // for its menu, so it has no title or heading here.
+    sections: {
+      lead: "Sections are the headings on this menu, like Starters and Mains. Each change saves when you leave its field.",
+      backToMenus: "Back to Menus",
+      none: "No sections yet. Add the first one below.",
+      nameLabel: "Section name",
+      noteLabel: "Section note",
+      // Follows the label of the name and the note in hidden text, so every
+      // field names its section.
+      labelFor: "for {section}",
+      noteHint:
+        "For the whole section. Diners read it once, under the section name.",
+      everyItemLabel: "Shown with every dish",
+      everyItemIn: "in {section}",
+      everyItemHint:
+        'For an option or side, like "Add spaghetti to any dish for 3 dollars." Diners read it with each dish in this section. Allergens still go on each dish.',
+      moveUp: "Move up",
+      moveDown: "Move down",
+      remove: "Delete",
+      // A row button's whole name: its visible label first, then its section.
+      rowAction: "{action}, {section}",
+      newLabel: "New section name",
+      add: "Add section",
+      count: {
+        one: "{count} section",
+        other: "{count} sections",
+      },
+      added: "{section} added. {count}.",
+      movedUp: "{section} moved up. {position} of {total}.",
+      movedDown: "{section} moved down. {position} of {total}.",
+      alreadyFirst: "{section} is already first.",
+      alreadyLast: "{section} is already last.",
+      deleted: "{section} deleted. Undo is available.",
+      notSaved: {
+        name: "Name of {section} was not saved.",
+        note: "Note for {section} was not saved.",
+        everyItem: "The line for every dish in {section} was not saved.",
+      },
+      notAdded: "{section} was not added.",
+      notMoved: "{section} was not moved.",
+      notDeleted: "{section} was not deleted.",
+      errors: {
+        nameRequired: "A section needs a name.",
+        nameLength: "Keep the name to 60 characters.",
+        noteLength: "Keep the note to 500 characters.",
+        everyItemLength: "Keep this line to 120 characters.",
+        nameTaken: "Another section is called {section}.",
+        gone: "That section is no longer here. Reload the page.",
+        menuGone: "This menu is no longer here. Go back to Menus.",
+        listChanged: "The list of sections changed. Reload the page.",
+      },
+      undo: {
+        renamed: "Undo: renamed {from} to {to}",
+        added: "Undo: added {section}",
+        deleted: "Undo: deleted {section}",
+        moved: "Undo: moved {section}",
+        note: "Undo: changed the note for {section}",
+        everyItem: "Undo: changed the line for every dish in {section}",
+        renamedBack: "Undone. The name is {from} again.",
+        removed: "Undone. {section} is removed.",
+        restored: "Undone. {section} is back, {position} of {total}.",
+        movedBack: "Undone. {section} is back at {position} of {total}.",
+        noteBack: "Undone. The note for {section} is as it was.",
+        everyItemBack:
+          "Undone. The line for every dish in {section} is as it was.",
+        textChanged: "That was changed again since, so nothing was undone.",
+        restoreBlocked:
+          "{section} cannot come back while another section is called {section}.",
+        renameBlocked:
+          "The name {from} is taken by another section, so this was not undone.",
       },
     },
   },

@@ -1,6 +1,8 @@
 import type { CookieOptions } from "@supabase/ssr";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { z } from "zod";
 
 // The owner checks sign in as the test owner (D-100). Five values, required
 // together; the password is the one secret. Missing values fail the run and
@@ -49,6 +51,41 @@ export const ownerStatePath = join(
   process.env.RUNNER_TEMP ?? tmpdir(),
   "accessible-menu-owner-state.json",
 );
+
+// What the checks need to know about the test restaurant's menus, and can
+// only learn once the setup has signed in: which menu holds the sections
+// the sections checks read, and which holds none. The setup finds them,
+// fails closed when they are not there, and writes them beside the session
+// file. Ids and names only, no secret. A menu's page is named by its id, so
+// its path is known when a test runs, never when the test files are loaded.
+export const ownerFixturePath = join(
+  process.env.RUNNER_TEMP ?? tmpdir(),
+  "accessible-menu-owner-fixture.json",
+);
+
+const fixtureSchema = z.object({
+  withSections: z.object({
+    id: z.string(),
+    name: z.string(),
+    sections: z.number(),
+  }),
+  empty: z.object({ id: z.string(), name: z.string() }),
+});
+
+export type OwnerFixture = z.infer<typeof fixtureSchema>;
+
+// Call inside a test, never at the top of a spec file.
+export function ownerFixture(): OwnerFixture {
+  let raw: string;
+  try {
+    raw = readFileSync(ownerFixturePath, "utf8");
+  } catch {
+    throw new Error(
+      "the owner setup has not written the menus the sections checks read",
+    );
+  }
+  return fixtureSchema.parse(JSON.parse(raw));
+}
 
 type Stored = { value: string; options: CookieOptions };
 type Jar = Map<string, Stored>;

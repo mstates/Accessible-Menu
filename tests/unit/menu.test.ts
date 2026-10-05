@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { en } from "../../src/copy";
 import {
   cleanMenuName,
+  deleteAsksFirst,
+  deleteTakesMore,
   inOrder,
   MENU_LIMITS,
   menuNameSchema,
@@ -135,5 +137,35 @@ describe("the list in a given order", () => {
       "a",
       "c",
     ]);
+  });
+});
+
+describe("a delete that takes content with it (D-119)", () => {
+  it("asks first when the menu holds sections, and not when it is empty", () => {
+    expect(deleteAsksFirst(0)).toBe(false);
+    expect(deleteAsksFirst(1)).toBe(true);
+    expect(deleteAsksFirst(4)).toBe(true);
+  });
+
+  it("is refused when the menu holds more sections than the owner was told", () => {
+    expect(deleteTakesMore(1, 0), "a delete at once, or an Undo").toBe(true);
+    expect(deleteTakesMore(5, 4), "a confirmation that is out of date").toBe(
+      true,
+    );
+  });
+
+  it("goes ahead when the menu holds what the owner was told, or less", () => {
+    expect(deleteTakesMore(0, 0)).toBe(false);
+    expect(deleteTakesMore(4, 4)).toBe(false);
+    expect(deleteTakesMore(3, 4)).toBe(false);
+  });
+
+  it("keeps the count on a listed menu through a reorder", () => {
+    const menus = [
+      { id: "a", name: "Lunch", sections: 0 },
+      { id: "b", name: "Dinner", sections: 3 },
+    ];
+    expect(inOrder(menus, ["b", "a"])).toEqual([menus[1], menus[0]]);
+    expect(nameTaken(menus, null, "dinner")).toEqual(menus[1]);
   });
 });

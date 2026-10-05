@@ -238,17 +238,22 @@ export async function expectRootAtLargest(page: Page) {
   ).toBe("32px");
 }
 
-// Registers the checks for one path. Call it inside a describe.
-export function pageChecks(path: string) {
+// Registers the checks for one path. Call it inside a describe. A path that
+// is only known once the owner setup has run, a menu's page, is passed as a
+// function and read when each test starts; the describe around it then
+// carries a fixed title, since a test's name cannot wait for the setup.
+export function pageChecks(target: string | (() => string)) {
+  const at = () => (typeof target === "string" ? target : target());
+
   test("axe reports zero violations", async ({ page }) => {
-    await open(page, path);
+    await open(page, at());
     await expectNoAxeViolations(page);
   });
 
   test("keyboard reaches every control, focus is visible, nothing traps", async ({
     page,
   }) => {
-    await open(page, path);
+    await open(page, at());
     // A result message takes focus once the page hydrates, so the walk
     // starts after the page has settled, or that focus move lands mid-walk.
     await page.waitForLoadState("networkidle");
@@ -258,13 +263,14 @@ export function pageChecks(path: string) {
   test("no horizontal scroll, before and after text spacing", async ({
     page,
   }) => {
-    await open(page, path);
+    await open(page, at());
     await expectNoHorizontalScroll(page);
   });
 
   test("at the largest phone text size, no horizontal scroll, before and after text spacing", async ({
     page,
   }) => {
+    const path = at();
     await setLargestText(page);
     const response = await open(page, path);
     const html = await response.text();
@@ -281,7 +287,7 @@ export function pageChecks(path: string) {
   test("the title is in the served head and is the document title from first paint", async ({
     page,
   }) => {
-    await expectTitleInServedHead(page, path);
+    await expectTitleInServedHead(page, at());
   });
 }
 

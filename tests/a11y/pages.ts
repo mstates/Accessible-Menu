@@ -25,7 +25,9 @@ export const pages = [
 // restaurant it holds (D-100). Owner paths come from the owner feature. The
 // created outcome, a save's result message, and the return from Checkout are
 // reached by URL, so the gate never sends a write to see them (D-108). The
-// menus page shows the three menus the test restaurant was given by hand.
+// menus page shows the three menus the test restaurant was given by hand. A
+// menu's own page is named by the menu's id, which only the setup learns,
+// so those two pages get the same checks from owner-sections.spec.ts.
 export function ownerPages(code: string) {
   return [
     dashboardPath,
@@ -39,11 +41,13 @@ export function ownerPages(code: string) {
 }
 
 // The restaurant's name on one of its own pages: the visible text that
-// names its nav, in front of the links (D-113).
+// names its nav, in front of the links (D-113). The nav is the one that
+// marks a link as current, as the page or, inside a menu, as the part of
+// the nav the page sits in (D-122).
 export async function restaurantName(page: Page): Promise<string> {
   const nav = page
     .locator("nav")
-    .filter({ has: page.locator('a[aria-current="page"]') });
+    .filter({ has: page.locator("a[aria-current]") });
   const labelId = await nav.getAttribute("aria-labelledby");
   if (!labelId) throw new Error("the restaurant nav has no visible label");
   const label = await page.locator(`[id="${labelId}"]`).textContent();

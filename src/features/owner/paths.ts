@@ -24,6 +24,12 @@ export function restaurantMenusPath(code: string): string {
   return `/app/restaurants/${code}/menus`;
 }
 
+// One menu's own page, where its sections are edited (D-122). The menu is
+// named by its id: an owner path, never printed or shared with a diner.
+export function restaurantMenuPath(code: string, menuId: string): string {
+  return `${restaurantMenusPath(code)}/${menuId}`;
+}
+
 // The id an error summary links to for a field name. Dots become dashes so
 // hours.mon.0.open stays a valid id.
 export function fieldId(name: string): string {
