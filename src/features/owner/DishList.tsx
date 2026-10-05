@@ -38,6 +38,11 @@ type Props = {
   dishes: OwnerDish[];
 };
 
+// How long after the page shows a section's new menu its move is said: long
+// enough that Next's reading of the new title has begun, too short to
+// notice.
+const AFTER_THE_TITLE_MS = 100;
+
 // The dishes of one section (D-111, D-128): the shared list, with one field
 // a row, its name. A dish holds nothing, so its delete asks nothing and
 // Undo brings it back (D-119). A dish has no page of its own yet, so its
@@ -72,19 +77,21 @@ function DishRows({
   // Measured against the local stand-in, it did so 4 ms after the move's own
   // polite sentence, which a screen reader would cut off. So a move, and
   // the Undo of one, owe their sentence until the page shows the section in
-  // its new menu, and say it a frame after that: the title is then already
-  // being read, and a polite sentence waits its turn behind it.
+  // its new menu, and say it a moment after that: the title is then already
+  // being read, and a polite sentence waits its turn behind it. The moment
+  // is a timer, not an animation frame: a tab that is not showing gets no
+  // frames, and the sentence would wait there unsaid.
   const announce = useAnnounce();
   const owed = useRef<{ menuId: string; sentence: string } | null>(null);
   useEffect(() => {
     const due = owed.current;
     if (!due || due.menuId !== menu.id) return;
-    const frame = window.requestAnimationFrame(() => {
+    const timer = window.setTimeout(() => {
       if (owed.current !== due) return;
       owed.current = null;
       announce(due.sentence);
-    });
-    return () => window.cancelAnimationFrame(frame);
+    }, AFTER_THE_TITLE_MS);
+    return () => window.clearTimeout(timer);
   }, [menu.id, announce]);
   function sayOnceIn(menuId: string, sentence: string) {
     owed.current = { menuId, sentence };
