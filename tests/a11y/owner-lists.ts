@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
 import { pageTitle } from "../../src/copy/title";
+import { FIRST_FOCUS_WAIT_MS } from "../../src/ui/alert-dialog-guard";
 import {
   expectFocusResetThenSkipLink,
   expectNoAxeViolations,
@@ -716,7 +717,10 @@ export function listRowChecks(list: ListUnderTest): void {
       await expect(dialog.getByRole("heading", { level: 2 })).toHaveText(
         asking.question,
       );
-      await expect(keep, "focus starts on Keep").toBeFocused();
+      await expect(
+        keep,
+        "focus moves to Keep, after the dialog itself (D-136)",
+      ).toBeFocused();
 
       await page.keyboard.press("Tab");
       await expect(confirm).toBeFocused();
@@ -770,11 +774,12 @@ export function listRowChecks(list: ListUnderTest): void {
     // The delete itself, as far as the gate may take it: the press is real,
     // the write guard holds its answer, and then answers it as an action the
     // server does not know, so the row comes back. The press is a deliberate
-    // Tab then Enter on a stopped clock, in the same instant the dialog
-    // opened: a key is never held back, and never dropped without a word
-    // (D-119). While the answer is held the screen is what a confirmed
-    // delete shows: the dialog gone, the page live, the row gone, focus in
-    // the next row's name field, and the sentence in the log.
+    // Tab then Enter on a stopped clock, as the first focus reaches Keep
+    // (D-136), well inside the double-tap guard: a key is never held back,
+    // and never dropped without a word (D-119). While the answer is held the
+    // screen is what a confirmed delete shows: the dialog gone, the page
+    // live, the row gone, focus in the next row's name field, and the
+    // sentence in the log.
     test(`a ${noun} delete confirmed by Tab then Enter, at once, closes the dialog first, moves focus to a name field, says so, and comes back when the server cannot take it`, async ({
       page,
     }) => {
@@ -790,6 +795,7 @@ export function listRowChecks(list: ListUnderTest): void {
       await stopClock(page);
       await rowDelete.focus();
       await page.keyboard.press("Enter");
+      await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
       await expect(keep).toBeFocused();
       await page.keyboard.press("Tab");
       await expect(confirm).toBeFocused();

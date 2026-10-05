@@ -7,7 +7,10 @@ import {
   restaurantMenuPath,
   restaurantMenusPath,
 } from "../../src/features/owner/paths";
-import { CONFIRM_GUARD_MS } from "../../src/ui/alert-dialog-guard";
+import {
+  CONFIRM_GUARD_MS,
+  FIRST_FOCUS_WAIT_MS,
+} from "../../src/ui/alert-dialog-guard";
 import {
   expectNoAxeViolations,
   expectNoHorizontalScroll,
@@ -31,8 +34,10 @@ import { expectWrites, guardWrites } from "./write-guard";
 // this page run from owner-pages.spec.ts.
 //
 // The delete confirmation (D-119) is one piece for every list, and its
-// clock tests run here: a tap on its Delete inside the double-tap guard is
-// not taken, with the write guard as the proof that nothing was sent; and
+// clock tests run here: its first focus (D-136), the dialog itself and then
+// Keep after the wait, with every focus and blur counted; a tap on its
+// Delete inside the double-tap guard is not taken, with the write guard as
+// the proof that nothing was sent; and
 // two tests press Delete for real and say they expect a write, by a tap
 // once the double-tap guard is over and by a press with no pointer behind
 // it. The write guard holds the answer so the screen can be read while the
@@ -250,13 +255,117 @@ test("at the largest phone text size, the delete confirmation fits and scrolls f
   await expect(dialog).toHaveCount(0);
 });
 
+// Every focus and blur in the page from here on, named by where it lands:
+// the dialog itself, an answer by its words, or the page behind. The
+// window's own focus and blur are not counted.
+async function recordFocus(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const moves: string[] = [];
+    Object.assign(window, { focusMoves: moves });
+    const named = (target: EventTarget | null) => {
+      if (!(target instanceof Element)) return "page";
+      if (target.getAttribute("role") === "alertdialog") return "dialog";
+      return target.closest('[role="alertdialog"]')
+        ? (target.textContent ?? "").trim()
+        : "page";
+    };
+    for (const type of ["focus", "blur"]) {
+      window.addEventListener(
+        type,
+        (event) => {
+          if (event.target === window || event.target === document) return;
+          moves.push(`${type} ${named(event.target)}`);
+        },
+        true,
+      );
+    }
+  });
+}
+
+async function focusMoves(page: Page): Promise<string[]> {
+  return page.evaluate(
+    () => (window as unknown as { focusMoves: string[] }).focusMoves,
+  );
+}
+
+// The first focus (D-136). React Aria focuses the dialog itself the moment
+// it opens, so the question is read as its name, and after the wait focus
+// moves once to Keep. Keep is never blurred and never focused twice, and
+// React Aria's own refocus half a second in finds focus on Keep and leaves
+// it. On a stopped clock, so the wait is measured to the millisecond and
+// the second after it is watched whole.
+test("the dialog takes focus first, and after the wait focus moves once to Keep and stays", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const { withSections } = ownerFixture();
+  await openMenus(page);
+  const rowDelete = rowButton(page, strings.remove, withSections.name);
+  const { dialog, keep } = confirmation(page, withSections);
+
+  await stopClock(page);
+  await rowDelete.focus();
+  await recordFocus(page);
+  await page.keyboard.press("Enter");
+  await expect(dialog, "the dialog itself has focus as it opens").toBeFocused();
+  await page.clock.runFor(FIRST_FOCUS_WAIT_MS - 1);
+  await expect(dialog, "until the wait is over").toBeFocused();
+  await page.clock.runFor(1);
+  await expect(keep, "then Keep").toBeFocused();
+  await page.clock.runFor(1000);
+  await expect(keep, "and Keep keeps it").toBeFocused();
+  expect(
+    await focusMoves(page),
+    "one move into the dialog and one to Keep, nothing blurred or focused again",
+  ).toEqual([
+    "blur page",
+    "focus dialog",
+    "blur dialog",
+    `focus ${strings.keep}`,
+  ]);
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(rowDelete).toBeFocused();
+});
+
+// An owner who moves before the wait is over keeps the place they moved to:
+// a Tab from the dialog reaches Keep, the first answer, a second Tab reaches
+// Delete, and the end of the wait moves nothing. Escape sends nothing.
+test("a Tab inside the wait moves on from the dialog, and the first focus leaves focus where the owner put it", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const { withSections } = ownerFixture();
+  const names = await openMenus(page);
+  const rowDelete = rowButton(page, strings.remove, withSections.name);
+  const { dialog, keep, confirm } = confirmation(page, withSections);
+
+  await stopClock(page);
+  await rowDelete.focus();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(keep, "Tab from the dialog reaches Keep first").toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(confirm).toBeFocused();
+  await page.clock.runFor(1000);
+  await expect(confirm, "the end of the wait moves nothing").toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(rowDelete).toBeFocused();
+  expect(await menuNames(page), "nothing was deleted").toEqual(names);
+});
+
 // The double-tap guard (D-119). The press that opens the dialog can come
 // twice, and the dialog must not take the second one as its answer. That is
 // a pointer's problem, so the guard holds back a mouse, a finger, and a pen,
-// and nothing else. Both presses here are real taps on a stopped clock, so
-// the second lands in the same instant as the first. Keep and Escape are
-// not held back: Escape is pressed in that same instant. Nothing is sent,
-// so the write guard is the proof, and the test says it expects no write.
+// and nothing else. Both presses here are real taps on a stopped clock, the
+// second just as the first focus reaches Keep (D-136), a tenth of a second
+// in and well inside the guard. Keep and Escape are not held back: Escape is
+// pressed in that same instant. Nothing is sent, so the write guard is the
+// proof, and the test says it expects no write.
 test("a second tap right after the dialog opens does not confirm the delete, and the button looks no different", async ({
   page,
 }) => {
@@ -268,7 +377,8 @@ test("a second tap right after the dialog opens does not confirm the delete, and
 
   await stopClock(page);
   await rowDelete.tap();
-  await expect(keep, "the dialog opens with focus on Keep").toBeFocused();
+  await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
+  await expect(keep, "the dialog opens, and focus moves to Keep").toBeFocused();
   await confirm.tap();
   await expect(confirm, "the second tap landed on Delete").toBeFocused();
 
@@ -289,8 +399,8 @@ test("a second tap right after the dialog opens does not confirm the delete, and
 
 // The other side of the double-tap guard: once its half second is over, a
 // tap on Delete is taken like any press. The clock stops before the dialog
-// opens and is moved on by exactly the guard, so this is the first instant
-// a tap counts.
+// opens and is moved on by exactly the guard, the first focus's wait and
+// then the rest, so this is the first instant a tap counts.
 test("a tap on Delete once the double-tap guard is over confirms, and the menu comes back when the server cannot take it", async ({
   page,
 }) => {
@@ -305,8 +415,9 @@ test("a tap on Delete once the double-tap guard is over confirms, and the menu c
 
   await stopClock(page);
   await rowDelete.tap();
+  await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
   await expect(keep).toBeFocused();
-  await page.clock.fastForward(CONFIRM_GUARD_MS);
+  await page.clock.fastForward(CONFIRM_GUARD_MS - FIRST_FOCUS_WAIT_MS);
   await confirm.tap();
   await page.clock.resume();
 
@@ -334,8 +445,8 @@ test("a tap on Delete once the double-tap guard is over confirms, and the menu c
 // React Aria calls virtual. It is never held back either (D-119): a screen
 // reader presses what its cursor is on, so a press on Delete was meant. Both
 // presses are made inside the page, the way element.click() makes them, on
-// a stopped clock, in the same instant. A real screen reader's press is
-// checked by hand.
+// a stopped clock, the second as the first focus reaches Keep (D-136), well
+// inside the guard. A real screen reader's press is checked by hand.
 test("a press with no pointer behind it, the kind a screen reader sends, confirms the delete at once", async ({
   page,
 }) => {
@@ -348,7 +459,8 @@ test("a press with no pointer behind it, the kind a screen reader sends, confirm
 
   await stopClock(page);
   await rowDelete.evaluate((element: HTMLElement) => element.click());
-  await expect(keep, "the dialog opens with focus on Keep").toBeFocused();
+  await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
+  await expect(keep, "the dialog opens, and focus moves to Keep").toBeFocused();
   await confirm.evaluate((element: HTMLElement) => element.click());
   await page.clock.resume();
 

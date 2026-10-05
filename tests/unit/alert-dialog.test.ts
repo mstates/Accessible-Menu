@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   confirmCounts,
   CONFIRM_GUARD_MS,
+  FIRST_FOCUS_WAIT_MS,
   type PressKind,
 } from "../../src/ui/alert-dialog-guard";
 
@@ -72,5 +73,14 @@ describe("the confirmation's double-tap guard (D-119)", () => {
     expect(confirmCounts(unknown, opened, opened + CONFIRM_GUARD_MS)).toBe(
       true,
     );
+  });
+});
+
+// The first focus of every dialog (D-136): the dialog itself, then its first
+// stop after a wait chosen by ear. The gate pins the timeline on a stopped
+// clock; this pins the number, which changes only after listening again.
+describe("the first focus of a dialog (D-136)", () => {
+  it("moves to the first stop a tenth of a second after the dialog opens", () => {
+    expect(FIRST_FOCUS_WAIT_MS).toBe(100);
   });
 });
