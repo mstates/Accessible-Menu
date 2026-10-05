@@ -1,7 +1,7 @@
 -- Owner boundary check for sections. Run in the Supabase SQL editor after
--- every migration that touches sections. Everything rolls back. Replace the
--- uid below with your own auth.users id. A run that ends without an error
--- passed every check.
+-- every migration that touches sections, or move_section(). Everything
+-- rolls back. Replace the uid below with your own auth.users id. A run that
+-- ends without an error passed every check.
 begin;
 
 -- The one line to change. The script makes this user a member of two
@@ -26,6 +26,7 @@ declare
   a_other uuid;
   b_menu uuid;
   c_menu uuid;
+  c_section uuid;
 begin
   if not exists (select 1 from auth.users u where u.id = uid) then
     raise exception 'FAIL: put your auth.users id in boundary.uid';
@@ -105,7 +106,7 @@ begin
   insert into public.sections (menu_id, name, sort)
   values (b_menu, 'Boundary check B one', 1);
   insert into public.sections (menu_id, name, sort)
-  values (c_menu, 'Boundary check C one', 1);
+  values (c_menu, 'Boundary check C one', 1) returning id into c_section;
 
   perform set_config('boundary.a', a::text, true);
   perform set_config('boundary.b', b::text, true);
@@ -113,6 +114,7 @@ begin
   perform set_config('boundary.a_other', a_other::text, true);
   perform set_config('boundary.b_menu', b_menu::text, true);
   perform set_config('boundary.c_menu', c_menu::text, true);
+  perform set_config('boundary.c_section', c_section::text, true);
 end;
 $$;
 
@@ -130,10 +132,19 @@ declare
   a_other uuid := current_setting('boundary.a_other')::uuid;
   b_menu uuid := current_setting('boundary.b_menu')::uuid;
   c_menu uuid := current_setting('boundary.c_menu')::uuid;
+  c_section uuid := current_setting('boundary.c_section')::uuid;
   mine uuid;
   two uuid;
   three uuid;
+  mover uuid;
+  twin uuid;
+  dish uuid;
   got uuid;
+  held_menu uuid;
+  held_restaurant uuid;
+  dish_section uuid;
+  dish_restaurant uuid;
+  is_last boolean;
   ids uuid[];
   other_ids uuid[];
   flipped uuid[];
@@ -358,6 +369,122 @@ begin
   update public.menus set deleted_at = null where id = a_menu;
   raise notice 'ok: a deleted menu keeps its sections as they were';
 
+  -- move_section(): a section goes to another menu of its own restaurant,
+  -- last, with its dishes, and nowhere else (D-129). menu_id itself stays
+  -- unwritable, as the check further up proves.
+  insert into public.sections (menu_id, name, sort)
+  values (a_menu, 'Boundary check mover', 9005) returning id into mover;
+  insert into public.items (section_id, name, sort)
+  values (mover, 'Boundary check dish', 1) returning id into dish;
+
+  perform public.move_section(mover, a_other);
+  select s.menu_id, s.restaurant_id,
+         s.sort > all (
+           select o.sort from public.sections o
+           where o.menu_id = a_other
+             and o.deleted_at is null
+             and o.id <> s.id
+         )
+    into held_menu, held_restaurant, is_last
+  from public.sections s where s.id = mover;
+  if held_menu is distinct from a_other
+     or held_restaurant is distinct from a
+     or is_last is not true then
+    raise exception 'FAIL: a moved section is not last in the menu it went to, in its own restaurant';
+  end if;
+  select i.section_id, i.restaurant_id into dish_section, dish_restaurant
+  from public.items i where i.id = dish;
+  if dish_section is distinct from mover
+     or dish_restaurant is distinct from a then
+    raise exception 'FAIL: a moved section left its dish behind';
+  end if;
+  raise notice 'ok: a section moves to another menu of its restaurant, last, and its dish goes with it';
+
+  begin
+    perform public.move_section(mover, a_other);
+    raise exception 'FAIL: a section was moved to the menu it is in';
+  exception when raise_exception then
+    if sqlerrm <> 'move_same_menu' then raise; end if;
+    raise notice 'ok: a move to the menu a section is in is refused';
+  end;
+
+  -- A name the menu already has, whatever the case or the outer spaces.
+  insert into public.sections (menu_id, name, sort)
+  values (a_menu, ' boundary CHECK other one ', 9006) returning id into twin;
+  begin
+    perform public.move_section(twin, a_other);
+    raise exception 'FAIL: a section moved into a menu that has its name';
+  exception when raise_exception then
+    if sqlerrm <> 'move_name_taken' then raise; end if;
+    raise notice 'ok: a name the menu already has is refused, any case or spacing';
+  end;
+  select s.menu_id into held_menu from public.sections s where s.id = twin;
+  if held_menu is distinct from a_menu then
+    raise exception 'FAIL: a refused move moved the section';
+  end if;
+
+  -- The other restaurant, though this user is a member of both.
+  begin
+    perform public.move_section(mover, b_menu);
+    raise exception 'FAIL: a section crossed to another restaurant';
+  exception when raise_exception then
+    if sqlerrm <> 'move_menu_gone' then raise; end if;
+    raise notice 'ok: a section does not cross to another restaurant, even for a member of both';
+  end;
+
+  begin
+    perform public.move_section(mover, c_menu);
+    raise exception 'FAIL: a section moved to a menu its owner cannot read';
+  exception when raise_exception then
+    if sqlerrm <> 'move_menu_gone' then raise; end if;
+    raise notice 'ok: a menu of a restaurant this user is not in reads as gone';
+  end;
+
+  begin
+    perform public.move_section(c_section, a_menu);
+    raise exception 'FAIL: an owner moved a section that is not theirs';
+  exception when raise_exception then
+    if sqlerrm <> 'move_not_found' then raise; end if;
+    raise notice 'ok: a section that is not this user''s reads as not there';
+  end;
+
+  -- A deleted menu takes no section, and gives none up.
+  update public.menus set deleted_at = now() where id = a_menu;
+  begin
+    perform public.move_section(mover, a_menu);
+    raise exception 'FAIL: a section moved into a deleted menu';
+  exception when raise_exception then
+    if sqlerrm <> 'move_menu_gone' then raise; end if;
+    raise notice 'ok: a deleted menu takes no section';
+  end;
+  begin
+    perform public.move_section(two, a_other);
+    raise exception 'FAIL: a section moved out of a deleted menu';
+  exception when raise_exception then
+    if sqlerrm <> 'move_not_found' then raise; end if;
+    raise notice 'ok: a deleted menu gives no section up';
+  end;
+  update public.menus set deleted_at = null where id = a_menu;
+
+  -- A deleted section does not move.
+  update public.sections set deleted_at = now() where id = mover;
+  begin
+    perform public.move_section(mover, a_menu);
+    raise exception 'FAIL: a deleted section moved';
+  exception when raise_exception then
+    if sqlerrm <> 'move_not_found' then raise; end if;
+    raise notice 'ok: a deleted section does not move';
+  end;
+  update public.sections set deleted_at = null where id = mover;
+
+  -- And back, which is what Undo sends.
+  perform public.move_section(mover, a_menu);
+  select s.menu_id into held_menu from public.sections s where s.id = mover;
+  if held_menu is distinct from a_menu then
+    raise exception 'FAIL: a section did not move back';
+  end if;
+  raise notice 'ok: a section moves back to the menu it came from';
+
   -- The order function takes exactly the menu's live sections, each once.
   select array_agg(s.id order by s.sort, s.created_at, s.id) into ids
   from public.sections s
@@ -436,14 +563,15 @@ begin
 end;
 $$;
 
--- A stranger reads, writes, adds, and orders nothing, even with the menu's
--- own list in hand.
+-- A stranger reads, writes, adds, orders, and moves nothing, even with the
+-- menu's own list in hand.
 select set_config('request.jwt.claims',
   format('{"sub":"%s","role":"authenticated"}', gen_random_uuid()), true);
 
 do $$
 declare
   a_menu uuid := current_setting('boundary.a_menu')::uuid;
+  a_other uuid := current_setting('boundary.a_other')::uuid;
   ids uuid[] := string_to_array(current_setting('boundary.order'), ',')::uuid[];
   seen integer;
   touched integer;
@@ -478,28 +606,39 @@ begin
     if sqlerrm <> 'order_mismatch' then raise; end if;
     raise notice 'ok: a stranger orders nothing, even with the menu''s own list';
   end;
+
+  begin
+    perform public.move_section(ids[1], a_other);
+    raise exception 'FAIL: a stranger moved a section';
+  exception when raise_exception then
+    if sqlerrm <> 'move_not_found' then raise; end if;
+    raise notice 'ok: a stranger moves nothing';
+  end;
 end;
 $$;
 
--- As the table owner again: the stranger moved nothing.
+-- As the table owner again: the stranger moved nothing, in the list or
+-- out of the menu.
 reset role;
 
 do $$
 declare
+  a_menu uuid := current_setting('boundary.a_menu')::uuid;
   ids uuid[] := string_to_array(current_setting('boundary.order'), ',')::uuid[];
   in_place boolean;
 begin
-  select bool_and(s.sort = t.ord) into in_place
+  select bool_and(s.sort = t.ord and s.menu_id = a_menu) into in_place
   from unnest(ids) with ordinality as t (id, ord)
   join public.sections s on s.id = t.id;
   if in_place is not true then
-    raise exception 'FAIL: the order changed under a stranger';
+    raise exception 'FAIL: the order or the menu changed under a stranger';
   end if;
-  raise notice 'ok: the order is as the owner left it';
+  raise notice 'ok: the order is as the owner left it, in the menu it was in';
 end;
 $$;
 
--- A diner: the table and the function are closed, and the views are empty.
+-- A diner: the table and both functions are closed, and the views are
+-- empty.
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 
@@ -520,6 +659,13 @@ begin
     raise exception 'FAIL: anon ran set_section_order';
   exception when insufficient_privilege then
     raise notice 'ok: anon cannot run set_section_order';
+  end;
+
+  begin
+    perform public.move_section(gen_random_uuid(), gen_random_uuid());
+    raise exception 'FAIL: anon ran move_section';
+  exception when insufficient_privilege then
+    raise notice 'ok: anon cannot run move_section';
   end;
 
   select (select count(*) from public.published_menus)

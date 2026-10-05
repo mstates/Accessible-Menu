@@ -38,6 +38,7 @@ describe("CI Diner's data file (D-126)", () => {
     expect(updates).toEqual([
       "update public.menus m\n  set sort",
       "update public.sections s\n  set sort",
+      "update public.items i\n  set sort",
     ]);
   });
 });

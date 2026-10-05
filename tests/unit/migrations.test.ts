@@ -552,3 +552,208 @@ describe("the owner boundary on sections (D-85, D-121)", () => {
     expect(body).toMatch(/s\.menu_id = p_menu/);
   });
 });
+
+describe("the owner boundary on items (D-85, task 3a)", () => {
+  const file = "20261005000001_items.sql";
+  const items = readFileSync(join(dir, file), "utf8");
+  const neverWritten = [
+    "id",
+    "restaurant_id",
+    "description",
+    "price_cents",
+    "price_text",
+    "allergens",
+    "custom_allergens",
+    "allergens_reviewed",
+    "allergen_suggestions",
+    "dietary_tags",
+    "note",
+    "photo_url",
+    "photo_alt",
+    "available",
+    "special_schedule",
+    "import_confidence",
+    "external_ids",
+    "created_at",
+    "updated_at",
+  ];
+
+  function columnsOf(privilege: string): string[] {
+    const match = sql.match(
+      new RegExp(
+        `grant ${privilege} \\(([^)]*)\\) on public\\.items to authenticated;`,
+      ),
+    );
+    expect(match, `no ${privilege} column list on items`).not.toBeNull();
+    return (match?.[1] ?? "").split(",").map((column) => column.trim());
+  }
+
+  function bodyOf(name: string): string {
+    const from = items.indexOf(`create function public.${name}`);
+    expect(from, `${name} is not in ${file}`).toBeGreaterThan(-1);
+    return items.slice(from, items.indexOf("\n$$;", from));
+  }
+
+  it("replaces the table-wide writes with column lists", () => {
+    expect(items).toMatch(
+      /revoke insert, update, delete on public\.items from authenticated;/,
+    );
+    expect(columnsOf("insert")).toEqual(["section_id", "name", "sort"]);
+    expect(columnsOf("update")).toEqual(["name", "sort", "deleted_at"]);
+    for (const column of neverWritten) {
+      expect(columnsOf("insert")).not.toContain(column);
+      expect(columnsOf("update")).not.toContain(column);
+    }
+  });
+
+  // The gap the sections migration closed, one level down: a member of two
+  // restaurants pointing a dish at the other one.
+  it("never lets an owner write a dish's section or restaurant after insert", () => {
+    expect(columnsOf("update")).not.toContain("section_id");
+    expect(columnsOf("update")).not.toContain("restaurant_id");
+    expect(columnsOf("insert")).not.toContain("restaurant_id");
+  });
+
+  it("brings every dish in line with its section before the column lists", () => {
+    const realign = items.indexOf(
+      "update public.items i\n  set restaurant_id = s.restaurant_id",
+    );
+    const revoke = items.indexOf(
+      "revoke insert, update, delete on public.items from authenticated;",
+    );
+    expect(realign).toBeGreaterThan(-1);
+    expect(revoke).toBeGreaterThan(realign);
+  });
+
+  it("gives owners no delete on items from this migration on", () => {
+    const from = files.indexOf(file);
+    expect(from).toBeGreaterThan(-1);
+    const later = files
+      .slice(from)
+      .map((name) => readFileSync(join(dir, name), "utf8"))
+      .join("\n");
+    expect(later).not.toMatch(/grant [^;]*\bdelete\b[^;]*public\.items\b/);
+  });
+
+  it("leaves the published views alone", () => {
+    expect(items).not.toMatch(/\bview\b/);
+    expect(sql).not.toMatch(/drop constraint menus_not_published_yet/);
+  });
+
+  it("holds the name rule as a table constraint, with existing rows brought inside first and trimmed again after the cut", () => {
+    const fix = items.indexOf("update public.items\n  set name =");
+    const constraint = items.indexOf("add constraint items_name_text");
+    expect(fix).toBeGreaterThan(-1);
+    expect(constraint).toBeGreaterThan(fix);
+    expect(items).toMatch(
+      /items_name_text\s+check \(name ~ '\\S' and name !~ '\[\[:cntrl:\]\]' and length\(name\) <= 120\)/,
+    );
+    expect(items.slice(fix, constraint)).toMatch(
+      /regexp_replace\(left\([\s\S]*?, 120\), '\\s\+\$', ''\)/,
+    );
+  });
+
+  it("keeps a deleted dish and frees its name", () => {
+    expect(items).toMatch(
+      /alter table public\.items add column deleted_at timestamptz;/,
+    );
+    const numbering = items.indexOf("do $$");
+    const index = items.indexOf("create unique index items_name_key");
+    expect(numbering).toBeGreaterThan(-1);
+    expect(index).toBeGreaterThan(numbering);
+    expect(items).toMatch(
+      /create unique index items_name_key\s+on public\.items \(section_id, lower\(btrim\(name\)\)\)\s+where deleted_at is null;/,
+    );
+  });
+
+  it.each([
+    ["set_item_order", "uuid, uuid\\[\\]"],
+    ["section_dish_counts", "uuid"],
+    ["delete_with_contents", "\\s*text, uuid, uuid, integer, integer"],
+    ["move_section", "uuid, uuid"],
+  ])("opens %s to authenticated only", (name, parameters) => {
+    const grants = [
+      ...sql.matchAll(new RegExp(`grant [^;]*\\b${name}\\b[^;]*;`, "g")),
+    ].map((match) => match[0]);
+    expect(grants).toHaveLength(1);
+    expect(grants[0]).toMatch(/to authenticated;$/);
+    expect(items).toMatch(
+      new RegExp(
+        `revoke all on function public\\.${name}\\(${parameters}\\) from public, anon;`,
+      ),
+    );
+  });
+
+  it("orders dishes through one function that runs as the caller", () => {
+    const body = bodyOf("set_item_order");
+    expect(body).not.toMatch(/security definer/);
+    expect(body).toMatch(/for update;/);
+    expect(body).toMatch(/coalesce\(array_ndims\(p_ids\), 0\) <> 1/);
+    expect(body).toMatch(/cardinality\(p_ids\) <> live/);
+    expect(body).toMatch(/i\.deleted_at is null/);
+    expect(body).toMatch(/i\.section_id = p_section/);
+  });
+
+  it("counts dishes through a function that only reads, as the caller", () => {
+    const body = bodyOf("section_dish_counts");
+    expect(body).not.toMatch(/security definer/);
+    expect(body).toMatch(/language sql stable/);
+    expect(body).not.toMatch(/\b(insert|update|delete)\b/);
+    expect(body).toMatch(/i\.deleted_at is null/);
+    expect(body).toMatch(/s\.deleted_at is null/);
+    expect(body).toMatch(/m\.deleted_at is null/);
+  });
+
+  // D-119: the count sits inside the statement that marks the row, and the
+  // row and everything under it are locked first.
+  it("counts and marks in one statement, under locks, as the caller", () => {
+    const body = bodyOf("delete_with_contents");
+    expect(body).not.toMatch(/security definer/);
+    const marks = [
+      ...body.matchAll(
+        /update public\.(menus|sections) \w\s+set deleted_at = now\(\)[\s\S]*?;/g,
+      ),
+    ];
+    expect(marks.map((match) => match[1])).toEqual(["menus", "sections"]);
+    const [menu, section] = marks.map((match) => match[0]);
+    expect(menu).toMatch(/<= coalesce\(p_sections, 0\)/);
+    expect(menu).toMatch(/<= coalesce\(p_dishes, 0\)/);
+    expect(menu).toMatch(/m\.restaurant_id = p_parent/);
+    expect(section).toMatch(/<= coalesce\(p_dishes, 0\)/);
+    expect(section).toMatch(/s\.menu_id = p_parent/);
+    for (const mark of [menu, section]) {
+      expect(mark).toMatch(/deleted_at is null/);
+      expect(body.indexOf("for update")).toBeLessThan(body.indexOf(mark ?? ""));
+    }
+    expect(body.match(/for update/g)).toHaveLength(5);
+    expect(body).toMatch(/raise exception 'delete_grew'/);
+    expect(body).toMatch(/raise exception 'delete_not_found'/);
+  });
+
+  // D-129: menu_id is not a column owners write, so the move runs as the
+  // table owner and has to check the caller and the restaurant itself.
+  it("moves a section as a definer that checks the caller and keeps the restaurant", () => {
+    const body = bodyOf("move_section");
+    expect(body).toMatch(/security definer set search_path = ''/);
+    const membership = body.indexOf("not public.is_owner(home)");
+    const firstLock = body.search(/for (key share|update)/);
+    expect(membership).toBeGreaterThan(-1);
+    expect(firstLock).toBeGreaterThan(membership);
+    expect(body).toMatch(
+      /where m\.id = p_menu\s+and m\.restaurant_id = home\s+and m\.deleted_at is null\s+for key share;/,
+    );
+    expect(body).toMatch(
+      /where s\.id = p_section\s+and s\.restaurant_id = home\s+and s\.deleted_at is null\s+for update;/,
+    );
+    expect(body).toMatch(/exception when unique_violation then/);
+    expect(body).toMatch(/set menu_id = p_menu, sort = place/);
+    expect(body, "the move never writes the restaurant").not.toMatch(
+      /\bset\b[^;]*restaurant_id/,
+    );
+  });
+
+  it("still lets owners write neither link of a section as a column", () => {
+    expect(items).not.toMatch(/grant [^;]*public\.sections\b/);
+    expect(items).not.toMatch(/grant [^;]*public\.menus\b/);
+  });
+});
