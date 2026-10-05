@@ -9,7 +9,8 @@ import { parseTime, TIME_PATTERN } from "./time";
 // two ranges, five-character times keep the JSON far below the database's
 // 4000-octet cap. Two schemas share the day rules: hoursSchema reads the
 // stored shape, and hoursInputSchema reads times as the owner typed them
-// (D-105) into that shape. Pure: no React, no network.
+// (D-105), and the days whose Open 24 hours box is checked (D-124), into
+// that shape. Pure: no React, no network.
 
 export const DAY_KEYS = [
   "mon",
@@ -31,23 +32,36 @@ export type Hours = Record<DayKey, TimeRange[]>;
 
 export const MAX_RANGES_PER_DAY = 2;
 
+// How a day open around the clock is stored, whatever box or time said so.
+export const ALL_DAY_RANGE: TimeRange = { open: "00:00", close: "00:00" };
+
 type DayMessages = {
   ranges: string;
   overlap: string;
-  allDay: string;
 };
 
+// A stored range that opens and closes at the same time is the day's only
+// range (allDay).
 export type HoursMessages = DayMessages & {
   time: string;
   timePair: string;
+  allDay: string;
 };
 
-// Typed times name their field: timeAmPm and timeFormat carry {field}.
+// Typed times name their field: timeAmPm and timeFormat carry {field}. A
+// typed range that opens and closes at the same time is refused (sameTime),
+// since the Open 24 hours box is how an owner says it (D-124).
 export type HoursInputMessages = DayMessages & {
   timePair: string;
   timeAmPm: string;
   timeFormat: string;
+  sameTime: string;
 };
+
+// What the hours grid posts, read by the form: each day's times as typed,
+// and the days whose Open 24 hours box is checked. A checked day's times are
+// never read, so its list is empty.
+export type TypedHours = Record<DayKey, TimeRange[]> & { allDay: DayKey[] };
 
 const MINUTES_IN_DAY = 24 * 60;
 
@@ -67,6 +81,13 @@ function span(range: TimeRange): [number, number] {
 
 export function isAllDay(range: TimeRange): boolean {
   return range.open === range.close;
+}
+
+// A stored day open around the clock: its one range opens and closes at the
+// same time, whatever the time (D-92). Its Open 24 hours box loads checked.
+export function isOpenAllDay(ranges: readonly TimeRange[]): boolean {
+  const [only] = ranges;
+  return ranges.length === 1 && only !== undefined && isAllDay(only);
 }
 
 export function emptyHours(): Hours {
@@ -135,9 +156,18 @@ function typedRangeSchema(messages: HoursInputMessages) {
     });
 }
 
+// What a day does with a range that opens and closes at the same time.
+// Stored, it means around the clock and must be the day's only range.
+// Typed, it is refused, and the message points to the box.
+type SameTimeRule = { refused: boolean; message: string };
+
 // The day rules, shared by both schemas. They look only at ranges whose
 // times all read; a day with a bad time reports that time and nothing more.
-function daySchema(range: z.ZodType<TimeRange>, messages: DayMessages) {
+function daySchema(
+  range: z.ZodType<TimeRange>,
+  messages: DayMessages,
+  sameTime: SameTimeRule,
+) {
   return z
     .array(range)
     .max(MAX_RANGES_PER_DAY, { error: messages.ranges })
@@ -146,11 +176,12 @@ function daySchema(range: z.ZodType<TimeRange>, messages: DayMessages) {
         (range) =>
           TIME_PATTERN.test(range.open) && TIME_PATTERN.test(range.close),
       );
-      if (!valid || ranges.length < 2) return;
-      if (ranges.some(isAllDay)) {
-        ctx.addIssue({ code: "custom", message: messages.allDay });
+      if (!valid) return;
+      if (ranges.some(isAllDay) && (sameTime.refused || ranges.length > 1)) {
+        ctx.addIssue({ code: "custom", message: sameTime.message });
         return;
       }
+      if (ranges.length < 2) return;
       const spans = ranges.map(span).sort((a, b) => a[0] - b[0]);
       for (let index = 1; index < spans.length; index += 1) {
         const previous = spans[index - 1];
@@ -176,12 +207,30 @@ function week<Day extends z.ZodType>(day: Day) {
 }
 
 export function hoursSchema(messages: HoursMessages) {
-  return week(daySchema(timeRangeSchema(messages), messages));
+  return week(
+    daySchema(timeRangeSchema(messages), messages, {
+      refused: false,
+      message: messages.allDay,
+    }),
+  );
 }
 
-// The hours as the owner typed them, read into the stored shape.
+// The hours as the owner typed them, read into the stored shape. A checked
+// day is stored as the one all-day range. The output holds the seven days
+// and nothing else: it is written to the column as it is, and a stray key
+// would make every reader take the whole column for no hours.
 export function hoursInputSchema(messages: HoursInputMessages) {
-  return week(daySchema(typedRangeSchema(messages), messages));
+  const day = daySchema(typedRangeSchema(messages), messages, {
+    refused: true,
+    message: messages.sameTime,
+  });
+  return week(day)
+    .extend({ allDay: z.array(z.enum(DAY_KEYS)) })
+    .transform(({ allDay, ...days }): Hours => {
+      const hours: Hours = { ...days };
+      for (const key of allDay) hours[key] = [{ ...ALL_DAY_RANGE }];
+      return hours;
+    });
 }
 
 // Readers that only need to know whether a stored value is hours at all

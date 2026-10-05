@@ -4,15 +4,18 @@ import {
   isDayKey,
   type DayKey,
   type TimeRange,
+  type TypedHours,
 } from "@/domain/hours";
 
 // Turns the posted restaurant form into the plain object the zod schema
 // parses, and the schema's issues back into one message per field. Field
 // names match the schema keys; the hours grid posts as
 // hours.<day>.<index>.open and .close, each time as the owner typed it
-// (D-105). A day with no times is closed; every day blank means the owner
-// gave no hours. A range with one side filled is kept as typed so the
-// schema can report the empty side.
+// (D-105), and hours.<day>.allDay when a day's Open 24 hours box is checked
+// (D-124). A checked day's times are never read, valid or not. A day with no
+// times is closed; every day blank and unchecked means the owner gave no
+// hours. A range with one side filled is kept as typed so the schema can
+// report the empty side.
 
 function text(formData: FormData, name: string): string {
   const value = formData.get(name);
@@ -29,9 +32,15 @@ export function hoursFieldName(
   return `hours.${day}.${index}.${side}`;
 }
 
-function readHours(formData: FormData): Record<DayKey, TimeRange[]> | null {
-  let anyTime = false;
+export function allDayFieldName(day: DayKey): string {
+  return `hours.${day}.allDay`;
+}
+
+function readHours(formData: FormData): TypedHours | null {
+  const allDay = DAY_KEYS.filter((day) => formData.has(allDayFieldName(day)));
+  let anyTime = allDay.length > 0;
   const entries = DAY_KEYS.map((day) => {
+    if (allDay.includes(day)) return [day, []] as const;
     const ranges = RANGE_INDEXES.flatMap((index) => {
       const open = text(formData, hoursFieldName(day, index, "open")).trim();
       const close = text(formData, hoursFieldName(day, index, "close")).trim();
@@ -42,7 +51,8 @@ function readHours(formData: FormData): Record<DayKey, TimeRange[]> | null {
     return [day, ranges] as const;
   });
   if (!anyTime) return null;
-  return Object.fromEntries(entries) as Record<DayKey, TimeRange[]>;
+  const days = Object.fromEntries(entries) as Record<DayKey, TimeRange[]>;
+  return { ...days, allDay };
 }
 
 type TimeFieldLabels = {
@@ -94,6 +104,23 @@ export function fieldErrors(
     errors[name] = fill(issue.message, { day: dayLabel, field });
   }
   return errors;
+}
+
+// The errors the summary and each day show. A day whose box is checked has
+// no time fields on the page, so its errors leave with them, and no link in
+// the summary can point at a field that is gone. They come back if the box
+// is unchecked, with the times they were given for.
+export function errorsShown(
+  errors: Record<string, string>,
+  allDay: readonly DayKey[],
+): Record<string, string> {
+  const hidden = allDay.map((day) => `hours.${day}`);
+  return Object.fromEntries(
+    Object.entries(errors).filter(
+      ([name]) =>
+        !hidden.some((day) => name === day || name.startsWith(`${day}.`)),
+    ),
+  );
 }
 
 export function readRestaurantForm(formData: FormData) {

@@ -6,6 +6,8 @@ import {
   restaurantInputSchema,
 } from "../../src/domain/restaurant";
 import {
+  allDayFieldName,
+  errorsShown,
   fieldErrors,
   readRestaurantForm,
   timeFieldLabel,
@@ -121,6 +123,7 @@ describe("the restaurant input (D-95)", () => {
         fri: [],
         sat: [],
         sun: [],
+        allDay: [],
       },
     });
     expect(result.success).toBe(false);
@@ -182,7 +185,59 @@ describe("reading the posted form", () => {
       fri: [],
       sat: [],
       sun: [],
+      allDay: [],
     });
+  });
+
+  // D-124: the box is the answer for its day. Its times are never read,
+  // valid or not, and it is stored as the one all-day range.
+  it("stores a checked day as open around the clock and ignores its times, invalid ones included", () => {
+    const read = readRestaurantForm(
+      form({
+        [allDayFieldName("mon")]: "on",
+        "hours.mon.0.open": "lunch",
+        "hours.mon.0.close": "5",
+        "hours.mon.1.open": "2 pm",
+        "hours.mon.1.close": "2 pm",
+        [allDayFieldName("tue")]: "on",
+        "hours.tue.0.open": "11 am",
+        "hours.tue.0.close": "9 pm",
+        "hours.wed.0.open": "11 am",
+        "hours.wed.0.close": "9 pm",
+      }),
+    );
+    expect(read.hours).toEqual({
+      mon: [],
+      tue: [],
+      wed: [{ open: "11 am", close: "9 pm" }],
+      thu: [],
+      fri: [],
+      sat: [],
+      sun: [],
+      allDay: ["mon", "tue"],
+    });
+    const result = schema.safeParse({ ...valid, hours: read.hours });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.hours).toEqual({
+      mon: [{ open: "00:00", close: "00:00" }],
+      tue: [{ open: "00:00", close: "00:00" }],
+      wed: [{ open: "11:00", close: "21:00" }],
+      thu: [],
+      fri: [],
+      sat: [],
+      sun: [],
+    });
+  });
+
+  it("reads a checked day alone as hours given, not as no hours", () => {
+    const read = readRestaurantForm(form({ [allDayFieldName("sun")]: "on" }));
+    expect(read.hours).not.toBeNull();
+    const result = schema.safeParse({ ...valid, hours: read.hours });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.hours?.sun).toEqual([{ open: "00:00", close: "00:00" }]);
+    expect(result.data.hours?.mon).toEqual([]);
   });
 
   it("parses a posted form end to end", () => {
@@ -246,6 +301,7 @@ describe("naming each field in an error (D-105)", () => {
         fri: [],
         sat: [],
         sun: [],
+        allDay: [],
       },
     });
     expect(result.success).toBe(false);
@@ -257,6 +313,50 @@ describe("naming each field in an error (D-105)", () => {
         "Enter the time Monday closes again, like 11 am, 5:30 pm, or 17:30.",
       "hours.tue.0.close": "Tuesday needs both an opening and a closing time.",
       "hours.wed": "Wednesday has times that overlap.",
+    });
+  });
+
+  it("names the day when a typed time opens and closes at the same time", () => {
+    const result = schema.safeParse({
+      ...valid,
+      hours: {
+        mon: [{ open: "11 am", close: "11am" }],
+        tue: [],
+        wed: [],
+        thu: [],
+        fri: [],
+        sat: [],
+        sun: [],
+        allDay: [],
+      },
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(fieldErrors(result.error.issues, strings)).toEqual({
+      "hours.mon":
+        "Monday opens and closes at the same time. If you are open around the clock, check Open 24 hours.",
+    });
+  });
+});
+
+describe("the errors a checked day takes off the page (D-124)", () => {
+  const all = {
+    name: "Add the restaurant's name.",
+    "hours.mon": "Monday opens and closes at the same time.",
+    "hours.mon.0.open": "Add am or pm to the time Monday opens.",
+    "hours.mon.1.close": "Monday needs both an opening and a closing time.",
+    "hours.tue.0.open": "Add am or pm to the time Tuesday opens.",
+    "hours.sun": "Sunday has times that overlap.",
+  };
+
+  it("keeps every error when no box is checked", () => {
+    expect(errorsShown(all, [])).toEqual(all);
+  });
+
+  it("drops a checked day's day and time errors and keeps the rest", () => {
+    expect(errorsShown(all, ["mon", "sun"])).toEqual({
+      name: all.name,
+      "hours.tue.0.open": all["hours.tue.0.open"],
     });
   });
 });

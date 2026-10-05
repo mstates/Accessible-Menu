@@ -117,12 +117,16 @@ export const en = {
         website: "Website",
         websiteHint: "We add https:// if you leave it off.",
         hoursHint:
-          "Leave a day blank if you are closed that day. Enter the same opening and closing time for a day you are open around the clock.",
+          "Leave a day blank if you are closed that day. Check Open 24 hours for a day you are open around the clock.",
         timeHint: "For example, 11 am, 5:30 pm, or 17:30.",
         opens: "{day} opens",
         closes: "{day} closes",
         opensAgain: "{day} opens again",
         closesAgain: "{day} closes again",
+        // The box's visible words, then its day in visually hidden text:
+        // "Open 24 hours on Monday" (D-124).
+        allDay: "Open 24 hours",
+        allDayDay: "on {day}",
         addSecondTime: "Add a second time for {day}",
         removeSecondTime: "Remove the second time for {day}",
         timezone: "Time zone",
@@ -223,7 +227,8 @@ export const en = {
         timePair: "{day} needs both an opening and a closing time.",
         ranges: "{day} can have two time ranges at most.",
         overlap: "{day} has times that overlap.",
-        allDay: "{day} is open around the clock, so it needs no second time.",
+        sameTime:
+          "{day} opens and closes at the same time. If you are open around the clock, check Open 24 hours.",
         timezone: "Choose a time zone.",
         allergenNoteLength: "Keep the allergen note to 1000 characters.",
         prepNotes: "Choose preparation notes from the list.",

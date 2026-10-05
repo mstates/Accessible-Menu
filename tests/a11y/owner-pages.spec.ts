@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { en } from "../../src/copy";
+import { fill } from "../../src/copy/fill";
 import { pageTitle } from "../../src/copy/title";
+import { DAY_KEYS, type DayKey } from "../../src/domain/hours";
 import {
   dashboardPath,
   restaurantDetailsPath,
@@ -201,6 +203,88 @@ test("the restaurant nav shows the restaurant's name, is named by it, and marks 
     nav.locator(`a[href="${restaurantMenusPath(code)}"]`),
   ).toHaveText(strings.nav.menus);
   await expect(page.locator("main h1")).toHaveText(strings.details.heading);
+});
+
+// A day's Open 24 hours box, named for its day (D-124).
+function allDayName(day: DayKey): string {
+  const { fields, days } = strings;
+  return `${fields.allDay} ${fill(fields.allDayDay, { day: days[day] })}`;
+}
+
+// D-124: checking a day's box takes away only what follows it, focus stays
+// on the box, and a second press brings back what was typed, the second
+// time included. The details form saves only on Save details, so typing
+// and Add send nothing, and Enter is never pressed; the write guard is the
+// proof. The test starts from whatever CI Diner's Monday holds, so it needs
+// no hours in the data file. Typing here sets no leave warning (only the
+// editing lists set one), so nothing is left to put back.
+test("Open 24 hours hides a day's times with focus kept, a second press brings back what was typed, and every box names its day", async ({
+  page,
+}) => {
+  await open(page, details);
+  await page.waitForLoadState("networkidle");
+  const { fields } = strings;
+  const monday = strings.days.mon;
+  const box = page.getByRole("checkbox", {
+    name: allDayName("mon"),
+    exact: true,
+  });
+  const time = (label: string) =>
+    page.getByRole("textbox", {
+      name: fill(label, { day: monday }),
+      exact: true,
+    });
+  const button = (label: string) =>
+    page.getByRole("button", {
+      name: fill(label, { day: monday }),
+      exact: true,
+    });
+  const opens = time(fields.opens);
+  const opensAgain = time(fields.opensAgain);
+  const add = button(fields.addSecondTime);
+  const remove = button(fields.removeSecondTime);
+
+  if (await box.isChecked()) {
+    await box.focus();
+    await page.keyboard.press("Space");
+    await expect(box).not.toBeChecked();
+  }
+  await opens.fill("6:45 am");
+  if ((await add.count()) > 0) await add.click();
+  await opensAgain.fill("9 pm");
+
+  await box.focus();
+  await page.keyboard.press("Space");
+  await expect(box).toBeChecked();
+  await expect(box, "focus stays on the box").toBeFocused();
+  for (const gone of [
+    opens,
+    time(fields.closes),
+    opensAgain,
+    time(fields.closesAgain),
+    add,
+    remove,
+  ]) {
+    await expect(gone).toHaveCount(0);
+  }
+  await expectNoAxeViolations(page);
+
+  await page.keyboard.press("Space");
+  await expect(box).not.toBeChecked();
+  await expect(box, "focus stays on the box").toBeFocused();
+  await expect(opens).toHaveValue("6:45 am");
+  await expect(opensAgain).toHaveValue("9 pm");
+  await expect(remove).toHaveCount(1);
+
+  await expect(
+    page.getByRole("checkbox", { name: new RegExp(`^${fields.allDay} `) }),
+    "one box for each day",
+  ).toHaveCount(DAY_KEYS.length);
+  for (const day of DAY_KEYS) {
+    await expect(
+      page.getByRole("checkbox", { name: allDayName(day), exact: true }),
+    ).toHaveCount(1);
+  }
 });
 
 test("a saved result takes focus on arrival and is not read again on reload or Back", async ({

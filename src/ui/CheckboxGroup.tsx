@@ -43,8 +43,9 @@ export function CheckboxGroup({
 
 type ItemProps = Omit<CheckboxProps, "children"> & { children: ReactNode };
 
-// One checkbox. The checked state is a check mark drawn in currentColor, not
-// a fill alone, so it survives forced colors.
+// One checkbox, in a group or on its own, like a day's Open 24 hours box.
+// The checked state is a check mark drawn in currentColor, not a fill alone,
+// so it survives forced colors.
 export function Checkbox({ children, ...props }: ItemProps) {
   return (
     <AriaCheckbox {...props} className="group flex items-start gap-3 py-1">

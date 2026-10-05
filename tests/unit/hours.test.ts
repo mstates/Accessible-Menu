@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  DAY_KEYS,
   emptyHours,
   hoursInputSchema,
   hoursSchema,
   isAllDay,
+  isOpenAllDay,
   parseHours,
+  type DayKey,
   type Hours,
   type HoursInputMessages,
   type HoursMessages,
@@ -138,6 +141,20 @@ describe("the hours shape (D-92)", () => {
     ).toEqual(["sun: allDay"]);
   });
 
+  it("loads a day as open around the clock when its one range opens and closes at the same time, whatever the time", () => {
+    for (const time of ["00:00", "06:00", "11:00", "23:30"]) {
+      expect(isOpenAllDay([{ open: time, close: time }])).toBe(true);
+    }
+    expect(isOpenAllDay([])).toBe(false);
+    expect(isOpenAllDay([{ open: "06:00", close: "22:00" }])).toBe(false);
+    expect(
+      isOpenAllDay([
+        { open: "00:00", close: "00:00" },
+        { open: "11:00", close: "14:00" },
+      ]),
+    ).toBe(false);
+  });
+
   it("reads anything else as no hours", () => {
     expect(parseHours(null)).toBeNull();
     expect(parseHours("Tuesday to Sunday")).toBeNull();
@@ -153,12 +170,15 @@ describe("hours as the owner typed them (D-105)", () => {
     timeFormat: "timeFormat",
     ranges: "ranges",
     overlap: "overlap",
-    allDay: "allDay",
+    sameTime: "sameTime",
   };
   const input = hoursInputSchema(inputMessages);
 
-  function typed(day: Partial<Record<keyof Hours, unknown>>) {
-    return { ...emptyHours(), ...day };
+  function typed(
+    day: Partial<Record<keyof Hours, unknown>>,
+    allDay: DayKey[] = [],
+  ) {
+    return { ...emptyHours(), ...day, allDay };
   }
 
   function typedProblems(value: unknown): string[] {
@@ -204,14 +224,13 @@ describe("hours as the owner typed them (D-105)", () => {
     const result = input.safeParse(
       typed({
         fri: [{ open: "noon", close: "midnight" }],
-        sun: [{ open: "midnight", close: "12 am" }],
+        sat: [{ open: "midnight", close: "2 am" }],
       }),
     );
     expect(result.success).toBe(true);
     if (!result.success) return;
     expect(result.data.fri).toEqual([{ open: "12:00", close: "00:00" }]);
-    expect(result.data.sun).toEqual([{ open: "00:00", close: "00:00" }]);
-    expect(isAllDay(result.data.sun[0] ?? { open: "", close: "x" })).toBe(true);
+    expect(result.data.sat).toEqual([{ open: "00:00", close: "02:00" }]);
   });
 
   it("asks for am or pm on the side that needs it", () => {
@@ -261,7 +280,21 @@ describe("hours as the owner typed them (D-105)", () => {
     ).toEqual(["mon.1.open: timeAmPm"]);
   });
 
-  it("keeps midnight to midnight alone on its day", () => {
+  // D-124 refines D-105's midnight-to-midnight line for typing only: the
+  // Open 24 hours box is how an owner says it.
+  it("refuses a typed time that opens and closes at the same time, as a day error", () => {
+    expect(
+      typedProblems(typed({ mon: [{ open: "11 am", close: "11 am" }] })),
+    ).toEqual(["mon: sameTime"]);
+    expect(
+      typedProblems(typed({ tue: [{ open: "17:00", close: "5 pm" }] })),
+    ).toEqual(["tue: sameTime"]);
+    expect(
+      typedProblems(typed({ sun: [{ open: "midnight", close: "12 am" }] })),
+    ).toEqual(["sun: sameTime"]);
+  });
+
+  it("refuses a same-time pair beside a second range, and says nothing of overlap", () => {
     expect(
       typedProblems(
         typed({
@@ -271,6 +304,65 @@ describe("hours as the owner typed them (D-105)", () => {
           ],
         }),
       ),
-    ).toEqual(["sun: allDay"]);
+    ).toEqual(["sun: sameTime"]);
+    expect(
+      typedProblems(
+        typed({
+          wed: [
+            { open: "11 am", close: "3 pm" },
+            { open: "2 pm", close: "2 pm" },
+          ],
+        }),
+      ),
+    ).toEqual(["wed: sameTime"]);
+  });
+
+  it("stores a checked day as the one all-day range", () => {
+    const result = input.safeParse(
+      typed({ mon: [{ open: "11 am", close: "9 pm" }] }, ["sat", "sun"]),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data).toEqual({
+      ...emptyHours(),
+      mon: [{ open: "11:00", close: "21:00" }],
+      sat: [{ open: "00:00", close: "00:00" }],
+      sun: [{ open: "00:00", close: "00:00" }],
+    });
+    expect(isAllDay(result.data.sat[0] ?? { open: "", close: "x" })).toBe(true);
+  });
+
+  // The output is written to the column as it is, and the column's check
+  // looks only at size, so a stray key would make every reader take the
+  // whole column for no hours.
+  it("gives back the seven days and nothing else, which the stored schema reads back equal", () => {
+    const result = input.safeParse(
+      typed(
+        {
+          mon: [{ open: "11 am", close: "9 pm" }],
+          tue: [
+            { open: "11 a.m.", close: "2:30pm" },
+            { open: "5 pm", close: "2 am" },
+          ],
+          fri: [{ open: "noon", close: "midnight" }],
+        },
+        ["wed", "sun"],
+      ),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(Object.keys(result.data)).toEqual([...DAY_KEYS]);
+    expect(result.data).not.toHaveProperty("allDay");
+    expect(parseHours(result.data)).toEqual(result.data);
+    expect(parseHours(JSON.parse(JSON.stringify(result.data)))).toEqual(
+      result.data,
+    );
+  });
+
+  it("takes only day keys as checked days", () => {
+    expect(input.safeParse(typed({}, ["holiday" as DayKey])).success).toBe(
+      false,
+    );
+    expect(input.safeParse({ ...typed({}), extra: [] }).success).toBe(false);
   });
 });
