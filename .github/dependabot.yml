@@ -33,6 +33,24 @@ updates:
       # one task (D-138). Its minors and patches still come in the group.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # Two majors our lint tools cannot take yet. Ranges, not update types,
+      # so a major below the hold, like TypeScript 6, still comes, and so do
+      # the minors and patches under it. A held version opens no pull
+      # request, so the holds are checked by hand with each month's run
+      # (D-138). Delete an entry once every line for it takes the held major:
+      #   npm view eslint-plugin-jsx-a11y peerDependencies.eslint
+      #   npm view eslint-plugin-react peerDependencies.eslint
+      #   npm view eslint-plugin-import peerDependencies.eslint
+      #   npm view typescript-eslint peerDependencies.typescript
+      # eslint 10 and above wait for jsx-a11y, react, and import, which
+      # eslint-config-next brings. At 6.10.2, 7.37.5, and 2.32.0 each stops at
+      # eslint 9, so npm ci refuses eslint 10 (#3).
+      - dependency-name: "eslint"
+        versions: [">=10.0.0"]
+      # TypeScript 7 and above wait for typescript-eslint. At 8.71 it takes
+      # TypeScript below 6.1, so lint fails on 7 (#4, D-46).
+      - dependency-name: "typescript"
+        versions: [">=7.0.0"]
     # Nothing younger than a week, so a bad or hijacked release has time to
     # be pulled. Security updates are never delayed.
     cooldown:
