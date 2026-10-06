@@ -11,6 +11,10 @@ name: Accessibility gate
 # Each job runs one slice of the Playwright projects (D-137): the public
 # pages once per engine, and the owner screens in two jobs, so the gate's
 # wall clock is its slowest job, not the sum of them.
+# No job name holds a matrix value. A skipped job is never expanded, so
+# GitHub would show the expression as written. With none, a skipped job
+# shows its plain name, and GitHub adds the matrix value in parentheses to
+# a job that runs.
 on:
   deployment_status:
 
@@ -22,7 +26,7 @@ jobs:
   # two forced-colors projects. A failure in one engine never cancels the
   # others.
   a11y-public:
-    name: Public pages on the preview, ${{ matrix.engine }}
+    name: Public pages on the preview
     if: github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Preview'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
@@ -81,9 +85,10 @@ jobs:
   # cannot run without the guard. Two jobs from one definition: Chromium in
   # full with its arrival and forced-colors projects, and WebKit with
   # Firefox's one desktop project beside it. Each signs in and out on its
-  # own, and the password still reaches one step of one job definition.
+  # own, and the password still reaches one step of one job definition. The
+  # matrix holds only the browsers, the one value GitHub adds to the name.
   a11y-owner:
-    name: Owner screens on the preview, signed in (main only), ${{ matrix.slice }}
+    name: Owner screens on main previews, signed in
     needs: on-main
     if: needs.on-main.outputs.on_main == 'true'
     runs-on: ubuntu-26.04
@@ -91,13 +96,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - slice: chromium
-            browsers: chromium
-            projects: --project=owner-chromium-*
-          - slice: webkit and firefox
-            browsers: webkit firefox
-            projects: --project=owner-webkit-* --project=owner-firefox-*
+        browsers: [chromium, webkit firefox]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -110,12 +109,16 @@ jobs:
       # The only step that reads the secret. Missing variables fail the
       # Playwright config with a message that points to the Build plan;
       # nothing skips. No artifact step: the session never leaves the runner.
-      # The project names carry a star for Playwright, so the shell's own
-      # globbing is off.
+      # Each browser adds its owner projects. The project names carry a star
+      # for Playwright, so the shell's own globbing is off.
       - name: Owner checks, signed in as the test owner
         run: |
           set -f
-          npm run a11y -- ${{ matrix.projects }}
+          projects=""
+          for browser in ${{ matrix.browsers }}; do
+            projects="${projects} --project=owner-${browser}-*"
+          done
+          npm run a11y -- ${projects}
         env:
           A11Y_SCOPE: owner
           A11Y_BASE_URL: ${{ github.event.deployment_status.environment_url }}
