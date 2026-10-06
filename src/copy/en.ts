@@ -508,7 +508,8 @@ export const en = {
         placeholder: "Choose a menu",
         submit: "Move section",
         choose: "Choose a menu first.",
-        moved: "{section} moved to {menu}. It is the last section there.",
+        moved:
+          "{section} moved to {menu}. It is the last section there. You are still on this page.",
         notMoved: "{section} was not moved.",
         errors: {
           nameTaken: "{menu} already has a section called {section}.",

@@ -938,9 +938,9 @@ describe("what a section's move says", () => {
     to: { id: "l", name: "Lunch" },
   };
 
-  it("says the move once, with where the section landed", () => {
+  it("says the move once, with where the section landed and that the owner is still on this page", () => {
     expect(sectionMovedSentence(move, "Starters", "Lunch")).toBe(
-      "Starters moved to Lunch. It is the last section there.",
+      "Starters moved to Lunch. It is the last section there. You are still on this page.",
     );
   });
 

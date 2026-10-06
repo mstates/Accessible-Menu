@@ -74,7 +74,9 @@ function problemText(
   }
 }
 
-// "Starters moved to Lunch. It is the last section there."
+// "Starters moved to Lunch. It is the last section there. You are still on
+// this page." The title read first after a move names the new menu, so the
+// sentence says the owner has not left (D-141).
 export function movedSentence(
   strings: MoveStrings,
   section: string,
