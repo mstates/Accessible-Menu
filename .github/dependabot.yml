@@ -1,0 +1,54 @@
+# Dependabot (D-138). Security updates are on in the repository settings
+# and work as before; nothing in this file changes them. Version updates
+# come once a month as pull requests into main, the default branch, where
+# Checks and the public gate run on them. The owner gate runs once one
+# merges (D-101, D-137).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    # An update joins the first group it matches, so the order matters.
+    groups:
+      # Majors that must move together come as one pull request per set.
+      # Their minors and patches still fall to minor-and-patch.
+      next-major:
+        patterns: ["next", "eslint-config-next"]
+        update-types: ["major"]
+      react-major:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+        update-types: ["major"]
+      # Minor and patch updates come together in one pull request. Any other
+      # major is outside every group, so it comes alone, to be read on its
+      # own.
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      # The Supabase CLI is parked until a sitting of its own. With no
+      # versions listed, this holds back version updates only; a security
+      # update for it still comes. Delete this entry in that sitting.
+      - dependency-name: "supabase"
+      # Node, .nvmrc, engines, and @types/node move together, by hand, as
+      # one task (D-138). Its minors and patches still come in the group.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    # Nothing younger than a week, so a bad or hijacked release has time to
+    # be pulled. Security updates are never delayed.
+    cooldown:
+      default-days: 7
+    # The grouped pull request and two more at most. The rest wait for next
+    # month's run.
+    open-pull-requests-limit: 3
+
+  # Every action in one pull request. The workflows pin each action by its
+  # full commit SHA with the version beside it (D-138), and this keeps both
+  # current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 1
