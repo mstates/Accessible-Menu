@@ -701,75 +701,78 @@ export function listRowChecks(list: ListUnderTest): void {
       };
     };
 
-    test(`Delete on a ${noun} that holds content asks first, with focus on Keep, and Keep or Escape sends nothing`, async ({
-      page,
-    }) => {
-      const asking = deletes.asking();
-      const names = await openList(page);
-      const rowDelete = rowButton(page, words.remove, asking.name);
-      const { dialog, keep, confirm } = confirmation(page, asking.question);
+    test(
+      `Delete on a ${noun} that holds content asks first, with focus on Keep, and Keep or Escape sends nothing`,
+      { tag: "@dialog" },
+      async ({ page }) => {
+        const asking = deletes.asking();
+        const names = await openList(page);
+        const rowDelete = rowButton(page, words.remove, asking.name);
+        const { dialog, keep, confirm } = confirmation(page, asking.question);
 
-      await rowDelete.focus();
-      await page.keyboard.press("Enter");
-      await expect(dialog, "an alert dialog named by its question").toHaveCount(
-        1,
-      );
-      await expect(dialog.getByRole("heading", { level: 2 })).toHaveText(
-        asking.question,
-      );
-      await expect(
-        keep,
-        "focus moves to Keep, after the dialog itself (D-136)",
-      ).toBeFocused();
+        await rowDelete.focus();
+        await page.keyboard.press("Enter");
+        await expect(
+          dialog,
+          "an alert dialog named by its question",
+        ).toHaveCount(1);
+        await expect(dialog.getByRole("heading", { level: 2 })).toHaveText(
+          asking.question,
+        );
+        await expect(
+          keep,
+          "focus moves to Keep, after the dialog itself (D-136)",
+        ).toBeFocused();
 
-      await page.keyboard.press("Tab");
-      await expect(confirm).toBeFocused();
-      await page.keyboard.press("Tab");
-      await expect(keep, "Tab stays inside the dialog").toBeFocused();
-      await page.keyboard.press("Shift+Tab");
-      await expect(confirm).toBeFocused();
+        await page.keyboard.press("Tab");
+        await expect(confirm).toBeFocused();
+        await page.keyboard.press("Tab");
+        await expect(keep, "Tab stays inside the dialog").toBeFocused();
+        await page.keyboard.press("Shift+Tab");
+        await expect(confirm).toBeFocused();
 
-      // The page behind is inert, and the log is not: a save that lands
-      // while the dialog is open is still heard (D-123). This pins the mark
-      // React Aria leaves alone, which is not public.
-      for (const behind of ["header", "main h1", "main ul"]) {
+        // The page behind is inert, and the log is not: a save that lands
+        // while the dialog is open is still heard (D-123). This pins the mark
+        // React Aria leaves alone, which is not public.
+        for (const behind of ["header", "main h1", "main ul"]) {
+          expect(
+            await page
+              .locator(behind)
+              .first()
+              .evaluate((element) => element.closest("[inert]") !== null),
+            `${behind} is inert behind the dialog`,
+          ).toBe(true);
+        }
         expect(
-          await page
-            .locator(behind)
-            .first()
-            .evaluate((element) => element.closest("[inert]") !== null),
-          `${behind} is inert behind the dialog`,
+          await log(page).evaluate(
+            (element) =>
+              element.closest('[inert], [aria-hidden="true"]') === null,
+          ),
+          "the log stays heard behind the dialog",
         ).toBe(true);
-      }
-      expect(
-        await log(page).evaluate(
-          (element) =>
-            element.closest('[inert], [aria-hidden="true"]') === null,
-        ),
-        "the log stays heard behind the dialog",
-      ).toBe(true);
-      await expectNoAxeViolations(page);
-      await expectNoHorizontalScroll(page);
+        await expectNoAxeViolations(page);
+        await expectNoHorizontalScroll(page);
 
-      await keep.focus();
-      await page.keyboard.press("Enter");
-      await expect(dialog).toHaveCount(0);
-      await expect(rowDelete, "Keep returns focus to Delete").toBeFocused();
-      await expect(
-        page.locator("[inert]"),
-        "the page is live again",
-      ).toHaveCount(0);
+        await keep.focus();
+        await page.keyboard.press("Enter");
+        await expect(dialog).toHaveCount(0);
+        await expect(rowDelete, "Keep returns focus to Delete").toBeFocused();
+        await expect(
+          page.locator("[inert]"),
+          "the page is live again",
+        ).toHaveCount(0);
 
-      await page.keyboard.press("Enter");
-      await expect(keep).toBeFocused();
-      await page.keyboard.press("Escape");
-      await expect(dialog).toHaveCount(0);
-      await expect(rowDelete, "Escape returns focus to Delete").toBeFocused();
+        await page.keyboard.press("Enter");
+        await expect(keep).toBeFocused();
+        await page.keyboard.press("Escape");
+        await expect(dialog).toHaveCount(0);
+        await expect(rowDelete, "Escape returns focus to Delete").toBeFocused();
 
-      expect(await savedNames(page), "nothing was deleted").toEqual(names);
-      await expect(log(page), "and nothing was said").toHaveText("");
-      await expect(savedStatus(page)).toHaveText(editing.saved);
-    });
+        expect(await savedNames(page), "nothing was deleted").toEqual(names);
+        await expect(log(page), "and nothing was said").toHaveText("");
+        await expect(savedStatus(page)).toHaveText(editing.saved);
+      },
+    );
 
     // The delete itself, as far as the gate may take it: the press is real,
     // the write guard holds its answer, and then answers it as an action the
@@ -780,62 +783,64 @@ export function listRowChecks(list: ListUnderTest): void {
     // screen is what a confirmed delete shows: the dialog gone, the page
     // live, the row gone, focus in the next row's name field, and the
     // sentence in the log.
-    test(`a ${noun} delete confirmed by Tab then Enter, at once, closes the dialog first, moves focus to a name field, says so, and comes back when the server cannot take it`, async ({
-      page,
-    }) => {
-      await page.clock.install();
-      const writes = expectWrites(page, { hold: true });
-      const asking = deletes.asking();
-      const names = await openList(page);
-      const index = names.indexOf(asking.name);
-      const neighbor = names[index + 1] ?? names[index - 1] ?? "";
-      const rowDelete = rowButton(page, words.remove, asking.name);
-      const { dialog, keep, confirm } = confirmation(page, asking.question);
+    test(
+      `a ${noun} delete confirmed by Tab then Enter, at once, closes the dialog first, moves focus to a name field, says so, and comes back when the server cannot take it`,
+      { tag: "@dialog" },
+      async ({ page }) => {
+        await page.clock.install();
+        const writes = expectWrites(page, { hold: true });
+        const asking = deletes.asking();
+        const names = await openList(page);
+        const index = names.indexOf(asking.name);
+        const neighbor = names[index + 1] ?? names[index - 1] ?? "";
+        const rowDelete = rowButton(page, words.remove, asking.name);
+        const { dialog, keep, confirm } = confirmation(page, asking.question);
 
-      await stopClock(page);
-      await rowDelete.focus();
-      await page.keyboard.press("Enter");
-      await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
-      await expect(keep).toBeFocused();
-      await page.keyboard.press("Tab");
-      await expect(confirm).toBeFocused();
-      await page.keyboard.press("Enter");
-      await page.clock.resume();
+        await stopClock(page);
+        await rowDelete.focus();
+        await page.keyboard.press("Enter");
+        await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
+        await expect(keep).toBeFocused();
+        await page.keyboard.press("Tab");
+        await expect(confirm).toBeFocused();
+        await page.keyboard.press("Enter");
+        await page.clock.resume();
 
-      await expect(dialog, "the dialog closes").toHaveCount(0);
-      await expect
-        .poll(() => writes.answered.length, {
-          message: "the delete is on its way, and held",
-        })
-        .toBeGreaterThan(0);
-      await expect(
-        page.locator("[inert]"),
-        "the page is live again",
-      ).toHaveCount(0);
-      expect(await savedNames(page), "the row is gone").toEqual(
-        names.filter((name) => name !== asking.name),
-      );
-      await expect(
-        nameField(page, neighbor),
-        "focus is in the next row's name field",
-      ).toBeFocused();
-      await expect(
-        log(page).getByText(fill(words.deleted, named(asking.name)), {
-          exact: true,
-        }),
-        "the delete is said once",
-      ).toHaveCount(1);
+        await expect(dialog, "the dialog closes").toHaveCount(0);
+        await expect
+          .poll(() => writes.answered.length, {
+            message: "the delete is on its way, and held",
+          })
+          .toBeGreaterThan(0);
+        await expect(
+          page.locator("[inert]"),
+          "the page is live again",
+        ).toHaveCount(0);
+        expect(await savedNames(page), "the row is gone").toEqual(
+          names.filter((name) => name !== asking.name),
+        );
+        await expect(
+          nameField(page, neighbor),
+          "focus is in the next row's name field",
+        ).toBeFocused();
+        await expect(
+          log(page).getByText(fill(words.deleted, named(asking.name)), {
+            exact: true,
+          }),
+          "the delete is said once",
+        ).toHaveCount(1);
 
-      writes.release();
-      const failure = deleteFailure(asking.name);
-      await expect(savedStatus(page)).toHaveText(failure);
-      expect(await savedNames(page), "the row is back").toEqual(names);
-      await expect(rowDelete, "focus is back on its Delete").toBeFocused();
-      await expect(
-        log(page).getByText(failure, { exact: true }),
-        "the failure is said once",
-      ).toHaveCount(1);
-    });
+        writes.release();
+        const failure = deleteFailure(asking.name);
+        await expect(savedStatus(page)).toHaveText(failure);
+        expect(await savedNames(page), "the row is back").toEqual(names);
+        await expect(rowDelete, "focus is back on its Delete").toBeFocused();
+        await expect(
+          log(page).getByText(failure, { exact: true }),
+          "the failure is said once",
+        ).toHaveCount(1);
+      },
+    );
 
     test(`Delete on a ${noun} that holds nothing asks nothing, and the ${noun} comes back when the server cannot take it`, async ({
       page,

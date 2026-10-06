@@ -218,42 +218,46 @@ async function expectDialogFits(dialog: Locator) {
   ).toBeGreaterThanOrEqual(0);
 }
 
-test("the delete confirmation fits and scrolls from its top, before and after text spacing", async ({
-  page,
-}) => {
-  const { withSections } = ownerFixture();
-  await openMenus(page);
-  const { dialog, keep } = confirmation(page, withSections);
-  await rowButton(page, strings.remove, withSections.name).focus();
-  await page.keyboard.press("Enter");
-  await expect(keep).toBeFocused();
-  await expectDialogFits(dialog);
-  await expectNoHorizontalScroll(page);
-  await expectDialogFits(dialog);
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
-});
+test(
+  "the delete confirmation fits and scrolls from its top, before and after text spacing",
+  { tag: "@dialog" },
+  async ({ page }) => {
+    const { withSections } = ownerFixture();
+    await openMenus(page);
+    const { dialog, keep } = confirmation(page, withSections);
+    await rowButton(page, strings.remove, withSections.name).focus();
+    await page.keyboard.press("Enter");
+    await expect(keep).toBeFocused();
+    await expectDialogFits(dialog);
+    await expectNoHorizontalScroll(page);
+    await expectDialogFits(dialog);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+  },
+);
 
-test("at the largest phone text size, the delete confirmation fits and scrolls from its top", async ({
-  page,
-}) => {
-  const { withSections } = ownerFixture();
-  await setLargestText(page);
-  await openMenus(page);
-  await expectRootAtLargest(page);
-  const { dialog, keep, confirm } = confirmation(page, withSections);
-  await rowButton(page, strings.remove, withSections.name).focus();
-  await page.keyboard.press("Enter");
-  await expect(keep).toBeFocused();
-  await expectDialogFits(dialog);
-  await expectNoHorizontalScroll(page);
-  await expectDialogFits(dialog);
-  await confirm.scrollIntoViewIfNeeded();
-  await expect(confirm, "both answers can be reached").toBeInViewport();
-  await expectNoAxeViolations(page);
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
-});
+test(
+  "at the largest phone text size, the delete confirmation fits and scrolls from its top",
+  { tag: "@dialog" },
+  async ({ page }) => {
+    const { withSections } = ownerFixture();
+    await setLargestText(page);
+    await openMenus(page);
+    await expectRootAtLargest(page);
+    const { dialog, keep, confirm } = confirmation(page, withSections);
+    await rowButton(page, strings.remove, withSections.name).focus();
+    await page.keyboard.press("Enter");
+    await expect(keep).toBeFocused();
+    await expectDialogFits(dialog);
+    await expectNoHorizontalScroll(page);
+    await expectDialogFits(dialog);
+    await confirm.scrollIntoViewIfNeeded();
+    await expect(confirm, "both answers can be reached").toBeInViewport();
+    await expectNoAxeViolations(page);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+  },
+);
 
 // Every focus and blur in the page from here on, named by where it lands:
 // the dialog itself, an answer by its words, or the page behind. The
@@ -294,69 +298,76 @@ async function focusMoves(page: Page): Promise<string[]> {
 // React Aria's own refocus half a second in finds focus on Keep and leaves
 // it. On a stopped clock, so the wait is measured to the millisecond and
 // the second after it is watched whole.
-test("the dialog takes focus first, and after the wait focus moves once to Keep and stays", async ({
-  page,
-}) => {
-  await page.clock.install();
-  const { withSections } = ownerFixture();
-  await openMenus(page);
-  const rowDelete = rowButton(page, strings.remove, withSections.name);
-  const { dialog, keep } = confirmation(page, withSections);
+test(
+  "the dialog takes focus first, and after the wait focus moves once to Keep and stays",
+  { tag: "@dialog" },
+  async ({ page }) => {
+    await page.clock.install();
+    const { withSections } = ownerFixture();
+    await openMenus(page);
+    const rowDelete = rowButton(page, strings.remove, withSections.name);
+    const { dialog, keep } = confirmation(page, withSections);
 
-  await stopClock(page);
-  await rowDelete.focus();
-  await recordFocus(page);
-  await page.keyboard.press("Enter");
-  await expect(dialog, "the dialog itself has focus as it opens").toBeFocused();
-  await page.clock.runFor(FIRST_FOCUS_WAIT_MS - 1);
-  await expect(dialog, "until the wait is over").toBeFocused();
-  await page.clock.runFor(1);
-  await expect(keep, "then Keep").toBeFocused();
-  await page.clock.runFor(1000);
-  await expect(keep, "and Keep keeps it").toBeFocused();
-  expect(
-    await focusMoves(page),
-    "one move into the dialog and one to Keep, nothing blurred or focused again",
-  ).toEqual([
-    "blur page",
-    "focus dialog",
-    "blur dialog",
-    `focus ${strings.keep}`,
-  ]);
+    await stopClock(page);
+    await rowDelete.focus();
+    await recordFocus(page);
+    await page.keyboard.press("Enter");
+    await expect(
+      dialog,
+      "the dialog itself has focus as it opens",
+    ).toBeFocused();
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS - 1);
+    await expect(dialog, "until the wait is over").toBeFocused();
+    await page.clock.runFor(1);
+    await expect(keep, "then Keep").toBeFocused();
+    await page.clock.runFor(1000);
+    await expect(keep, "and Keep keeps it").toBeFocused();
+    expect(
+      await focusMoves(page),
+      "one move into the dialog and one to Keep, nothing blurred or focused again",
+    ).toEqual([
+      "blur page",
+      "focus dialog",
+      "blur dialog",
+      `focus ${strings.keep}`,
+    ]);
 
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
-  await expect(rowDelete).toBeFocused();
-});
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(rowDelete).toBeFocused();
+  },
+);
 
 // An owner who moves before the wait is over keeps the place they moved to:
 // a Tab from the dialog reaches Keep, the first answer, a second Tab reaches
 // Delete, and the end of the wait moves nothing. Escape sends nothing.
-test("a Tab inside the wait moves on from the dialog, and the first focus leaves focus where the owner put it", async ({
-  page,
-}) => {
-  await page.clock.install();
-  const { withSections } = ownerFixture();
-  const names = await openMenus(page);
-  const rowDelete = rowButton(page, strings.remove, withSections.name);
-  const { dialog, keep, confirm } = confirmation(page, withSections);
+test(
+  "a Tab inside the wait moves on from the dialog, and the first focus leaves focus where the owner put it",
+  { tag: "@dialog" },
+  async ({ page }) => {
+    await page.clock.install();
+    const { withSections } = ownerFixture();
+    const names = await openMenus(page);
+    const rowDelete = rowButton(page, strings.remove, withSections.name);
+    const { dialog, keep, confirm } = confirmation(page, withSections);
 
-  await stopClock(page);
-  await rowDelete.focus();
-  await page.keyboard.press("Enter");
-  await expect(dialog).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(keep, "Tab from the dialog reaches Keep first").toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(confirm).toBeFocused();
-  await page.clock.runFor(1000);
-  await expect(confirm, "the end of the wait moves nothing").toBeFocused();
+    await stopClock(page);
+    await rowDelete.focus();
+    await page.keyboard.press("Enter");
+    await expect(dialog).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(keep, "Tab from the dialog reaches Keep first").toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(confirm).toBeFocused();
+    await page.clock.runFor(1000);
+    await expect(confirm, "the end of the wait moves nothing").toBeFocused();
 
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
-  await expect(rowDelete).toBeFocused();
-  expect(await menuNames(page), "nothing was deleted").toEqual(names);
-});
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(rowDelete).toBeFocused();
+    expect(await menuNames(page), "nothing was deleted").toEqual(names);
+  },
+);
 
 // The double-tap guard (D-119). The press that opens the dialog can come
 // twice, and the dialog must not take the second one as its answer. That is
@@ -366,80 +377,89 @@ test("a Tab inside the wait moves on from the dialog, and the first focus leaves
 // in and well inside the guard. Keep and Escape are not held back: Escape is
 // pressed in that same instant. Nothing is sent, so the write guard is the
 // proof, and the test says it expects no write.
-test("a second tap right after the dialog opens does not confirm the delete, and the button looks no different", async ({
-  page,
-}) => {
-  await page.clock.install();
-  const { withSections } = ownerFixture();
-  const names = await openMenus(page);
-  const rowDelete = rowButton(page, strings.remove, withSections.name);
-  const { dialog, keep, confirm } = confirmation(page, withSections);
+test(
+  "a second tap right after the dialog opens does not confirm the delete, and the button looks no different",
+  { tag: "@dialog" },
+  async ({ page }) => {
+    await page.clock.install();
+    const { withSections } = ownerFixture();
+    const names = await openMenus(page);
+    const rowDelete = rowButton(page, strings.remove, withSections.name);
+    const { dialog, keep, confirm } = confirmation(page, withSections);
 
-  await stopClock(page);
-  await rowDelete.tap();
-  await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
-  await expect(keep, "the dialog opens, and focus moves to Keep").toBeFocused();
-  await confirm.tap();
-  await expect(confirm, "the second tap landed on Delete").toBeFocused();
+    await stopClock(page);
+    await rowDelete.tap();
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
+    await expect(
+      keep,
+      "the dialog opens, and focus moves to Keep",
+    ).toBeFocused();
+    await confirm.tap();
+    await expect(confirm, "the second tap landed on Delete").toBeFocused();
 
-  await expect(dialog, "the dialog is still asking").toHaveCount(1);
-  expect(await menuNames(page), "nothing was deleted").toEqual(names);
-  await expect(confirm, "the button is not disabled").toBeEnabled();
-  await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
-  expect(
-    await confirm.evaluate((element) => getComputedStyle(element).opacity),
-    "and not dimmed",
-  ).toBe("1");
-  await expect(log(page), "and nothing was said").toHaveText("");
+    await expect(dialog, "the dialog is still asking").toHaveCount(1);
+    expect(await menuNames(page), "nothing was deleted").toEqual(names);
+    await expect(confirm, "the button is not disabled").toBeEnabled();
+    await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
+    expect(
+      await confirm.evaluate((element) => getComputedStyle(element).opacity),
+      "and not dimmed",
+    ).toBe("1");
+    await expect(log(page), "and nothing was said").toHaveText("");
 
-  await page.keyboard.press("Escape");
-  await expect(dialog, "Escape works at once").toHaveCount(0);
-  await expect(rowDelete).toBeFocused();
-});
+    await page.keyboard.press("Escape");
+    await expect(dialog, "Escape works at once").toHaveCount(0);
+    await expect(rowDelete).toBeFocused();
+  },
+);
 
 // The other side of the double-tap guard: once its half second is over, a
 // tap on Delete is taken like any press. The clock stops before the dialog
 // opens and is moved on by exactly the guard, the first focus's wait and
 // then the rest, so this is the first instant a tap counts.
-test("a tap on Delete once the double-tap guard is over confirms, and the menu comes back when the server cannot take it", async ({
-  page,
-}) => {
-  await page.clock.install();
-  const writes = expectWrites(page, { hold: true });
-  const { withSections } = ownerFixture();
-  const names = await openMenus(page);
-  const index = names.indexOf(withSections.name);
-  const neighbor = names[index + 1] ?? names[index - 1] ?? "";
-  const rowDelete = rowButton(page, strings.remove, withSections.name);
-  const { dialog, keep, confirm } = confirmation(page, withSections);
+test(
+  "a tap on Delete once the double-tap guard is over confirms, and the menu comes back when the server cannot take it",
+  { tag: "@dialog" },
+  async ({ page }) => {
+    await page.clock.install();
+    const writes = expectWrites(page, { hold: true });
+    const { withSections } = ownerFixture();
+    const names = await openMenus(page);
+    const index = names.indexOf(withSections.name);
+    const neighbor = names[index + 1] ?? names[index - 1] ?? "";
+    const rowDelete = rowButton(page, strings.remove, withSections.name);
+    const { dialog, keep, confirm } = confirmation(page, withSections);
 
-  await stopClock(page);
-  await rowDelete.tap();
-  await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
-  await expect(keep).toBeFocused();
-  await page.clock.fastForward(CONFIRM_GUARD_MS - FIRST_FOCUS_WAIT_MS);
-  await confirm.tap();
-  await page.clock.resume();
+    await stopClock(page);
+    await rowDelete.tap();
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
+    await expect(keep).toBeFocused();
+    await page.clock.fastForward(CONFIRM_GUARD_MS - FIRST_FOCUS_WAIT_MS);
+    await confirm.tap();
+    await page.clock.resume();
 
-  await expect(dialog, "the dialog closes").toHaveCount(0);
-  await expect
-    .poll(() => writes.answered.length, {
-      message: "the delete is on its way, and held",
-    })
-    .toBeGreaterThan(0);
-  expect(await menuNames(page), "the row is gone").toEqual(
-    names.filter((name) => name !== withSections.name),
-  );
-  await expect(
-    nameField(page, neighbor),
-    "focus is in the next row's name field",
-  ).toBeFocused();
+    await expect(dialog, "the dialog closes").toHaveCount(0);
+    await expect
+      .poll(() => writes.answered.length, {
+        message: "the delete is on its way, and held",
+      })
+      .toBeGreaterThan(0);
+    expect(await menuNames(page), "the row is gone").toEqual(
+      names.filter((name) => name !== withSections.name),
+    );
+    await expect(
+      nameField(page, neighbor),
+      "focus is in the next row's name field",
+    ).toBeFocused();
 
-  writes.release();
-  await expect(savedStatus(page)).toHaveText(deleteFailure(withSections.name));
-  expect(await menuNames(page), "the menu is back").toEqual(names);
-  await expect(rowDelete, "focus is back on its Delete").toBeFocused();
-});
+    writes.release();
+    await expect(savedStatus(page)).toHaveText(
+      deleteFailure(withSections.name),
+    );
+    expect(await menuNames(page), "the menu is back").toEqual(names);
+    await expect(rowDelete, "focus is back on its Delete").toBeFocused();
+  },
+);
 
 // A press with no pointer behind it is what a screen reader sends, and what
 // React Aria calls virtual. It is never held back either (D-119): a screen
@@ -447,34 +467,41 @@ test("a tap on Delete once the double-tap guard is over confirms, and the menu c
 // presses are made inside the page, the way element.click() makes them, on
 // a stopped clock, the second as the first focus reaches Keep (D-136), well
 // inside the guard. A real screen reader's press is checked by hand.
-test("a press with no pointer behind it, the kind a screen reader sends, confirms the delete at once", async ({
-  page,
-}) => {
-  await page.clock.install();
-  const writes = expectWrites(page, { hold: true });
-  const { withSections } = ownerFixture();
-  const names = await openMenus(page);
-  const rowDelete = rowButton(page, strings.remove, withSections.name);
-  const { dialog, keep, confirm } = confirmation(page, withSections);
+test(
+  "a press with no pointer behind it, the kind a screen reader sends, confirms the delete at once",
+  { tag: "@dialog" },
+  async ({ page }) => {
+    await page.clock.install();
+    const writes = expectWrites(page, { hold: true });
+    const { withSections } = ownerFixture();
+    const names = await openMenus(page);
+    const rowDelete = rowButton(page, strings.remove, withSections.name);
+    const { dialog, keep, confirm } = confirmation(page, withSections);
 
-  await stopClock(page);
-  await rowDelete.evaluate((element: HTMLElement) => element.click());
-  await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
-  await expect(keep, "the dialog opens, and focus moves to Keep").toBeFocused();
-  await confirm.evaluate((element: HTMLElement) => element.click());
-  await page.clock.resume();
+    await stopClock(page);
+    await rowDelete.evaluate((element: HTMLElement) => element.click());
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
+    await expect(
+      keep,
+      "the dialog opens, and focus moves to Keep",
+    ).toBeFocused();
+    await confirm.evaluate((element: HTMLElement) => element.click());
+    await page.clock.resume();
 
-  await expect(dialog, "the dialog closes").toHaveCount(0);
-  await expect
-    .poll(() => writes.answered.length, {
-      message: "the delete is on its way, and held",
-    })
-    .toBeGreaterThan(0);
-  expect(await menuNames(page), "the row is gone").toEqual(
-    names.filter((name) => name !== withSections.name),
-  );
+    await expect(dialog, "the dialog closes").toHaveCount(0);
+    await expect
+      .poll(() => writes.answered.length, {
+        message: "the delete is on its way, and held",
+      })
+      .toBeGreaterThan(0);
+    expect(await menuNames(page), "the row is gone").toEqual(
+      names.filter((name) => name !== withSections.name),
+    );
 
-  writes.release();
-  await expect(savedStatus(page)).toHaveText(deleteFailure(withSections.name));
-  expect(await menuNames(page), "the menu is back").toEqual(names);
-});
+    writes.release();
+    await expect(savedStatus(page)).toHaveText(
+      deleteFailure(withSections.name),
+    );
+    expect(await menuNames(page), "the menu is back").toEqual(names);
+  },
+);

@@ -15,28 +15,133 @@ const ownerScope = process.env.A11Y_SCOPE === "owner";
 if (ownerScope && existsSync(".env.local")) process.loadEnvFile(".env.local");
 if (ownerScope) ownerEnv();
 
-const phone = devices["Pixel 7"];
-if (!phone) {
-  throw new Error("Playwright no longer ships the Pixel 7 device profile.");
+// A device profile Playwright ships, or a clear failure if it is gone.
+function device(name: string) {
+  const found = devices[name];
+  if (!found) {
+    throw new Error(`Playwright no longer ships the ${name} device profile.`);
+  }
+  return found;
 }
 
-const small = { width: 320, height: 640 };
+// Five sizes in three engines (D-137): a 320 phone, a common phone, an iPad
+// in portrait and in landscape, and a desktop. Each engine wears its own
+// device profile, so WebKit phones and tablets carry touch and an iOS user
+// agent. Playwright's Firefox has no mobile mode, so it is desktop Firefox
+// at each size, with touch on phones and tablets. Light and dark alternate
+// by size, so every engine runs both.
+type Engine = "chromium" | "webkit" | "firefox";
+type Size = "320" | "phone" | "tablet" | "tablet-landscape" | "desktop";
+
+const tablet = device("iPad Pro 11").viewport;
+const tabletLandscape = device("iPad Pro 11 landscape").viewport;
+const desktop = { width: 1280, height: 800 };
+const firefox = device("Desktop Firefox");
+
+const profiles: Record<Engine, Record<Size, Project["use"]>> = {
+  chromium: {
+    "320": { ...device("Pixel 7"), viewport: { width: 320, height: 640 } },
+    phone: device("Pixel 7"),
+    tablet: { ...device("Galaxy Tab S4"), viewport: tablet },
+    "tablet-landscape": {
+      ...device("Galaxy Tab S4 landscape"),
+      viewport: tabletLandscape,
+    },
+    desktop: { ...device("Desktop Chrome"), viewport: desktop },
+  },
+  webkit: {
+    "320": device("iPhone SE"),
+    phone: device("iPhone 17"),
+    tablet: device("iPad Pro 11"),
+    "tablet-landscape": device("iPad Pro 11 landscape"),
+    desktop: { ...device("Desktop Safari"), viewport: desktop },
+  },
+  firefox: {
+    "320": {
+      ...firefox,
+      viewport: { width: 320, height: 640 },
+      hasTouch: true,
+    },
+    phone: { ...firefox, viewport: device("Pixel 7").viewport, hasTouch: true },
+    tablet: { ...firefox, viewport: tablet, hasTouch: true },
+    "tablet-landscape": {
+      ...firefox,
+      viewport: tabletLandscape,
+      hasTouch: true,
+    },
+    desktop: { ...firefox, viewport: desktop },
+  },
+};
+
+const schemes: Record<Size, "light" | "dark"> = {
+  "320": "dark",
+  phone: "light",
+  tablet: "dark",
+  "tablet-landscape": "light",
+  desktop: "dark",
+};
+
+const sizes = Object.keys(schemes) as Size[];
+
+// What a project runs, by tag. The two phone sizes in Chromium run every
+// test, as the gate did before (D-100); every other project runs the
+// arrival pass and what is named for it. The forced-colors pass runs only
+// in its own projects.
+const arrival = /@arrival/;
+const forced = /@forced/;
+
+function project(
+  name: string,
+  engine: Engine,
+  size: Size,
+  extra: Partial<Project> & { grep?: RegExp[] },
+): Project {
+  return {
+    name: `${name}-${size}-${schemes[size]}`,
+    grepInvert: forced,
+    ...extra,
+    use: {
+      ...profiles[engine][size],
+      browserName: engine,
+      colorScheme: schemes[size],
+      ...extra.use,
+    },
+  };
+}
+
+// Forced colors at desktop, where Windows contrast themes mostly live, in
+// both of Chromium's forced palettes, chosen by the color scheme.
+function forcedProjects(name: string, extra: Partial<Project>): Project[] {
+  return (["dark", "light"] as const).map((scheme) => ({
+    name: `${name}-desktop-forced-${scheme}`,
+    grep: forced,
+    ...extra,
+    use: {
+      ...profiles.chromium.desktop,
+      browserName: "chromium",
+      colorScheme: scheme,
+      forcedColors: "active",
+      ...extra.use,
+    },
+  }));
+}
+
 // Every owner file: the setup, the teardown, and each owner-*.spec.ts. The
 // public projects leave them all out, and the owner projects run every spec.
 const ownerFiles = /owner(\.setup|\.teardown|-[\w-]+\.spec)\.ts$/;
 const ownerSpecs = /owner-[\w-]+\.spec\.ts$/;
 
+const engines: Engine[] = ["chromium", "webkit", "firefox"];
 const publicProjects: Project[] = [
-  {
-    name: "phone-light",
-    use: { ...phone, colorScheme: "light" },
-    testIgnore: ownerFiles,
-  },
-  {
-    name: "phone-dark-320",
-    use: { ...phone, viewport: small, colorScheme: "dark" },
-    testIgnore: ownerFiles,
-  },
+  ...engines.flatMap((engine) =>
+    sizes.map((size) =>
+      project(engine, engine, size, {
+        testIgnore: ownerFiles,
+        ...(size === "320" || size === "phone" ? {} : { grep: [arrival] }),
+      }),
+    ),
+  ),
+  ...forcedProjects("chromium", { testIgnore: ownerFiles }),
 ];
 
 // The session stays on this machine: no trace and no video on any owner
@@ -44,6 +149,20 @@ const publicProjects: Project[] = [
 // whether the checks passed.
 const quiet = { trace: "off", video: "off" } as const;
 const ownerUse = { storageState: ownerStatePath, ...quiet };
+const owner = { testMatch: ownerSpecs, dependencies: ["owner-setup"] };
+
+// Owner screens: Chromium in full at the two phone sizes and the arrival
+// pass at the rest; WebKit's arrival pass at every size, its dialog tests at
+// the two phone sizes, and the walk of arrivals by link at the phone size;
+// Firefox's arrival pass at desktop, where NVDA with Firefox meets these
+// screens on Windows.
+const webkitOwner: Record<Size, RegExp[]> = {
+  "320": [arrival, /@dialog/],
+  phone: [arrival, /@dialog/, /@link-arrival/],
+  tablet: [arrival],
+  "tablet-landscape": [arrival],
+  desktop: [arrival],
+};
 const ownerProjects: Project[] = [
   {
     name: "owner-setup",
@@ -52,23 +171,34 @@ const ownerProjects: Project[] = [
     use: quiet,
   },
   { name: "owner-teardown", testMatch: /owner\.teardown\.ts$/, use: quiet },
-  {
-    name: "owner-phone-light",
-    testMatch: ownerSpecs,
-    dependencies: ["owner-setup"],
-    use: { ...phone, colorScheme: "light", ...ownerUse },
-  },
-  {
-    name: "owner-phone-dark-320",
-    testMatch: ownerSpecs,
-    dependencies: ["owner-setup"],
-    use: { ...phone, viewport: small, colorScheme: "dark", ...ownerUse },
-  },
+  ...sizes.map((size) =>
+    project("owner-chromium", "chromium", size, {
+      ...owner,
+      ...(size === "320" || size === "phone" ? {} : { grep: [arrival] }),
+      use: ownerUse,
+    }),
+  ),
+  ...forcedProjects("owner-chromium", { ...owner, use: ownerUse }),
+  ...sizes.map((size) =>
+    project("owner-webkit", "webkit", size, {
+      ...owner,
+      grep: webkitOwner[size],
+      use: ownerUse,
+    }),
+  ),
+  project("owner-firefox", "firefox", "desktop", {
+    ...owner,
+    grep: [arrival],
+    use: ownerUse,
+  }),
 ];
 
 export default defineConfig({
   testDir: "tests/a11y",
   fullyParallel: true,
+  // A private repository's runner has two cores, where Playwright would
+  // start one worker. The checks mostly wait on the preview, so two.
+  workers: process.env.CI ? 2 : undefined,
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: [["list"]],

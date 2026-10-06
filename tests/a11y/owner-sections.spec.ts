@@ -9,6 +9,7 @@ import {
 } from "../../src/features/owner/paths";
 import { open, pageChecks } from "./checks";
 import { ownerEnv, ownerFixture } from "./owner-env";
+import { breadcrumbMarks, menuControls } from "./owner-controls";
 import { listRowChecks } from "./owner-lists";
 import { restaurantName } from "./pages";
 import { guardWrites } from "./write-guard";
@@ -44,12 +45,14 @@ function emptyPath(): string {
   return restaurantMenuPath(code, ownerFixture().empty.id);
 }
 
+const checks = { controls: menuControls, marks: breadcrumbMarks };
+
 test.describe("a menu's page, with sections", () => {
-  pageChecks(sectionsPath);
+  pageChecks(sectionsPath, checks);
 });
 
 test.describe("a menu's page, with no sections", () => {
-  pageChecks(emptyPath);
+  pageChecks(emptyPath, checks);
 });
 
 // What the confirmation asks, which is also its name (D-119): the section

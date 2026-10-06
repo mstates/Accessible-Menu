@@ -14,6 +14,7 @@ import {
   pageChecks,
 } from "./checks";
 import { ownerEnv, ownerFixture } from "./owner-env";
+import { breadcrumbMarks, sectionControls } from "./owner-controls";
 import { listRowChecks } from "./owner-lists";
 import { restaurantName } from "./pages";
 import { expectWrites, guardWrites } from "./write-guard";
@@ -52,12 +53,18 @@ function emptyPath(): string {
   return restaurantSectionPath(code, ownerFixture().emptySection.id);
 }
 
+const checks = {
+  controls: (page: Page) =>
+    sectionControls(page, ownerFixture().withSections.name),
+  marks: breadcrumbMarks,
+};
+
 test.describe("a section's page, with dishes", () => {
-  pageChecks(dishesPath);
+  pageChecks(dishesPath, checks);
 });
 
 test.describe("a section's page, with no dishes", () => {
-  pageChecks(emptyPath);
+  pageChecks(emptyPath, checks);
 });
 
 listRowChecks({

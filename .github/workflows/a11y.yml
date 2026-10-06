@@ -7,7 +7,10 @@ name: Accessibility gate
 # share a group keyed on the SHA and cancel the preview's gate mid-run.
 # No caches: a deployment_status run is not tied to a branch or tag ref, so
 # actions/cache and setup-node's npm cache refuse it (D-102). Dependencies
-# and Chromium install fresh, about forty seconds per job.
+# and each job's browsers install fresh.
+# Each job runs one slice of the Playwright projects (D-137): the public
+# pages once per engine, and the owner screens in two jobs, so the gate's
+# wall clock is its slowest job, not the sum of them.
 on:
   deployment_status:
 
@@ -15,11 +18,18 @@ permissions:
   contents: read
 
 jobs:
+  # One job per engine, each with its five sizes; Chromium's also runs the
+  # two forced-colors projects. A failure in one engine never cancels the
+  # others.
   a11y-public:
-    name: Public pages on the preview
+    name: Public pages on the preview, ${{ matrix.engine }}
     if: github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Preview'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit, firefox]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -28,15 +38,15 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm run a11y
+      - run: npx playwright install --with-deps ${{ matrix.engine }}
+      - run: npm run a11y -- "--project=${{ matrix.engine }}-*"
         env:
           A11Y_BASE_URL: ${{ github.event.deployment_status.environment_url }}
       - name: Keep traces of failures
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: a11y-traces-${{ github.event.deployment.sha }}
+          name: a11y-traces-${{ matrix.engine }}-${{ github.event.deployment.sha }}
           path: test-results
           retention-days: 7
           if-no-files-found: ignore
@@ -68,13 +78,26 @@ jobs:
           fi
 
   # Skipped, not green, for any other branch's preview. A step added later
-  # cannot run without the guard.
+  # cannot run without the guard. Two jobs from one definition: Chromium in
+  # full with its arrival and forced-colors projects, and WebKit with
+  # Firefox's one desktop project beside it. Each signs in and out on its
+  # own, and the password still reaches one step of one job definition.
   a11y-owner:
-    name: Owner screens on the preview, signed in (main only)
+    name: Owner screens on the preview, signed in (main only), ${{ matrix.slice }}
     needs: on-main
     if: needs.on-main.outputs.on_main == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - slice: chromium
+            browsers: chromium
+            projects: --project=owner-chromium-*
+          - slice: webkit and firefox
+            browsers: webkit firefox
+            projects: --project=owner-webkit-* --project=owner-firefox-*
     steps:
       - uses: actions/checkout@v7
         with:
@@ -83,12 +106,16 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps ${{ matrix.browsers }}
       # The only step that reads the secret. Missing variables fail the
       # Playwright config with a message that points to the Build plan;
       # nothing skips. No artifact step: the session never leaves the runner.
+      # The project names carry a star for Playwright, so the shell's own
+      # globbing is off.
       - name: Owner checks, signed in as the test owner
-        run: npm run a11y
+        run: |
+          set -f
+          npm run a11y -- ${{ matrix.projects }}
         env:
           A11Y_SCOPE: owner
           A11Y_BASE_URL: ${{ github.event.deployment_status.environment_url }}

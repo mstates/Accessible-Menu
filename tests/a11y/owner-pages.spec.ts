@@ -13,6 +13,7 @@ import {
 } from "../../src/features/owner/paths";
 import {
   expectFocusResetThenSkipLink,
+  expectForcedColorsKept,
   expectKeyboardWalk,
   expectNoAxeViolations,
   expectNoHorizontalScroll,
@@ -20,7 +21,15 @@ import {
   open,
   pageChecks,
   setLargestText,
+  type PageCheckOptions,
 } from "./checks";
+import {
+  dashboardControls,
+  detailsControls,
+  formMarks,
+  menusControls,
+  newControls,
+} from "./owner-controls";
 import { ownerEnv, ownerFixture } from "./owner-env";
 import { ownerPages, restaurantName } from "./pages";
 import { expectWrites, guardWrites } from "./write-guard";
@@ -40,9 +49,22 @@ const strings = en.owner.restaurants;
 
 guardWrites();
 
+// What each owner page is expected to show (D-137), by its path without
+// the query, so an arrival with a result message checks the same controls.
+function checksFor(path: string): PageCheckOptions {
+  const at = new URL(path, "http://localhost").pathname;
+  if (at === dashboardPath) return { controls: dashboardControls };
+  if (at === restaurantNewPath()) {
+    return { controls: newControls, marks: formMarks };
+  }
+  if (at === details) return { controls: detailsControls, marks: formMarks };
+  if (at === restaurantMenusPath(code)) return { controls: menusControls };
+  throw new Error(`${path} has no expected controls in owner-controls.ts`);
+}
+
 for (const path of ownerPages(code)) {
   test.describe(path, () => {
-    pageChecks(path);
+    pageChecks(path, checksFor(path));
   });
 }
 
@@ -289,6 +311,46 @@ test("Open 24 hours hides a day's times with focus kept, a second press brings b
   }
 });
 
+// D-137: the two marks that show only in a state, checked in forced colors.
+// Monday's Open 24 hours box shows its check mark, and Save details, held by
+// the write guard, shows its spinner; each is drawn in a system color with
+// 3:1 against what is behind it. Space on the box sends nothing (D-127). The
+// save is answered inside the browser, on a fresh form, so the error page
+// follows and nothing reaches the server.
+test(
+  "in forced colors, a checked box's mark and a pending button's spinner are drawn in a system color",
+  { tag: "@forced" },
+  async ({ page }) => {
+    await open(page, details);
+    await page.waitForLoadState("networkidle");
+    const box = page.getByRole("checkbox", {
+      name: allDayName("mon"),
+      exact: true,
+    });
+    if (!(await box.isChecked())) {
+      await box.focus();
+      await page.keyboard.press("Space");
+    }
+    await expect(box).toBeChecked();
+    await expectForcedColorsKept(page, [
+      {
+        what: "the checked box's mark",
+        selector: 'label[data-selected] > span[aria-hidden="true"] svg',
+      },
+    ]);
+
+    const writes = expectWrites(page, { hold: true });
+    await pressSave(page);
+    const spinner = '[role="progressbar"] svg[aria-hidden="true"]';
+    await expect(page.locator(spinner)).toBeVisible();
+    await expectForcedColorsKept(page, [
+      { what: "the pending spinner", selector: spinner },
+    ]);
+    writes.release();
+    await expect(errorHeading(page)).toBeFocused();
+  },
+);
+
 test("a saved result takes focus on arrival and is not read again on reload or Back", async ({
   page,
 }) => {
@@ -345,106 +407,113 @@ function titlesSeen(page: Page): Promise<string[]> {
 // prefetch would have had to land. Both are only reads, so the write guard
 // has nothing to answer.
 for (const pace of ["at once", "after a pause"] as const) {
-  test(`arrival by a link reads the whole title on every owner page, each link pressed ${pace}`, async ({
-    page,
-  }) => {
-    const { withSections, withDishes, emptySection, empty } = ownerFixture();
-    const prefetches: string[] = [];
-    page.on("request", (request) => {
-      if (request.headers()["next-router-prefetch"]) {
-        prefetches.push(new URL(request.url()).pathname);
+  test(
+    `arrival by a link reads the whole title on every owner page, each link pressed ${pace}`,
+    { tag: "@link-arrival" },
+    async ({ page }) => {
+      const { withSections, withDishes, emptySection, empty } = ownerFixture();
+      const prefetches: string[] = [];
+      page.on("request", (request) => {
+        if (request.headers()["next-router-prefetch"]) {
+          prefetches.push(new URL(request.url()).pathname);
+        }
+      });
+      await page.addInitScript(recordTitles);
+      await open(page, dashboardPath);
+      await page.waitForLoadState("networkidle");
+      const name = (
+        await page
+          .locator(`main section:has(a[href="${details}"]) h2`)
+          .textContent()
+      )?.trim();
+      expect(name, "the dashboard names the restaurant").toBeTruthy();
+      const restaurant = name ?? "";
+      const menusPath = restaurantMenusPath(code);
+      const menuPage = (menu: { id: string }) =>
+        restaurantMenuPath(code, menu.id);
+      const sectionPage = (section: { id: string }) =>
+        restaurantSectionPath(code, section.id);
+      const inMain = (href: string) => page.locator(`main a[href="${href}"]`);
+      const inNav = (href: string) =>
+        page
+          .getByRole("navigation", { name: restaurant, exact: true })
+          .locator(`a[href="${href}"]`);
+
+      const walk = [
+        {
+          link: inMain(details),
+          path: details,
+          title: pageTitle(en, strings.details.title, restaurant),
+        },
+        {
+          link: inNav(menusPath),
+          path: menusPath,
+          title: pageTitle(en, en.owner.menus.title, restaurant),
+        },
+        {
+          link: inMain(menuPage(withSections)),
+          path: menuPage(withSections),
+          title: pageTitle(en, withSections.name, restaurant),
+        },
+        {
+          link: inMain(sectionPage(withDishes)),
+          path: sectionPage(withDishes),
+          title: pageTitle(en, withDishes.name, restaurant, withSections.name),
+        },
+        {
+          link: page
+            .locator("main")
+            .getByRole("navigation", { name: en.ui.breadcrumb, exact: true })
+            .locator(`a[href="${menuPage(withSections)}"]`),
+          path: menuPage(withSections),
+          title: pageTitle(en, withSections.name, restaurant),
+        },
+        {
+          link: inMain(sectionPage(emptySection)),
+          path: sectionPage(emptySection),
+          title: pageTitle(
+            en,
+            emptySection.name,
+            restaurant,
+            withSections.name,
+          ),
+        },
+        {
+          link: inNav(menusPath),
+          path: menusPath,
+          title: pageTitle(en, en.owner.menus.title, restaurant),
+        },
+        {
+          link: inMain(menuPage(empty)),
+          path: menuPage(empty),
+          title: pageTitle(en, empty.name, restaurant),
+        },
+        {
+          link: inNav(details),
+          path: details,
+          title: pageTitle(en, strings.details.title, restaurant),
+        },
+      ];
+
+      for (const step of walk) {
+        await titlesSeen(page);
+        await step.link.click();
+        await page.waitForURL(`**${step.path}`);
+        await expect
+          .poll(() => announcerText(page), {
+            message: `arriving at ${step.path}, the announcer reads the whole title`,
+          })
+          .toBe(step.title);
+        await expect(page).toHaveTitle(step.title);
+        expect(
+          await titlesSeen(page),
+          `arriving at ${step.path}, the page commits with its whole title and never an empty one`,
+        ).toEqual([step.title]);
+        if (pace === "after a pause") await page.waitForTimeout(1000);
       }
-    });
-    await page.addInitScript(recordTitles);
-    await open(page, dashboardPath);
-    await page.waitForLoadState("networkidle");
-    const name = (
-      await page
-        .locator(`main section:has(a[href="${details}"]) h2`)
-        .textContent()
-    )?.trim();
-    expect(name, "the dashboard names the restaurant").toBeTruthy();
-    const restaurant = name ?? "";
-    const menusPath = restaurantMenusPath(code);
-    const menuPage = (menu: { id: string }) =>
-      restaurantMenuPath(code, menu.id);
-    const sectionPage = (section: { id: string }) =>
-      restaurantSectionPath(code, section.id);
-    const inMain = (href: string) => page.locator(`main a[href="${href}"]`);
-    const inNav = (href: string) =>
-      page
-        .getByRole("navigation", { name: restaurant, exact: true })
-        .locator(`a[href="${href}"]`);
-
-    const walk = [
-      {
-        link: inMain(details),
-        path: details,
-        title: pageTitle(en, strings.details.title, restaurant),
-      },
-      {
-        link: inNav(menusPath),
-        path: menusPath,
-        title: pageTitle(en, en.owner.menus.title, restaurant),
-      },
-      {
-        link: inMain(menuPage(withSections)),
-        path: menuPage(withSections),
-        title: pageTitle(en, withSections.name, restaurant),
-      },
-      {
-        link: inMain(sectionPage(withDishes)),
-        path: sectionPage(withDishes),
-        title: pageTitle(en, withDishes.name, restaurant, withSections.name),
-      },
-      {
-        link: page
-          .locator("main")
-          .getByRole("navigation", { name: en.ui.breadcrumb, exact: true })
-          .locator(`a[href="${menuPage(withSections)}"]`),
-        path: menuPage(withSections),
-        title: pageTitle(en, withSections.name, restaurant),
-      },
-      {
-        link: inMain(sectionPage(emptySection)),
-        path: sectionPage(emptySection),
-        title: pageTitle(en, emptySection.name, restaurant, withSections.name),
-      },
-      {
-        link: inNav(menusPath),
-        path: menusPath,
-        title: pageTitle(en, en.owner.menus.title, restaurant),
-      },
-      {
-        link: inMain(menuPage(empty)),
-        path: menuPage(empty),
-        title: pageTitle(en, empty.name, restaurant),
-      },
-      {
-        link: inNav(details),
-        path: details,
-        title: pageTitle(en, strings.details.title, restaurant),
-      },
-    ];
-
-    for (const step of walk) {
-      await titlesSeen(page);
-      await step.link.click();
-      await page.waitForURL(`**${step.path}`);
-      await expect
-        .poll(() => announcerText(page), {
-          message: `arriving at ${step.path}, the announcer reads the whole title`,
-        })
-        .toBe(step.title);
-      await expect(page).toHaveTitle(step.title);
-      expect(
-        await titlesSeen(page),
-        `arriving at ${step.path}, the page commits with its whole title and never an empty one`,
-      ).toEqual([step.title]);
-      if (pace === "after a pause") await page.waitForTimeout(1000);
-    }
-    expect(prefetches, "no owner link prefetches its page").toEqual([]);
-  });
+      expect(prefetches, "no owner link prefetches its page").toEqual([]);
+    },
+  );
 }
 
 // D-97, signed in: the dashboard's details link is a client-side navigation.
