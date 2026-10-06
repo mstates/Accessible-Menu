@@ -448,16 +448,17 @@ function DayHours({
       className="flex flex-col gap-3 rounded border border-border p-3 outline-none focus-visible:outline-3"
     >
       <legend className="px-1 font-semibold">{label}</legend>
+      {/* Named whole on the box, the visible words first. A label with
+          the day hidden inside it is handed by Chrome to VoiceOver in
+          pieces, "Open 24 hours" and "on Monday", with no space between
+          them (D-140, D-142). */}
       <Checkbox
         name={allDayFieldName(day)}
         isSelected={allDay}
         onChange={changeAllDay}
+        aria-label={`${strings.fields.allDay} ${fill(strings.fields.allDayDay, { day: label })}`}
       >
         {strings.fields.allDay}
-        <span className="sr-only">
-          {" "}
-          {fill(strings.fields.allDayDay, { day: label })}
-        </span>
       </Checkbox>
       {allDay ? null : (
         <>

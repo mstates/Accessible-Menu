@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   TextField as AriaTextField,
   FieldError,
@@ -12,8 +13,9 @@ import {
 
 type Props = TextFieldProps & {
   label: string;
-  // Follows the label in visually hidden text, so one of several fields with
-  // the same visible label names what it belongs to: "Menu name for Dinner".
+  // What one of several fields with the same visible label belongs to:
+  // "for Dinner". The field is then named whole, the label first, as one
+  // string on the field itself: "Menu name for Dinner" (D-140).
   labelSuffix?: string;
   description?: string;
   errorMessage?: string;
@@ -32,6 +34,18 @@ const inputClassName =
 // percentage width also keeps an input's built-in width, twenty characters,
 // out of the minimum width of the fieldset around it: at a 32px root that
 // built-in width alone is wider than a 320px screen (D-105).
+//
+// A field with a suffix is named whole, with aria-label, and its visible
+// label is a plain label that only shows the words and takes a click. A
+// label with the suffix hidden inside it gave Chrome one element to hand a
+// screen reader, and VoiceOver read that element's pieces with no space
+// between them: "Menu namefor Dinner" (D-140). React Aria's own Label is
+// left out then, or its id would be added to the name.
+//
+// Such a field also keeps the name it had when focus arrived until focus
+// leaves. The suffix names a row that a save can rename while the field
+// still has focus, after Enter, and Chrome reads a focused field again when
+// its name changes, which drowned out the polite "Saved." (D-140).
 export function TextField({
   label,
   labelSuffix,
@@ -40,13 +54,30 @@ export function TextField({
   multiline = false,
   ...props
 }: Props) {
+  const name = labelSuffix ? `${label} ${labelSuffix}` : null;
+  const [held, setHeld] = useState<string | null>(null);
+  const required = props.isRequired ? <span aria-hidden="true"> *</span> : null;
   return (
-    <AriaTextField {...props} className="flex flex-col gap-1">
-      <Label className="font-semibold">
-        {label}
-        {labelSuffix ? <span className="sr-only"> {labelSuffix}</span> : null}
-        {props.isRequired ? <span aria-hidden="true"> *</span> : null}
-      </Label>
+    <AriaTextField
+      {...props}
+      {...(name ? { "aria-label": held ?? name } : {})}
+      onFocusChange={(focused) => {
+        setHeld(focused ? name : null);
+        props.onFocusChange?.(focused);
+      }}
+      className="flex flex-col gap-1"
+    >
+      {name ? (
+        <label htmlFor={props.id} className="font-semibold">
+          {label}
+          {required}
+        </label>
+      ) : (
+        <Label className="font-semibold">
+          {label}
+          {required}
+        </Label>
+      )}
       {multiline ? (
         <TextArea className={`${inputClassName} min-h-32`} />
       ) : (

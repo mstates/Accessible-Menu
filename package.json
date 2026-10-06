@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "a11y": "playwright test",
+    "local": "node tests/local/run.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "git config core.hooksPath .githooks || true"

@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { expectChromeNamesAgree } from "./chrome-names";
 
 // The checks every page gets (D-62, D-103, D-107), shared by the public pages
 // and the owner pages, plus the D-97 expectation after a client-side page
@@ -697,6 +698,21 @@ export function pageChecks(
       ]);
     },
   );
+
+  // Chrome's own names against Playwright's (D-140, D-142), in the projects
+  // that run every test, and only in Chromium.
+  test("in Chrome, every link, button, and field is named as Playwright names it, and a name from one label is not read in pieces", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(
+      browserName !== "chromium",
+      "Chrome's own names come through the DevTools Protocol, which only Chromium has",
+    );
+    await open(page, at());
+    await page.waitForLoadState("networkidle");
+    await expectChromeNamesAgree(page);
+  });
 
   test(
     "in forced colors, every edge and drawn mark is in a system color and focus shows an outline",

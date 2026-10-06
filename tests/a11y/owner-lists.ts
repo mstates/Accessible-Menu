@@ -86,8 +86,9 @@ export async function expectRowHeadings(page: Page, path: string) {
 
 // Records every sentence added to the page's log from now on. The log drops
 // a message after seven seconds, so reading its children later would miss
-// some; this hears each one as it is added.
-async function hearLog(page: Page) {
+// some; this hears each one as it is added. The local checks hear it the
+// same way (tests/local).
+export async function hearLog(page: Page) {
   await page.evaluate(() => {
     const w = window as unknown as { __said: string[] };
     w.__said = [];
@@ -103,7 +104,7 @@ async function hearLog(page: Page) {
   });
 }
 
-function heard(page: Page): Promise<string[]> {
+export function heard(page: Page): Promise<string[]> {
   return page.evaluate(
     () => (window as unknown as { __said: string[] }).__said,
   );
