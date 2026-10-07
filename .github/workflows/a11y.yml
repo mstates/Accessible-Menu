@@ -7,7 +7,12 @@ name: Accessibility gate
 # share a group keyed on the SHA and cancel the preview's gate mid-run.
 # No caches: a deployment_status run is not tied to a branch or tag ref, so
 # actions/cache and setup-node's npm cache refuse it (D-102). Dependencies
-# and each job's browsers install fresh.
+# install fresh. The browser jobs run in Playwright's own image, which holds
+# the browsers and every system package they need, so no job runs apt
+# (D-146): on October 7 Azure's Ubuntu mirror held the install past the cap.
+# The image is pinned by digest and moved by hand, since Dependabot does not
+# read it. The install step stays: it does nothing while the image matches
+# @playwright/test, and fetches only the browsers when it does not.
 # Each job runs one slice of the Playwright projects (D-137): the public
 # pages once per engine, and the owner screens in two jobs, so the gate's
 # wall clock is its slowest job, not the sum of them.
@@ -29,6 +34,11 @@ jobs:
     name: Public pages on the preview
     if: github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Preview'
     runs-on: ubuntu-26.04
+    # The runner's own user, so the workspace and HOME belong to the user
+    # the browsers run as.
+    container:
+      image: mcr.microsoft.com/playwright@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27 # v1.63.0-noble
+      options: --user 1001
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -42,7 +52,7 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: npm ci
-      - run: npx playwright install --with-deps ${{ matrix.engine }}
+      - run: npx playwright install ${{ matrix.engine }}
       - run: npm run a11y -- "--project=${{ matrix.engine }}-*"
         env:
           A11Y_BASE_URL: ${{ github.event.deployment_status.environment_url }}
@@ -92,6 +102,9 @@ jobs:
     needs: on-main
     if: needs.on-main.outputs.on_main == 'true'
     runs-on: ubuntu-26.04
+    container:
+      image: mcr.microsoft.com/playwright@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27 # v1.63.0-noble
+      options: --user 1001
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -105,7 +118,7 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: npm ci
-      - run: npx playwright install --with-deps ${{ matrix.browsers }}
+      - run: npx playwright install ${{ matrix.browsers }}
       # The only step that reads the secret. Missing variables fail the
       # Playwright config with a message that points to the Build plan;
       # nothing skips. No artifact step: the session never leaves the runner.
