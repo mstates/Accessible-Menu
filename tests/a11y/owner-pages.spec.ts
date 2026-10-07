@@ -6,6 +6,7 @@ import { DAY_KEYS, type DayKey } from "../../src/domain/hours";
 import {
   dashboardPath,
   restaurantDetailsPath,
+  restaurantDishPath,
   restaurantMenuPath,
   restaurantMenusPath,
   restaurantNewPath,
@@ -394,11 +395,12 @@ function titlesSeen(page: Page): Promise<string[]> {
 }
 
 // Q-51 and D-134: a page that arrives by a link is read by Next's route
-// announcer with its whole title, never its h1 alone, on all four owner
-// pages a restaurant has: Details, Menus, a menu's page, and a section's
-// page. The walk reaches each by the link an owner would press, and comes
-// back to a menu's page and a section's page a second time, at another
-// menu and another section, once the client already knows those routes.
+// announcer with its whole title, never its h1 alone, on all five owner
+// pages a restaurant has: Details, Menus, a menu's page, a section's page,
+// and a dish's page. The walk reaches each by the link an owner would press,
+// and comes back to a menu's page and a section's page a second time, at
+// another menu and another section, once the client already knows those
+// routes.
 // The title the page commits with is the whole title, never an empty one
 // for an instant. Owner links never prefetch: a link pressed while its own
 // prefetch was on its way arrived with an empty title, so the walk checks
@@ -411,7 +413,8 @@ for (const pace of ["at once", "after a pause"] as const) {
     `arrival by a link reads the whole title on every owner page, each link pressed ${pace}`,
     { tag: "@link-arrival" },
     async ({ page }) => {
-      const { withSections, withDishes, emptySection, empty } = ownerFixture();
+      const { withSections, withDishes, emptySection, empty, dishes } =
+        ownerFixture();
       const prefetches: string[] = [];
       page.on("request", (request) => {
         if (request.headers()["next-router-prefetch"]) {
@@ -433,6 +436,13 @@ for (const pace of ["at once", "after a pause"] as const) {
         restaurantMenuPath(code, menu.id);
       const sectionPage = (section: { id: string }) =>
         restaurantSectionPath(code, section.id);
+      const dishPage = (dish: { id: string }) =>
+        restaurantDishPath(code, dish.id);
+      const breadcrumbTo = (href: string) =>
+        page
+          .locator("main")
+          .getByRole("navigation", { name: en.ui.breadcrumb, exact: true })
+          .locator(`a[href="${href}"]`);
       const inMain = (href: string) => page.locator(`main a[href="${href}"]`);
       const inNav = (href: string) =>
         page
@@ -461,10 +471,20 @@ for (const pace of ["at once", "after a pause"] as const) {
           title: pageTitle(en, withDishes.name, restaurant, withSections.name),
         },
         {
-          link: page
-            .locator("main")
-            .getByRole("navigation", { name: en.ui.breadcrumb, exact: true })
-            .locator(`a[href="${menuPage(withSections)}"]`),
+          link: inMain(dishPage(dishes.sizes)),
+          path: dishPage(dishes.sizes),
+          title: pageTitle(en, dishes.sizes.name, restaurant, [
+            withDishes.name,
+            withSections.name,
+          ]),
+        },
+        {
+          link: breadcrumbTo(sectionPage(withDishes)),
+          path: sectionPage(withDishes),
+          title: pageTitle(en, withDishes.name, restaurant, withSections.name),
+        },
+        {
+          link: breadcrumbTo(menuPage(withSections)),
           path: menuPage(withSections),
           title: pageTitle(en, withSections.name, restaurant),
         },

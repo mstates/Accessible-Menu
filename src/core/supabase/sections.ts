@@ -100,6 +100,37 @@ export async function listOwnerSections(
   return z.array(rowSchema).parse(data).map(toSection);
 }
 
+// Every section of the restaurant that is not deleted, with the menu it is
+// in, in the owner's order: what a dish's page lists as the sections it can
+// move to (D-129), grouped by the caller under the live menus. A read that
+// fails throws.
+export type NamedSection = { id: string; name: string; menuId: string };
+
+const namedSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  menu_id: z.string(),
+});
+
+export async function listOwnerSectionNames(
+  client: SupabaseClient,
+  restaurantId: string,
+): Promise<NamedSection[]> {
+  const { data, error } = await client
+    .from("sections")
+    .select("id, name, menu_id")
+    .eq("restaurant_id", restaurantId)
+    .is("deleted_at", null)
+    .order("sort")
+    .order("created_at")
+    .order("id");
+  if (error) throw new Error(`sections could not be read: ${error.message}`);
+  return z
+    .array(namedSchema)
+    .parse(data)
+    .map((row) => ({ id: row.id, name: row.name, menuId: row.menu_id }));
+}
+
 // What a delete would take, as the database counts it: one row for each
 // section that is not deleted, in a menu of the restaurant that is not
 // deleted, with how many of its dishes are not deleted (migration 5). The

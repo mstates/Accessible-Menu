@@ -3,6 +3,7 @@ import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
 import { pageTitle } from "../../src/copy/title";
 import {
+  restaurantDishPath,
   restaurantMenuPath,
   restaurantMenusPath,
   restaurantSectionPath,
@@ -75,9 +76,17 @@ listRowChecks({
   h1: () => ownerFixture().withDishes.name,
   // The name field and Move up, Move down, and Delete; the section's note
   // and every-dish line, the add field, Add, Undo, and the move's Select
-  // and button.
+  // and button. The link to the dish's page is not a field or a button.
   rowControls: 4,
   pageControls: 7,
+  // Each row's link to its dish's own page (D-128).
+  rowLink: {
+    label: strings.editDish,
+    target: () => ({
+      name: ownerFixture().dishes.sizes.name,
+      path: restaurantDishPath(code, ownerFixture().dishes.sizes.id),
+    }),
+  },
   // The breadcrumb's link to the section's menu.
   leaveLink: (page) =>
     breadcrumb(page).getByRole("link", {

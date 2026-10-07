@@ -19,6 +19,7 @@ import { RowList } from "./editing/RowList";
 import { useRowList } from "./editing/useRowList";
 import { dishList, sectionTexts, type SectionOwnText } from "./lists";
 import { MoveSection } from "./MoveSection";
+import { restaurantDishPath } from "./paths";
 import {
   moveNotUndone,
   moveUndoLabel,
@@ -52,9 +53,10 @@ const AFTER_THE_TITLE_MS = 100;
 
 // A section's own page (D-111, D-128, D-135): the section's note and its
 // every-dish line first, then the dishes, the shared list with one field a
-// row, its name. A dish holds nothing, so its delete asks nothing and Undo
-// brings it back (D-119). A dish has no page of its own yet, so its row has
-// no link. Under the list sits the section's move to another menu (D-129).
+// row, its name, and the link to the dish's own page, where the rest of it
+// is edited. A dish holds nothing, so its delete asks nothing and Undo
+// brings it back (D-119). Under the list sits the section's move to another
+// menu (D-129).
 // The section's texts and its move share the list's saved status, its
 // queue, and its Undo: one of each a screen (D-111).
 export function DishList(props: Props) {
@@ -121,6 +123,10 @@ function DishRows({
     valueOf: (dish) => dish.name,
     clean: dishList.clean,
     rule: dishList.rule,
+    link: {
+      label: strings.editDish,
+      href: (dish) => restaurantDishPath(code, dish.id),
+    },
     actions: {
       add: (name) => addDish(code, section.id, name),
       setText: (id, _field, value, expected) =>

@@ -34,11 +34,12 @@ export type SectionRule =
 
 // A note may run over several lines. A Windows or old Mac line break becomes
 // a plain one, any other control character becomes a space, and the outer
-// space goes, so the note the owner sees is the note saved.
+// space goes, so the note the owner sees is the note saved. A dish's
+// description is cleaned the same way (dish.ts).
 const LINE_BREAK = /\r\n?/g;
 const CONTROL_BUT_LINE_BREAK = /[^\P{Cc}\n]/gu;
 
-function cleanNote(value: string): string {
+export function cleanNote(value: string): string {
   return value
     .replace(LINE_BREAK, "\n")
     .replace(CONTROL_BUT_LINE_BREAK, " ")

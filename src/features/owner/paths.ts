@@ -37,6 +37,13 @@ export function restaurantSectionPath(code: string, sectionId: string): string {
   return `/app/restaurants/${code}/sections/${sectionId}`;
 }
 
+// One dish's own page (D-128). The dish is named by its id, and the address
+// names neither its section nor its menu, so the page stays where it is
+// when the dish moves to another section (D-129).
+export function restaurantDishPath(code: string, dishId: string): string {
+  return `/app/restaurants/${code}/dishes/${dishId}`;
+}
+
 // The id an error summary links to for a field name. Dots become dashes so
 // hours.mon.0.open stays a valid id.
 export function fieldId(name: string): string {

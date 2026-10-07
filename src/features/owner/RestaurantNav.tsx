@@ -3,8 +3,9 @@ import { PageNav, type PageNavLink } from "@/ui/PageNav";
 import { restaurantDetailsPath, restaurantMenusPath } from "./paths";
 
 // The page that renders the nav says where it is: on Details, on Menus, or
-// on one menu's own page or one section's, which both sit inside Menus.
-export type RestaurantPage = "details" | "menus" | "menu" | "section";
+// on one menu's own page, one section's, or one dish's, which all sit
+// inside Menus.
+export type RestaurantPage = "details" | "menus" | "menu" | "section" | "dish";
 
 type Props = {
   copy: Copy;
@@ -18,9 +19,10 @@ type Props = {
 // page's h1 is the page's own name, so this is where the restaurant shows on
 // screen (D-113). The page that renders it says which page is current, so
 // aria-current is set on the server and needs no client hook. Inside a
-// menu, on its page or on one of its sections', no link in the nav points
-// to the page itself, so Menus is marked as the current part of the nav,
-// not as the current page, and stays the way back (D-122).
+// menu, on its page, on one of its sections', or on one of their dishes',
+// no link in the nav points to the page itself, so Menus is marked as the
+// current part of the nav, not as the current page, and stays the way back
+// (D-122).
 export function RestaurantNav({ copy, name, code, current }: Props) {
   const labels = copy.owner.restaurants.nav;
   const links: PageNavLink[] = [

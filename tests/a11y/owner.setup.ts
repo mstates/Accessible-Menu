@@ -15,7 +15,8 @@ import {
 // any page loads: the user must hold exactly one membership, that
 // restaurant's code must be the configured one (D-100), and it must have
 // the menus the menus checks read, the sections the sections checks read,
-// and the dishes the dishes checks read. Messages name counts, codes, and
+// the dishes the dishes checks read, and one dish priced each way for the
+// dish page checks (D-139). Messages name counts, codes, and
 // the test menus' and sections' names, never a token, and say how to fix
 // the data: one file, run by hand in the SQL editor, since the gate never
 // writes (D-126). A failure after sign-in signs out first, since the
@@ -31,7 +32,14 @@ const listedMenus = z.array(z.object({ id: z.string(), name: z.string() }));
 const listedSections = z.array(
   z.object({ id: z.string(), name: z.string(), menu_id: z.string() }),
 );
-const heldDishes = z.array(z.object({ section_id: z.string() }));
+const heldDishes = z.array(
+  z.object({
+    id: z.string(),
+    name: z.string(),
+    section_id: z.string(),
+    price_kind: z.enum(["one", "sizes", "market"]),
+  }),
+);
 
 const memberships = z.array(
   z.object({
@@ -122,13 +130,17 @@ setup(
       }
       const dishRows = await supabase
         .from("items")
-        .select("section_id")
-        .is("deleted_at", null);
+        .select("id, name, section_id, price_kind")
+        .is("deleted_at", null)
+        .order("sort")
+        .order("created_at")
+        .order("id");
       if (dishRows.error) {
         throw new Error(`could not read dishes: ${dishRows.error.message}`);
       }
+      const dishes = heldDishes.parse(dishRows.data);
       const dishesIn = new Map<string, number>();
-      for (const row of heldDishes.parse(dishRows.data)) {
+      for (const row of dishes) {
         dishesIn.set(row.section_id, (dishesIn.get(row.section_id) ?? 0) + 1);
       }
       const sections = listedSections
@@ -159,7 +171,32 @@ setup(
       const emptySection = withSections?.own.find(
         (section) => section.dishes === 0,
       );
-      if (!withSections || !empty || !withDishes || !emptySection) {
+      // The dish page checks read one dish priced each way in the section
+      // with dishes (D-139), which the data file sets.
+      const own = withDishes
+        ? dishes.filter((dish) => dish.section_id === withDishes.id)
+        : [];
+      const priced = (kind: "one" | "sizes" | "market") =>
+        own.find((dish) => dish.price_kind === kind);
+      const bySize = priced("sizes");
+      const atOne = priced("one");
+      const atMarket = priced("market");
+      if (withDishes && (!bySize || !atOne || !atMarket)) {
+        throw new Error(
+          `the section ${withDishes.name} of the test restaurant (${env.code}) needs one dish priced by size, one at one price, and one at market price; found ${own
+            .map((dish) => `${dish.name} ${dish.price_kind}`)
+            .join(", ")}. ${FIX_DATA}`,
+        );
+      }
+      if (
+        !withSections ||
+        !empty ||
+        !withDishes ||
+        !emptySection ||
+        !bySize ||
+        !atOne ||
+        !atMarket
+      ) {
         const found = listed
           .map(
             (menu) =>
@@ -189,6 +226,11 @@ setup(
           dishes: withDishes.dishes,
         },
         emptySection: { id: emptySection.id, name: emptySection.name },
+        dishes: {
+          sizes: { id: bySize.id, name: bySize.name },
+          one: { id: atOne.id, name: atOne.name },
+          market: { id: atMarket.id, name: atMarket.name },
+        },
       };
       writeFileSync(ownerFixturePath, JSON.stringify(fixture), { mode: 0o600 });
       writeFileSync(

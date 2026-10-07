@@ -1,16 +1,24 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { OwnerDish } from "@/domain/dish";
+import {
+  PRICE_KINDS,
+  type OwnerDish,
+  type OwnerDishDetail,
+  type PriceKind,
+} from "@/domain/dish";
+import { priceInputText } from "@/domain/money";
 
-// Owner-side reads and writes on a section's dishes, through the owner's own
-// client so row level security decides what is visible (D-75) and the table
-// constraints decide what is valid (migration 5). The table is called
-// items; this is the only file that names it, and the only place the row
-// shape is known. Features see OwnerDish. A delete marks the row and keeps
+// Owner-side reads and writes on dishes, through the owner's own client so
+// row level security decides what is visible (D-75) and the table
+// constraints decide what is valid (migrations 5 and 6). The table is
+// called items; this is the only file that names it, and the only place the
+// row shape is known. Features see OwnerDish on a section's page and
+// OwnerDishDetail on the dish's own page. A delete marks the row and keeps
 // it, so Undo can bring it back; reads leave marked rows out. Owners write
-// name, sort, and deleted_at and nothing else: no price, no description,
-// nothing about allergens, and a dish never moves to another section here.
-// Nothing here can publish.
+// name, description, the price choice, price_cents, note, sort, and
+// deleted_at and nothing else: nothing about allergens or photos yet. A
+// move to another section goes through move_item(), since section_id is not
+// a column owners write (migration 6). Nothing here can publish.
 
 const columns = "id, name, sort";
 
@@ -24,6 +32,35 @@ function toDish(row: z.infer<typeof rowSchema>): OwnerDish {
   return { id: row.id, name: row.name };
 }
 
+// The dish as its own page reads it (D-128), with the section it is in.
+const detailColumns =
+  "id, name, description, price_kind, price_cents, note, sort, section_id";
+
+const detailSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  price_kind: z.enum(PRICE_KINDS),
+  price_cents: z.number().nullable(),
+  note: z.string().nullable(),
+  sort: z.number(),
+  section_id: z.string(),
+});
+
+type DetailRow = z.infer<typeof detailSchema>;
+
+function toDetail(row: DetailRow): OwnerDishDetail & { sectionId: string } {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description ?? "",
+    note: row.note ?? "",
+    priceKind: row.price_kind,
+    price: priceInputText(row.price_cents),
+    sectionId: row.section_id,
+  };
+}
+
 // Postgres's code for a unique index refusing a row: here, items_name_key.
 const UNIQUE_VIOLATION = "23505";
 // What the copy trigger says when the caller cannot read the section.
@@ -33,6 +70,11 @@ export type DishWriteError =
   | { kind: "name-taken" }
   | { kind: "not-found" }
   | { kind: "mismatch" }
+  // A move named a section that is not a live section of a live menu of
+  // this restaurant.
+  | { kind: "section-gone" }
+  // A move named the section the dish is already in.
+  | { kind: "same-section" }
   | { kind: "failed" };
 
 export type DishWriteResult<Value = unknown> =
@@ -77,6 +119,31 @@ export async function listOwnerDishes(
     throw new Error("dishes could not be read: the read was cut short");
   }
   return rows.map(toDish);
+}
+
+// One dish of the restaurant that is not deleted, with everything its page
+// shows and the section it is in, for its own page and for every write on
+// it. Row level security hides a dish that is not this owner's, so that, a
+// deleted dish, and an id that matches nothing all read the same. Whether
+// its section and menu are still there is the caller's next question. A
+// read that failed is told apart, so a save can say which it was and a page
+// can throw.
+export async function findOwnerDish(
+  client: SupabaseClient,
+  restaurantId: string,
+  id: string,
+): Promise<(OwnerDishDetail & { sectionId: string }) | "not-found" | "failed"> {
+  const { data, error } = await client
+    .from("items")
+    .select(detailColumns)
+    .eq("id", id)
+    .eq("restaurant_id", restaurantId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) return "failed";
+  if (!data) return "not-found";
+  const row = detailSchema.safeParse(data);
+  return row.success ? toDetail(row.data) : "failed";
 }
 
 // A new dish goes last, with a name only. The trigger takes its restaurant
@@ -165,6 +232,101 @@ export async function setOwnerDishDeleted(
   if (!data) return notFound;
   const row = rowSchema.safeParse(data);
   return row.success ? { ok: true, value: toDish(row.data) } : failed;
+}
+
+// Writes one column of a dish on its own page. The write is scoped to the
+// section the page read the dish in, so a page whose dish has moved since
+// gets not found, never a silent write. Under row level security a dish the
+// caller does not own matches zero rows without an error, so the write asks
+// for the row back and reads an empty answer as not found. With expected,
+// the write happens only if the value is still that one: an Undo never
+// writes over a newer change.
+async function writeDish(
+  client: SupabaseClient,
+  sectionId: string,
+  id: string,
+  column: "description" | "note" | "price_cents" | "price_kind",
+  value: string | number | null,
+  expected: string | number | null | undefined,
+): Promise<DishWriteResult<OwnerDishDetail>> {
+  let update = client
+    .from("items")
+    .update({ [column]: value })
+    .eq("id", id)
+    .eq("section_id", sectionId)
+    .is("deleted_at", null);
+  if (expected !== undefined) {
+    update =
+      expected === null ? update.is(column, null) : update.eq(column, expected);
+  }
+  const { data, error } = await update.select(detailColumns).maybeSingle();
+  if (error) return refused(error.code);
+  if (!data) return notFound;
+  const row = detailSchema.safeParse(data);
+  return row.success ? { ok: true, value: toDetail(row.data) } : failed;
+}
+
+// A dish's description or note, stored as null when blank.
+export function setOwnerDishText(
+  client: SupabaseClient,
+  sectionId: string,
+  id: string,
+  field: "description" | "note",
+  value: string | null,
+  expected?: string | null,
+): Promise<DishWriteResult<OwnerDishDetail>> {
+  return writeDish(client, sectionId, id, field, value, expected);
+}
+
+// A dish's one price, in cents, or null for none (D-139).
+export function setOwnerDishPrice(
+  client: SupabaseClient,
+  sectionId: string,
+  id: string,
+  cents: number | null,
+  expected?: number | null,
+): Promise<DishWriteResult<OwnerDishDetail>> {
+  return writeDish(client, sectionId, id, "price_cents", cents, expected);
+}
+
+// How a dish is priced (D-139). The other choices' values stay stored and
+// come back when the owner switches back (Michael, October 7, 2026).
+export function setOwnerDishPriceKind(
+  client: SupabaseClient,
+  sectionId: string,
+  id: string,
+  kind: PriceKind,
+  expected?: PriceKind,
+): Promise<DishWriteResult<OwnerDishDetail>> {
+  return writeDish(client, sectionId, id, "price_kind", kind, expected);
+}
+
+// Moves a dish to another section of its restaurant, last, with its sizes
+// (D-129), through move_item(). The database checks that the caller is a
+// member of the dish's restaurant and that the section is a live section
+// of a live menu of it.
+export async function moveOwnerDish(
+  client: SupabaseClient,
+  id: string,
+  sectionId: string,
+): Promise<DishWriteResult<null>> {
+  const { error } = await client.rpc("move_item", {
+    p_item: id,
+    p_section: sectionId,
+  });
+  if (!error) return { ok: true, value: null };
+  switch (error.message) {
+    case "move_name_taken":
+      return { ok: false, error: { kind: "name-taken" } };
+    case "move_section_gone":
+      return { ok: false, error: { kind: "section-gone" } };
+    case "move_same_section":
+      return { ok: false, error: { kind: "same-section" } };
+    case "move_not_found":
+      return notFound;
+    default:
+      return failed;
+  }
 }
 
 // set_item_order() takes the whole list or nothing: a list that is not

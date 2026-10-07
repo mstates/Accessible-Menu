@@ -116,3 +116,35 @@ export function formatPrice(price: Price, copy: MoneyCopy): PriceText {
       return { display: price.text, spoken: price.text };
   }
 }
+
+// The cap on any price, in cents: $99,999.99. Also a table constraint
+// (migration 6), which is the boundary; this exists to name the rule.
+export const PRICE_LIMITS = { cents: 9_999_999 } as const;
+
+// The rules a typed price can break, which are also the keys of their
+// messages.
+export type PriceRule = "priceFormat" | "priceRange";
+
+// Reads a typed price into cents (D-139): "12", "12.5", "12.50", "$12", or
+// "$12.50", and blank for no price. Anything else is refused by name; it
+// never guesses, as parseTime never guesses am or pm (D-105).
+export function parsePrice(
+  text: string,
+): { ok: true; cents: number | null } | { ok: false; rule: PriceRule } {
+  const typed = text.trim();
+  if (typed === "") return { ok: true, cents: null };
+  const match = /^\$?(\d+)(?:\.(\d{1,2}))?$/.exec(typed);
+  if (!match) return { ok: false, rule: "priceFormat" };
+  const dollars = Number(match[1]);
+  const cents = dollars * 100 + Number((match[2] ?? "").padEnd(2, "0"));
+  if (cents > PRICE_LIMITS.cents) return { ok: false, rule: "priceRange" };
+  return { ok: true, cents };
+}
+
+// A price as an owner's field shows it once saved: two decimals always,
+// "12.00", and blank for none (Michael, October 7, 2026).
+export function priceInputText(cents: number | null): string {
+  if (cents === null) return "";
+  const { dollars, cents: rest } = split(cents);
+  return `${dollars}.${String(rest).padStart(2, "0")}`;
+}

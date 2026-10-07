@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { en } from "../../src/copy";
-import { formatPrice, numberToWords } from "../../src/domain/money";
+import {
+  formatPrice,
+  numberToWords,
+  parsePrice,
+  PRICE_LIMITS,
+  priceInputText,
+} from "../../src/domain/money";
 
 const copy = en.money;
 
@@ -70,5 +76,81 @@ describe("numberToWords", () => {
   it("rejects fractions and negatives", () => {
     expect(() => numberToWords(1.5)).toThrow(RangeError);
     expect(() => numberToWords(-1)).toThrow(RangeError);
+  });
+});
+
+describe("reading a typed price (D-139)", () => {
+  it.each([
+    ["12", 1200],
+    ["12.5", 1250],
+    ["12.50", 1250],
+    ["$12", 1200],
+    ["$12.50", 1250],
+    [" 7 ", 700],
+    ["0", 0],
+    ["0.99", 99],
+    ["007", 700],
+    ["99999.99", 9999999],
+  ])("reads %j as %i cents", (typed, cents) => {
+    expect(parsePrice(typed)).toEqual({ ok: true, cents });
+  });
+
+  it("reads blank as no price, which shows nothing", () => {
+    expect(parsePrice("")).toEqual({ ok: true, cents: null });
+    expect(parsePrice("   ")).toEqual({ ok: true, cents: null });
+  });
+
+  it.each([
+    "12.",
+    ".50",
+    "12,50",
+    "twelve",
+    "$",
+    "-1",
+    "12.555",
+    "12 50",
+    "$ 12",
+    "1e3",
+    "12 dollars",
+  ])("refuses %j by its shape and never guesses", (typed) => {
+    expect(parsePrice(typed)).toEqual({ ok: false, rule: "priceFormat" });
+  });
+
+  it("refuses a price over the cap by name, and takes the cap itself", () => {
+    expect(parsePrice("100000")).toEqual({ ok: false, rule: "priceRange" });
+    expect(parsePrice("99999.99")).toEqual({
+      ok: true,
+      cents: PRICE_LIMITS.cents,
+    });
+    expect(PRICE_LIMITS.cents).toBe(9_999_999);
+  });
+
+  it("has a message for each rule, and the cap's names the cap", () => {
+    const errors = en.owner.dish.errors;
+    expect(errors.priceFormat).not.toBe("");
+    expect(errors.priceRange).toContain("100,000");
+  });
+});
+
+describe("a saved price as the field shows it (Michael, October 7, 2026)", () => {
+  it.each([
+    [1200, "12.00"],
+    [1250, "12.50"],
+    [5, "0.05"],
+    [0, "0.00"],
+    [9999999, "99999.99"],
+  ])("%i cents shows as %s, two decimals always", (cents, text) => {
+    expect(priceInputText(cents)).toBe(text);
+  });
+
+  it("shows no price as blank", () => {
+    expect(priceInputText(null)).toBe("");
+  });
+
+  it("reads back what it shows", () => {
+    for (const cents of [0, 5, 1250, 9999999]) {
+      expect(parsePrice(priceInputText(cents))).toEqual({ ok: true, cents });
+    }
+    expect(parsePrice(priceInputText(null))).toEqual({ ok: true, cents: null });
   });
 });

@@ -435,7 +435,8 @@ export const en = {
     },
     // A section's own page: its dishes (D-128). The page is named for its
     // section, so it has no title or heading here. A dish has only its name
-    // on this page; the rest is on the dish's own page.
+    // on this page; the rest is on the dish's own page, which its row links
+    // to.
     dishes: {
       lead: "Dishes are the items in this section, like soup or a salad.",
       none: "No dishes yet. Add the first one below.",
@@ -446,6 +447,8 @@ export const en = {
       remove: "Delete",
       // A row button's whole name: its visible label first, then its dish.
       rowAction: "{action}, {dish}",
+      // The link from a dish's row to its own page (D-128).
+      editDish: "Edit dish",
       newLabel: "New dish name",
       add: "Add dish",
       count: {
@@ -521,6 +524,142 @@ export const en = {
             "Undone. {section} is back in {menu}, {position} of {total}.",
           blocked:
             "{section} cannot go back while {menu} has another section called {section}.",
+        },
+      },
+    },
+    // A dish's own page (D-128, D-139): its description, its price, and its
+    // note, with its sizes, the link to the next dish, and its move to
+    // another section. The page is named for its dish, so the labels do not
+    // name it; every sentence the log says does, since a sentence is heard
+    // on its own. A size's texts are named for their size.
+    dish: {
+      lead: "Each change saves when you leave its field.",
+      descriptionLabel: "Description",
+      descriptionHint:
+        "What is in it and how it is made. Diners read it in full.",
+      noteLabel: "Note",
+      noteHint:
+        'A short line diners read with this dish, like "Comes with fries or a salad."',
+      // The price group (D-139): a heading names the choice, and each choice
+      // brings its own fields.
+      price: {
+        heading: "Price",
+        one: "One price",
+        sizes: "Prices by size",
+        market: "Market price",
+        amountLabel: "Price",
+        amountHint: "In dollars, like 12 or 12.50.",
+        currency: "$",
+        marketHint: 'Diners read "Market price."',
+        sizesLabel: "Sizes",
+        sizeNameLabel: "Size",
+        sizePriceLabel: "Price",
+        // Follows a size field's label, so every size's fields name their
+        // size: "Size for Cup", "Price for Cup".
+        labelFor: "for {size}",
+        sizeHint: "Like Cup, Bowl, Half, or Full.",
+        showNames: "Show size names",
+        // A size with no name yet, named by its place: "size 2".
+        unnamedSize: "size {position}",
+        // A size control's whole name: its visible label first, then its
+        // size.
+        sizeAction: "{action}, {size}",
+        addSize: "Add a size",
+        removeSize: "Remove",
+        sizeAdded: "Size added. {count}.",
+        sizeCount: {
+          one: "{count} size",
+          other: "{count} sizes",
+        },
+        sizeRemoved: "{size} removed. Undo is available.",
+        // Suggested after the restaurant's own size names (D-139).
+        suggestions: [
+          "Small",
+          "Medium",
+          "Large",
+          "Cup",
+          "Bowl",
+          "Half",
+          "Full",
+          "Glass",
+          "Bottle",
+          "Pint",
+        ],
+      },
+      notSaved: {
+        description: "The description of {dish} was not saved.",
+        note: "The note for {dish} was not saved.",
+        price: "The price of {dish} was not saved.",
+        priceKind: "The price choice for {dish} was not saved.",
+        sizeName: "The name of {size} was not saved.",
+        sizePrice: "The price for {size} was not saved.",
+      },
+      notAdded: "A size was not added.",
+      notRemoved: "{size} was not removed.",
+      errors: {
+        descriptionLength: "Keep the description to 500 characters.",
+        noteLength: "Keep the note to 120 characters.",
+        sizeNameLength: "Keep a size name to 40 characters.",
+        priceFormat: "Type a price like 12, 12.50, or $12.",
+        priceRange: "Keep the price under $100,000.",
+        nameTaken: "Another size of this dish is called {size}.",
+        gone: "That size is no longer here. Reload the page.",
+        parentGone: "This dish is no longer here. Go back to Menus.",
+        listChanged: "The sizes changed. Reload the page.",
+      },
+      undo: {
+        description: "Undo: changed the description of {dish}",
+        descriptionBack: "Undone. The description of {dish} is as it was.",
+        note: "Undo: changed the note for {dish}",
+        noteBack: "Undone. The note for {dish} is as it was.",
+        price: "Undo: changed the price of {dish}",
+        priceBack: "Undone. The price of {dish} is as it was.",
+        priceKind: "Undo: changed how {dish} is priced",
+        priceKindBack: "Undone. {dish} is priced as before: {kind}.",
+        sizeAdded: "Undo: added {size}",
+        sizeRemoved: "Undone. {size} is removed.",
+        sizeDeleted: "Undo: removed {size}",
+        sizeRestored: "Undone. {size} is back.",
+        sizeName: "Undo: changed the name of {size}",
+        sizeNameBack: "Undone. The name of {size} is as it was.",
+        sizePrice: "Undo: changed the price for {size}",
+        sizePriceBack: "Undone. The price for {size} is as it was.",
+        textChanged: "That was changed again since, so nothing was undone.",
+        restoreBlocked:
+          "{size} cannot come back while another size is called {size}.",
+        // Undo never deletes content: an added size that holds a name or a
+        // price now stays, and its Remove button is the way to remove it.
+        addGrew:
+          "{size} has a name or a price now, so it stays. To remove it, use its Remove button.",
+      },
+      // The link to the next dish in the section, so typing a section is one
+      // pass (D-128), and what the last dish says instead.
+      next: {
+        label: "Next dish: {dish}",
+        last: "This is the last dish in {section}.",
+      },
+      // Moving the dish to another section of the restaurant, from its own
+      // page (D-129). Nothing is sent until the button is pressed. The
+      // sentence says the owner has not left (D-141).
+      move: {
+        heading: "Move this dish",
+        label: "Move to",
+        placeholder: "Choose a section",
+        submit: "Move dish",
+        choose: "Choose a section first.",
+        moved:
+          "{dish} moved to {section} in {menu}. It is the last dish there. You are still on this page.",
+        notMoved: "{dish} was not moved.",
+        errors: {
+          nameTaken: "{section} already has a dish called {dish}.",
+          sectionGone: "That section is no longer here. Reload the page.",
+        },
+        undo: {
+          moved: "Undo: moved {dish} to {section}",
+          movedBack:
+            "Undone. {dish} is back in {section}, {position} of {total}.",
+          blocked:
+            "{dish} cannot go back while {section} has another dish called {dish}.",
         },
       },
     },

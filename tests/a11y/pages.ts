@@ -26,9 +26,10 @@ export const pages = [
 // created outcome, a save's result message, and the return from Checkout are
 // reached by URL, so the gate never sends a write to see them (D-108). The
 // menus page shows the three menus the test restaurant was given by its
-// data file. A menu's own page and a section's own page are named by an id,
-// which only the setup learns, so those pages get the same checks from
-// owner-sections.spec.ts and owner-dishes.spec.ts.
+// data file. A menu's own page, a section's own page, and a dish's own page
+// are named by an id, which only the setup learns, so those pages get the
+// same checks from owner-sections.spec.ts, owner-dishes.spec.ts, and
+// owner-dish.spec.ts.
 export function ownerPages(code: string) {
   return [
     dashboardPath,

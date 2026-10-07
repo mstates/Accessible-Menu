@@ -11,6 +11,10 @@ type Props = {
   // A field that takes several lines. Enter adds a line, so only leaving
   // the field commits it.
   multiline?: boolean;
+  // A price field asks a phone for its number keypad (D-139).
+  inputMode?: "decimal";
+  // Text shown beside the input, the "$" before a price.
+  prefix?: string;
   // What the field shows: what the owner typed, or the saved value.
   value: string;
   // The problem with the last save of this field, shown as its error.
@@ -34,6 +38,8 @@ export function AutosaveTextField({
   labelSuffix,
   description,
   multiline = false,
+  inputMode,
+  prefix,
   value,
   error,
   onChange,
@@ -46,6 +52,8 @@ export function AutosaveTextField({
       labelSuffix={labelSuffix}
       description={description}
       multiline={multiline}
+      inputMode={inputMode}
+      prefix={prefix}
       value={value}
       onChange={onChange}
       onBlur={onCommit}

@@ -2,6 +2,10 @@ import type { Page } from "@playwright/test";
 import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
 import { DAY_KEYS } from "../../src/domain/hours";
+import {
+  sizeAction,
+  sizeLabel,
+} from "../../src/features/owner/dish/dish-words";
 import type { Control, Mark } from "./checks";
 import { listRows } from "./owner-lists";
 
@@ -35,6 +39,13 @@ export const breadcrumbMarks: readonly Mark[] = [
   {
     what: "the breadcrumb's slashes",
     selector: `nav[aria-label="${en.ui.breadcrumb}"] span[aria-hidden="true"]`,
+  },
+];
+// The dot of the chosen radio on the dish page (D-139).
+export const radioMarks: readonly Mark[] = [
+  {
+    what: "a radio's dot",
+    selector: 'label:has(input[type="radio"]) > span[aria-hidden="true"] svg',
   },
 ];
 
@@ -138,7 +149,53 @@ export async function sectionControls(
     site,
     ...nav,
     link(menu),
-    ...(await rowControls(page, words, "dish")),
+    ...(await rowControls(page, words, "dish", words.editDish)),
+    button(words.move.submit),
+  ];
+}
+
+// A dish's page (D-128, D-139): the breadcrumb's three links, each size's
+// two buttons when the dish is priced by size, named by the size as the
+// page shows it, Add a size, Undo, the link to the next dish when there is
+// one, and the move's button; the move's Select is named by its label and
+// its value, so the sweep checks it.
+export async function dishControls(
+  page: Page,
+  menu: string,
+  section: string,
+): Promise<Control[]> {
+  const words = en.owner.dish;
+  const sizeNames = await page
+    .locator(`main ol[aria-label="${words.price.sizesLabel}"] > li`)
+    .evaluateAll((rows) =>
+      rows.map(
+        (row) =>
+          row.querySelector<HTMLInputElement>('input[id$="-name"]')?.value ??
+          "",
+      ),
+    );
+  const sizes = sizeNames.flatMap((name, index) => {
+    const label = sizeLabel(words, { id: "", name, price: "" }, index + 1);
+    return [
+      button(sizeAction(words, words.price.showNames, label)),
+      button(sizeAction(words, words.price.removeSize, label)),
+    ];
+  });
+  const bySize = await page
+    .getByRole("radio", { name: words.price.sizes, exact: true })
+    .isChecked();
+  const nextName = await page
+    .locator('main a[href*="/dishes/"]')
+    .evaluateAll((links) => links.map((link) => link.textContent ?? ""));
+  return [
+    site,
+    ...nav,
+    link(menu),
+    link(section),
+    ...sizes,
+    ...(bySize ? [button(words.price.addSize)] : []),
+    button(editing.undo),
+    ...nextName.map((text) => link(text)),
     button(words.move.submit),
   ];
 }

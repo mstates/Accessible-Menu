@@ -20,6 +20,9 @@ type Props = TextFieldProps & {
   description?: string;
   errorMessage?: string;
   multiline?: boolean;
+  // Text shown beside the input and hidden from assistive technology, the
+  // "$" before a price (D-139); the hint says what the field takes.
+  prefix?: string;
 };
 
 const inputClassName =
@@ -52,11 +55,17 @@ export function TextField({
   description,
   errorMessage,
   multiline = false,
+  prefix,
   ...props
 }: Props) {
   const name = labelSuffix ? `${label} ${labelSuffix}` : null;
   const [held, setHeld] = useState<string | null>(null);
   const required = props.isRequired ? <span aria-hidden="true"> *</span> : null;
+  const input = multiline ? (
+    <TextArea className={`${inputClassName} min-h-32`} />
+  ) : (
+    <Input className={`${inputClassName} min-h-11`} />
+  );
   return (
     <AriaTextField
       {...props}
@@ -78,10 +87,15 @@ export function TextField({
           {required}
         </Label>
       )}
-      {multiline ? (
-        <TextArea className={`${inputClassName} min-h-32`} />
+      {prefix ? (
+        <div className="flex items-center gap-2">
+          <span aria-hidden="true" className="font-semibold">
+            {prefix}
+          </span>
+          {input}
+        </div>
       ) : (
-        <Input className={`${inputClassName} min-h-11`} />
+        input
       )}
       {description ? (
         <Text slot="description" className="text-sm text-foreground-muted">

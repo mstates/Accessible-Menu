@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
 import {
@@ -8,6 +8,7 @@ import {
 } from "../../src/features/owner/paths";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
+import { chromeName } from "./chrome-name";
 
 // A rename saved with Enter, landed for real against the stand-in (D-140,
 // D-142). While the field still has focus it keeps the name it had when
@@ -48,26 +49,6 @@ const lists: readonly ListUnderTest[] = [
     path: () => restaurantSectionPath(code, ownerFixture().withDishes.id),
   },
 ];
-
-// The name Chrome itself gives one element, found by its id.
-async function chromeName(page: Page, id: string): Promise<string> {
-  const cdp = await page.context().newCDPSession(page);
-  try {
-    const { root } = await cdp.send("DOM.getDocument", { depth: 0 });
-    const { nodeId } = await cdp.send("DOM.querySelector", {
-      nodeId: root.nodeId,
-      selector: `[id="${id}"]`,
-    });
-    const { nodes } = await cdp.send("Accessibility.getPartialAXTree", {
-      nodeId,
-      fetchRelatives: false,
-    });
-    const value: unknown = nodes[0]?.name?.value;
-    return typeof value === "string" ? value : "";
-  } finally {
-    await cdp.detach();
-  }
-}
 
 for (const list of lists) {
   test(`a ${list.noun} renamed with Enter keeps its field's name in Chrome until the field is left, and says "${saved}" once`, async ({

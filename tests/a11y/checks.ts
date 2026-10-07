@@ -477,7 +477,7 @@ async function forcedPaints(
     const paints: { what: string; color: string; behind: string }[] = [];
     // Edges: every field, button, and checkbox box, on all four sides.
     const edged = document.querySelectorAll(
-      'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea, select, button, label:has(input[type="checkbox"]) > span[aria-hidden="true"]',
+      'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea, select, button, label:has(input[type="checkbox"]) > span[aria-hidden="true"], label:has(input[type="radio"]) > span[aria-hidden="true"]',
     );
     for (const element of edged) {
       if (element.tagName.toLowerCase().startsWith("vercel-")) continue;
