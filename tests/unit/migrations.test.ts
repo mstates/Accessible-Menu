@@ -578,8 +578,10 @@ describe("the owner boundary on items (D-85, task 3a)", () => {
     "updated_at",
   ];
 
+  // The lists this file granted, not the newest list in all the files:
+  // the dish page's migration grants again (D-85).
   function columnsOf(privilege: string): string[] {
-    const match = sql.match(
+    const match = items.match(
       new RegExp(
         `grant ${privilege} \\(([^)]*)\\) on public\\.items to authenticated;`,
       ),
@@ -755,5 +757,230 @@ describe("the owner boundary on items (D-85, task 3a)", () => {
   it("still lets owners write neither link of a section as a column", () => {
     expect(items).not.toMatch(/grant [^;]*public\.sections\b/);
     expect(items).not.toMatch(/grant [^;]*public\.menus\b/);
+  });
+});
+
+describe("the dish page's migration (D-85, D-129, D-139, task 3b)", () => {
+  const file = "20261007000001_dish_page.sql";
+  const dish = readFileSync(join(dir, file), "utf8");
+  // Never written by an owner, on this page or before it: each joins the
+  // list in the task that builds it.
+  const neverWritten = [
+    "id",
+    "section_id",
+    "restaurant_id",
+    "allergens",
+    "custom_allergens",
+    "allergens_reviewed",
+    "allergen_suggestions",
+    "dietary_tags",
+    "photo_url",
+    "photo_alt",
+    "available",
+    "special_schedule",
+    "import_confidence",
+    "external_ids",
+    "created_at",
+    "updated_at",
+  ];
+
+  function columnsOf(table: string, privilege: string): string[] {
+    const matches = [
+      ...dish.matchAll(
+        new RegExp(
+          `grant ${privilege} \\(([^)]*)\\) on public\\.${table} to authenticated;`,
+          "g",
+        ),
+      ),
+    ];
+    expect(matches, `no ${privilege} column list on ${table}`).toHaveLength(1);
+    return (matches[0]?.[1] ?? "").split(",").map((column) => column.trim());
+  }
+
+  function bodyOf(name: string): string {
+    const from = dish.indexOf(`create function public.${name}`);
+    expect(from, `${name} is not in ${file}`).toBeGreaterThan(-1);
+    return dish.slice(from, dish.indexOf("\n$$;", from));
+  }
+
+  it("adds the price choice as an enum with one price as the default", () => {
+    expect(dish).toMatch(
+      /create type public\.price_kind as enum \('one', 'sizes', 'market'\);/,
+    );
+    expect(dish).toMatch(
+      /add column price_kind public\.price_kind not null default 'one';/,
+    );
+    expect(sql).not.toMatch(/price_max_cents/);
+  });
+
+  it("opens a dish's description, price choice, price, and note to owners, and nothing else new", () => {
+    expect(dish).toMatch(/revoke update on public\.items from authenticated;/);
+    expect(dish).not.toMatch(/grant insert [^;]*public\.items/);
+    expect(columnsOf("items", "update")).toEqual([
+      "name",
+      "description",
+      "price_kind",
+      "price_cents",
+      "note",
+      "sort",
+      "deleted_at",
+    ]);
+    for (const column of neverWritten) {
+      expect(columnsOf("items", "update")).not.toContain(column);
+    }
+  });
+
+  it("holds the text and price rules as table constraints, with existing rows brought inside first", () => {
+    const fixDescription = dish.indexOf(
+      "update public.items\n  set description =",
+    );
+    const fixNote = dish.indexOf("update public.items\n  set note =");
+    const fixPrice = dish.indexOf(
+      "update public.items set price_cents = 9999999 where price_cents > 9999999;",
+    );
+    const constraints = dish.indexOf("add constraint items_description_text");
+    expect(fixDescription).toBeGreaterThan(-1);
+    expect(fixNote).toBeGreaterThan(fixDescription);
+    expect(fixPrice).toBeGreaterThan(fixNote);
+    expect(constraints).toBeGreaterThan(fixPrice);
+    expect(dish).toMatch(
+      /items_description_text\s+check \(description ~ '\\S'\s+and translate\(description, chr\(10\), ' '\) !~ '\[\[:cntrl:\]\]'\s+and length\(description\) <= 500\)/,
+    );
+    expect(dish).toMatch(
+      /items_note_text\s+check \(note ~ '\\S' and note !~ '\[\[:cntrl:\]\]' and length\(note\) <= 120\)/,
+    );
+    expect(dish).toMatch(
+      /items_price_cents_range\s+check \(price_cents <= 9999999\)/,
+    );
+  });
+
+  it("retires price_text after the view that names it, and makes the view again under its grant with nothing new", () => {
+    const worded = dish.indexOf("set price_kind = 'market'");
+    const dropView = dish.indexOf("drop view public.published_items;");
+    const dropColumn = dish.indexOf(
+      "alter table public.items drop column price_text;",
+    );
+    const view = dish.indexOf("create view public.published_items");
+    const grant = dish.indexOf(
+      "grant select on public.published_items to anon, authenticated;",
+    );
+    expect(worded).toBeGreaterThan(-1);
+    expect(dropView).toBeGreaterThan(worded);
+    expect(dropColumn).toBeGreaterThan(dropView);
+    expect(view).toBeGreaterThan(dropColumn);
+    expect(grant).toBeGreaterThan(view);
+    const body = dish.slice(view, dish.indexOf(";", view));
+    expect(body).toMatch(/with \(security_barrier = true\)/);
+    expect(body).not.toMatch(/price_text|price_kind|deleted_at/);
+    for (const column of privateColumns) {
+      expect(body).not.toMatch(new RegExp(`\\b${column}\\b`));
+    }
+  });
+
+  it("keeps sizes in a table of their own, in D-131's shape, with no sort column", () => {
+    expect(tables).toContain("item_sizes");
+    expect(dish).toMatch(
+      /item_id uuid not null references public\.items \(id\) on delete cascade/,
+    );
+    expect(dish).toMatch(
+      /restaurant_id uuid not null references public\.restaurants \(id\) on delete cascade/,
+    );
+    expect(dish).toMatch(
+      /item_sizes_name_text\s+check \(name ~ '\\S' and name !~ '\[\[:cntrl:\]\]' and length\(name\) <= 40\)/,
+    );
+    expect(dish).toMatch(
+      /item_sizes_price_cents\s+check \(price_cents >= 0 and price_cents <= 9999999\)/,
+    );
+    expect(dish).toMatch(
+      /create unique index item_sizes_name_key\s+on public\.item_sizes \(item_id, lower\(btrim\(name\)\)\)\s+where deleted_at is null and name is not null;/,
+    );
+    const table = dish.slice(
+      dish.indexOf("create table public.item_sizes"),
+      dish.indexOf(");", dish.indexOf("create table public.item_sizes")),
+    );
+    expect(table).not.toMatch(/\bsort\b/);
+    expect(table).toMatch(/deleted_at timestamptz/);
+    expect(dish).toMatch(
+      /create trigger item_sizes_restaurant\s+before insert or update of item_id on public\.item_sizes/,
+    );
+    expect(dish).toMatch(
+      /create trigger item_sizes_updated_at before update on public\.item_sizes/,
+    );
+  });
+
+  it("gives owners column lists and no delete on sizes, and service_role every column", () => {
+    expect(columnsOf("item_sizes", "insert")).toEqual([
+      "item_id",
+      "name",
+      "price_cents",
+    ]);
+    expect(columnsOf("item_sizes", "update")).toEqual([
+      "name",
+      "price_cents",
+      "deleted_at",
+    ]);
+    expect(dish).not.toMatch(
+      /grant [^;]*\bdelete\b[^;]*public\.item_sizes to authenticated/,
+    );
+    expect(dish).toMatch(
+      /grant select on public\.item_sizes to authenticated;/,
+    );
+    expect(dish).toMatch(
+      /grant select, insert, update, delete on public\.item_sizes to service_role;/,
+    );
+    expect(dish).toMatch(
+      /create policy "owners read sizes" on public\.item_sizes\s+for select to authenticated using \(public\.is_owner\(restaurant_id\)\);/,
+    );
+    expect(dish).toMatch(
+      /create policy "owners add sizes" on public\.item_sizes/,
+    );
+    expect(dish).toMatch(
+      /create policy "owners update sizes" on public\.item_sizes/,
+    );
+    expect(dish).not.toMatch(/for delete to authenticated/);
+  });
+
+  it("opens move_item to authenticated only", () => {
+    const grants = [...sql.matchAll(/grant [^;]*\bmove_item\b[^;]*;/g)].map(
+      (match) => match[0],
+    );
+    expect(grants).toHaveLength(1);
+    expect(grants[0]).toMatch(/to authenticated;$/);
+    expect(dish).toMatch(
+      /revoke all on function public\.move_item\(uuid, uuid\) from public, anon;/,
+    );
+  });
+
+  // D-129: section_id is not a column owners write, so the move runs as the
+  // table owner and has to check the caller and the restaurant itself.
+  it("moves a dish as a definer that checks the caller and keeps the restaurant", () => {
+    const body = bodyOf("move_item");
+    expect(body).toMatch(/security definer set search_path = ''/);
+    const membership = body.indexOf("not public.is_owner(home)");
+    const firstLock = body.search(/for (key share|update)/);
+    expect(membership).toBeGreaterThan(-1);
+    expect(firstLock).toBeGreaterThan(membership);
+    expect(body).toMatch(
+      /where s\.id = p_section\s+and s\.restaurant_id = home\s+and s\.deleted_at is null\s+and m\.deleted_at is null\s+for key share of s;/,
+    );
+    expect(body).toMatch(
+      /where i\.id = p_item\s+and i\.restaurant_id = home\s+and i\.deleted_at is null\s+for update;/,
+    );
+    expect(body).toMatch(/exception when unique_violation then/);
+    expect(body).toMatch(/set section_id = p_section, sort = place/);
+    expect(body).toMatch(/raise exception 'move_section_gone'/);
+    expect(body).toMatch(/raise exception 'move_same_section'/);
+    expect(body).toMatch(/raise exception 'move_not_found'/);
+    expect(body).toMatch(/raise exception 'move_name_taken'/);
+    expect(body, "the move never writes the restaurant").not.toMatch(
+      /\bset\b[^;]*restaurant_id/,
+    );
+  });
+
+  it("still lets owners write no link of a dish, a section, or a menu as a column", () => {
+    expect(dish).not.toMatch(/grant [^;]*public\.sections\b/);
+    expect(dish).not.toMatch(/grant [^;]*public\.menus\b/);
+    expect(columnsOf("items", "update")).not.toContain("section_id");
+    expect(columnsOf("item_sizes", "update")).not.toContain("item_id");
   });
 });

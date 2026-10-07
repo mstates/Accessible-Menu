@@ -33,12 +33,28 @@ describe("CI Diner's data file (D-126)", () => {
     expect(code).not.toMatch(/\b(create|alter|grant|revoke)\b/i);
   });
 
-  it("writes only through inserts and sort updates", () => {
+  it("writes only through inserts, sort updates, and the three dishes' prices", () => {
     const updates = code.match(/\bupdate\s+public\.\w+\s+\w+\s+set\s+\w+/gi);
     expect(updates).toEqual([
       "update public.menus m\n  set sort",
       "update public.sections s\n  set sort",
       "update public.items i\n  set sort",
+      "update public.items i\n  set price_kind",
+      "update public.items i\n  set price_kind",
+      "update public.items i\n  set price_kind",
     ]);
+  });
+
+  // The price updates touch only Starters' three dishes, by id, and write
+  // only the choice and the price (D-139).
+  it("prices the three dishes by id and writes nothing else to them", () => {
+    const prices = [
+      ...code.matchAll(/update public\.items i\n  set price_kind[^;]*;/g),
+    ].map((match) => match[0]);
+    expect(prices).toHaveLength(3);
+    for (const statement of prices) {
+      expect(statement).toMatch(/where i\.id = (soup|salad|bread)/);
+      expect(statement).not.toMatch(/\b(name|sort|description|note)\s*=/);
+    }
   });
 });

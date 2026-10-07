@@ -1,8 +1,9 @@
 // A stand-in for the few Supabase endpoints the owner screens use: password
 // sign-in, the user, sign-out, and a small slice of the Data API over an
 // in-memory store that follows migration three's rules for menus,
-// migration four's for sections, and migration five's for items and its
-// four functions. It lets saves land on this machine, which the gate can
+// migration four's for sections, migration five's for items and its four
+// functions, and migration six's for a dish's own texts and price, its
+// sizes, and move_item(). It lets saves land on this machine, which the gate can
 // never do (D-115): `npm run local` starts it, builds and serves the app
 // against it, and runs the checks in tests/local (D-142). It holds no key
 // and names no real project: the session it hands out is an unsigned
@@ -45,6 +46,7 @@ const stamp = () => new Date((clock += 1000)).toISOString();
 let menus = [];
 let sections = [];
 let items = [];
+let sizes = [];
 function seed(withDishes = true) {
   menus = ["Lunch", "Dinner", "Drinks"].map((name, index) => ({
     id: randomUUID(),
@@ -68,14 +70,40 @@ function seed(withDishes = true) {
     created_at: stamp(),
   }));
   const starters = sections[0];
-  items = (
-    withDishes ? ["Soup of the day", "House salad", "Garlic bread"] : []
-  ).map((name, index) => ({
+  // Priced one way each, as CI Diner's data file prices them (D-139): the
+  // soup by size, the salad at one price, the bread at market price.
+  const priced = [
+    { name: "Soup of the day", price_kind: "sizes", price_cents: null },
+    { name: "House salad", price_kind: "one", price_cents: 900 },
+    { name: "Garlic bread", price_kind: "market", price_cents: null },
+  ];
+  items = (withDishes ? priced : []).map((dish, index) => ({
     id: randomUUID(),
     section_id: starters.id,
     restaurant_id: restaurant.id,
-    name,
+    name: dish.name,
+    description: null,
+    price_kind: dish.price_kind,
+    price_cents: dish.price_cents,
+    note: null,
     sort: index + 1,
+    deleted_at: null,
+    created_at: stamp(),
+  }));
+  const soup = items[0];
+  sizes = (
+    withDishes
+      ? [
+          { name: "Cup", price_cents: 500 },
+          { name: "Bowl", price_cents: 800 },
+        ]
+      : []
+  ).map((size) => ({
+    id: randomUUID(),
+    item_id: soup.id,
+    restaurant_id: restaurant.id,
+    name: size.name,
+    price_cents: size.price_cents,
     deleted_at: null,
     created_at: stamp(),
   }));
@@ -197,9 +225,20 @@ function sectionProblem(row) {
   return null;
 }
 
-// Migration five's rules for one item row, as it would be after a write.
+const PRICE_KINDS = ["one", "sizes", "market"];
+const PRICE_CAP = 9999999;
+const badEnum = (value) => [
+  400,
+  {
+    code: "22P02",
+    message: `invalid input value for enum price_kind: "${value}"`,
+  },
+];
+
+// Migration five's rules for one item row, and migration six's for its
+// texts and price, as it would be after a write.
 function itemProblem(row) {
-  const { name } = row;
+  const { name, description, note, price_cents: price, price_kind: kind } = row;
   if (
     typeof name !== "string" ||
     !/\S/.test(name) ||
@@ -208,6 +247,31 @@ function itemProblem(row) {
   ) {
     return check("items", "items_name_text");
   }
+  if (
+    description !== null &&
+    (typeof description !== "string" ||
+      !/\S/.test(description) ||
+      /[^\P{Cc}\n]/u.test(description) ||
+      description.length > 500)
+  ) {
+    return check("items", "items_description_text");
+  }
+  if (
+    note !== null &&
+    (typeof note !== "string" ||
+      !/\S/.test(note) ||
+      /\p{Cc}/u.test(note) ||
+      note.length > 120)
+  ) {
+    return check("items", "items_note_text");
+  }
+  if (price !== null && (!Number.isInteger(price) || price < 0)) {
+    return check("items", "items_price_cents_check");
+  }
+  if (price !== null && price > PRICE_CAP) {
+    return check("items", "items_price_cents_range");
+  }
+  if (!PRICE_KINDS.includes(kind)) return badEnum(kind);
   if (row.deleted_at === null) {
     const taken = items.some(
       (i) =>
@@ -217,6 +281,38 @@ function itemProblem(row) {
         nameKey(i.name) === nameKey(name),
     );
     if (taken) return unique("items_name_key");
+  }
+  return null;
+}
+
+// Migration six's rules for one size row, as it would be after a write.
+function sizeProblem(row) {
+  const { name, price_cents: price } = row;
+  if (
+    name !== null &&
+    (typeof name !== "string" ||
+      !/\S/.test(name) ||
+      /\p{Cc}/u.test(name) ||
+      name.length > 40)
+  ) {
+    return check("item_sizes", "item_sizes_name_text");
+  }
+  if (
+    price !== null &&
+    (!Number.isInteger(price) || price < 0 || price > PRICE_CAP)
+  ) {
+    return check("item_sizes", "item_sizes_price_cents");
+  }
+  if (row.deleted_at === null && name !== null) {
+    const taken = sizes.some(
+      (z) =>
+        z.id !== row.id &&
+        z.item_id === row.item_id &&
+        z.deleted_at === null &&
+        z.name !== null &&
+        nameKey(z.name) === nameKey(name),
+    );
+    if (taken) return unique("item_sizes_name_key");
   }
   return null;
 }
@@ -251,17 +347,27 @@ function matches(row, params) {
   return true;
 }
 
+// PostgREST's order: column.asc|desc, with nullsfirst or nullslast as a
+// third part. As in Postgres, nulls come last when ascending and first
+// when descending unless the third part says otherwise.
 function ordered(rows, params) {
   const order = params.get("order");
   let out = [...rows];
   if (order) {
     const keys = order.split(",").map((part) => {
-      const [column, direction] = part.split(".");
-      return { column, descending: direction === "desc" };
+      const [column, direction, nulls] = part.split(".");
+      const descending = direction === "desc";
+      return {
+        column,
+        descending,
+        nullsLast: nulls ? nulls === "nullslast" : !descending,
+      };
     });
     out.sort((a, b) => {
-      for (const { column, descending } of keys) {
+      for (const { column, descending, nullsLast } of keys) {
         if (a[column] === b[column]) continue;
+        if (a[column] === null) return nullsLast ? 1 : -1;
+        if (b[column] === null) return nullsLast ? -1 : 1;
         const less = a[column] < b[column] ? -1 : 1;
         return descending ? -less : less;
       }
@@ -367,6 +473,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
     if (path === "/__test/items") return send(res, 200, items);
+    if (path === "/__test/sizes") return send(res, 200, sizes);
     // A dish added somewhere else: another tab, another person.
     if (path === "/__test/add-dish") {
       const section = sections.find((s) => s.name === params.get("section"));
@@ -376,6 +483,10 @@ const server = http.createServer(async (req, res) => {
         section_id: section.id,
         restaurant_id: section.restaurant_id,
         name: params.get("name"),
+        description: null,
+        price_kind: "one",
+        price_cents: null,
+        note: null,
         sort: 99,
         deleted_at: null,
         created_at: stamp(),
@@ -698,6 +809,10 @@ const server = http.createServer(async (req, res) => {
           section_id: section.id,
           restaurant_id: section.restaurant_id,
           name: payload.name,
+          description: null,
+          price_kind: "one",
+          price_cents: null,
+          note: null,
           sort: payload.sort ?? 0,
           deleted_at: null,
           created_at: stamp(),
@@ -708,7 +823,15 @@ const server = http.createServer(async (req, res) => {
         return respondRows(req, res, [row], params, 201);
       }
       if (req.method === "PATCH") {
-        const allowed = ["name", "sort", "deleted_at"];
+        const allowed = [
+          "name",
+          "description",
+          "price_kind",
+          "price_cents",
+          "note",
+          "sort",
+          "deleted_at",
+        ];
         const extra = Object.keys(payload).filter(
           (key) => !allowed.includes(key),
         );
@@ -722,6 +845,63 @@ const server = http.createServer(async (req, res) => {
         return respondRows(req, res, targets, params);
       }
       if (req.method === "DELETE") return denied(res, "table items");
+    }
+    // A dish's sizes (migration 6): read, added blank or named, written,
+    // and marked deleted, under the owner's column lists.
+    if (path === "/rest/v1/item_sizes") {
+      if (reading) {
+        const all = sizes.filter((row) => matches(row, params));
+        return respondRows(
+          req,
+          res,
+          ordered(all, params),
+          params,
+          200,
+          all.length,
+        );
+      }
+      const payload = await body(req);
+      writes.push(`${req.method} item_sizes ${JSON.stringify(payload)}`);
+      if (await knobs(res)) return;
+      if (req.method === "POST") {
+        const allowed = ["item_id", "name", "price_cents"];
+        const extra = Object.keys(payload).filter(
+          (key) => !allowed.includes(key),
+        );
+        if (extra.length) return denied(res, `column ${extra[0]}`);
+        // The copy trigger: the restaurant comes from the dish, which the
+        // caller must be able to read.
+        const dish = items.find((i) => i.id === payload.item_id);
+        if (!dish) return raised(res, "A size needs an existing dish.");
+        const row = {
+          id: randomUUID(),
+          item_id: dish.id,
+          restaurant_id: dish.restaurant_id,
+          name: payload.name ?? null,
+          price_cents: payload.price_cents ?? null,
+          deleted_at: null,
+          created_at: stamp(),
+        };
+        const problem = sizeProblem(row);
+        if (problem) return send(res, ...problem);
+        sizes.push(row);
+        return respondRows(req, res, [row], params, 201);
+      }
+      if (req.method === "PATCH") {
+        const allowed = ["name", "price_cents", "deleted_at"];
+        const extra = Object.keys(payload).filter(
+          (key) => !allowed.includes(key),
+        );
+        if (extra.length) return denied(res, `column ${extra[0]}`);
+        const targets = sizes.filter((row) => matches(row, params));
+        for (const row of targets) {
+          const problem = sizeProblem({ ...row, ...payload });
+          if (problem) return send(res, ...problem);
+        }
+        for (const row of targets) Object.assign(row, payload);
+        return respondRows(req, res, targets, params);
+      }
+      if (req.method === "DELETE") return denied(res, "table item_sizes");
     }
     if (path === "/rest/v1/rpc/set_item_order" && req.method === "POST") {
       const { p_section, p_ids } = await body(req);
@@ -827,6 +1007,42 @@ const server = http.createServer(async (req, res) => {
       }
       found.menu_id = target.id;
       found.sort = live.reduce((top, s) => Math.max(top, s.sort), 0) + 1;
+      res.writeHead(204);
+      return res.end();
+    }
+
+    if (path === "/rest/v1/rpc/move_item" && req.method === "POST") {
+      const { p_item, p_section } = await body(req);
+      writes.push(`rpc move_item ${JSON.stringify({ p_item, p_section })}`);
+      if (await knobs(res)) return;
+      const found = items.find((i) => i.id === p_item);
+      if (!found || found.restaurant_id !== restaurant.id)
+        return raised(res, "move_not_found");
+      const liveSection = (id) => {
+        const section = sections.find(
+          (s) =>
+            s.id === id &&
+            s.restaurant_id === found.restaurant_id &&
+            s.deleted_at === null,
+        );
+        if (!section) return null;
+        const menu = menus.find(
+          (m) => m.id === section.menu_id && m.deleted_at === null,
+        );
+        return menu ? section : null;
+      };
+      const target = liveSection(p_section);
+      if (!target) return raised(res, "move_section_gone");
+      if (found.deleted_at !== null || !liveSection(found.section_id))
+        return raised(res, "move_not_found");
+      if (found.section_id === p_section)
+        return raised(res, "move_same_section");
+      const live = liveItemsOf(target.id);
+      if (live.some((i) => nameKey(i.name) === nameKey(found.name))) {
+        return raised(res, "move_name_taken");
+      }
+      found.section_id = target.id;
+      found.sort = live.reduce((top, i) => Math.max(top, i.sort), 0) + 1;
       res.writeHead(204);
       return res.end();
     }

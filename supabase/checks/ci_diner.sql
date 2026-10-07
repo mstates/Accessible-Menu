@@ -12,16 +12,22 @@
 -- What the gate reads: the menus Lunch, Dinner, and Drinks, in that order;
 -- Dinner holding the sections Starters, Mains, and Desserts, in that order;
 -- Starters holding the dishes Soup of the day, House salad, and Garlic
--- bread, in that order; at least one menu that holds no section; and at
--- least one section of Dinner that holds no dish. Nothing here can publish
--- (migration 3).
+-- bread, in that order, priced one way each (Soup of the day by size with
+-- Cup and Bowl, House salad at one price, Garlic bread at market price); at
+-- least one menu that holds no section; and at least one section of Dinner
+-- that holds no dish. Nothing here can publish (migration 3).
 
 do $$
 declare
   diner uuid;
   dinner uuid;
   starters uuid;
+  soup uuid;
+  salad uuid;
+  bread uuid;
   wanted text;
+  size_name text;
+  size_price integer;
   placed integer;
 begin
   select r.id into diner from public.restaurants r where r.code = '56097672';
@@ -147,11 +153,67 @@ begin
   if placed > 0 then
     raise notice 'put % of Starters'' dishes in place', placed;
   end if;
+
+  -- 3b. Starters' dishes priced one way each (migration 6, task 3b): Soup
+  -- of the day by size, with Cup and Bowl; House salad at one price; Garlic
+  -- bread at market price. The gate reads the three dish pages and never
+  -- writes them. Only a choice or a price that differs is written, and a
+  -- size is added only when missing, so a second run leaves every row as
+  -- it was.
+  select i.id into soup from public.items i
+  where i.section_id = starters and i.deleted_at is null
+    and lower(btrim(i.name)) = 'soup of the day';
+  select i.id into salad from public.items i
+  where i.section_id = starters and i.deleted_at is null
+    and lower(btrim(i.name)) = 'house salad';
+  select i.id into bread from public.items i
+  where i.section_id = starters and i.deleted_at is null
+    and lower(btrim(i.name)) = 'garlic bread';
+
+  update public.items i
+  set price_kind = 'sizes', price_cents = null
+  where i.id = soup
+    and (i.price_kind <> 'sizes' or i.price_cents is not null);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'priced Soup of the day by size';
+  end if;
+  for size_name, size_price in
+    select v.n, v.p from (values ('Cup', 500), ('Bowl', 800)) as v (n, p)
+  loop
+    if not exists (
+      select 1 from public.item_sizes z
+      where z.item_id = soup
+        and z.deleted_at is null
+        and lower(btrim(z.name)) = lower(size_name)
+    ) then
+      insert into public.item_sizes (item_id, name, price_cents)
+      values (soup, size_name, size_price);
+      raise notice 'added the size % to Soup of the day', size_name;
+    end if;
+  end loop;
+
+  update public.items i
+  set price_kind = 'one', price_cents = 900
+  where i.id = salad
+    and (i.price_kind <> 'one' or i.price_cents is distinct from 900);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'priced House salad at one price';
+  end if;
+
+  update public.items i
+  set price_kind = 'market'
+  where i.id = bread and i.price_kind <> 'market';
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'priced Garlic bread at market price';
+  end if;
 end $$;
 
 -- 4. What CI Diner holds now, in the order its screens show it. The first
 -- row says whether the owner gate can run; every other row is a menu, a
--- section, or a dish, marked needed or extra.
+-- section, a dish, or a size, marked needed or extra.
 with diner as (
   select r.id from public.restaurants r where r.code = '56097672'
 ),
@@ -172,13 +234,23 @@ live_sections as (
   where s.deleted_at is null
 ),
 live_items as (
-  select i.section_id, i.name,
+  select i.id, i.section_id, i.name, i.price_kind, i.price_cents,
     row_number() over (
       partition by i.section_id order by i.sort, i.created_at, i.id
     ) as place
   from public.items i
   join live_sections on i.section_id = live_sections.id
   where i.deleted_at is null
+),
+live_sizes as (
+  select z.item_id, z.name, z.price_cents,
+    row_number() over (
+      partition by z.item_id
+      order by z.price_cents nulls last, z.created_at, z.id
+    ) as place
+  from public.item_sizes z
+  join live_items on z.item_id = live_items.id
+  where z.deleted_at is null
 ),
 dinner as (
   select lm.id from live_menus lm where lower(btrim(lm.name)) = 'dinner'
@@ -213,11 +285,26 @@ verdict as (
       where not exists (
         select 1 from live_items li where li.section_id = ls.id
       )
-    ) as one_empty_section
+    ) as one_empty_section,
+    coalesce(
+      (select li.price_kind = 'sizes' and li.price_cents is null
+         and (select coalesce(array_agg(lower(btrim(lz.name)) order by lz.place), '{}')
+              from live_sizes lz where lz.item_id = li.id)
+           = array['cup', 'bowl']
+       from live_items li join starters on li.section_id = starters.id
+       where lower(btrim(li.name)) = 'soup of the day')
+      and (select li.price_kind = 'one' and li.price_cents = 900
+       from live_items li join starters on li.section_id = starters.id
+       where lower(btrim(li.name)) = 'house salad')
+      and (select li.price_kind = 'market'
+       from live_items li join starters on li.section_id = starters.id
+       where lower(btrim(li.name)) = 'garlic bread'),
+      false) as prices_ok
 )
 select item, status
 from (
   select 0 as menu_place, 0 as section_place, 0 as dish_place,
+    0 as size_place,
     'CI Diner (56097672)' as item,
     case
       when not v.menus_ok then
@@ -230,11 +317,13 @@ from (
         'not ready: Soup of the day, House salad, and Garlic bread are not Starters'' first three dishes'
       when not v.one_empty_section then
         'not ready: every section of Dinner holds dishes, and the gate needs one that holds none. Delete the extra dishes below on their section''s page.'
+      when not v.prices_ok then
+        'not ready: Soup of the day is not priced by size with Cup and Bowl, House salad at one price, and Garlic bread at market price'
       else 'ready for the owner gate'
     end as status
   from verdict v
   union all
-  select lm.place, 0, 0,
+  select lm.place, 0, 0, 0,
     'menu ' || lm.place || ': ' || lm.name,
     case
       when lm.place <= 3
@@ -244,7 +333,7 @@ from (
     end
   from live_menus lm
   union all
-  select lm.place, ls.place, 0,
+  select lm.place, ls.place, 0, 0,
     'section ' || ls.place || ' of ' || lm.name || ': ' || ls.name,
     case
       when lower(btrim(lm.name)) = 'dinner'
@@ -256,9 +345,10 @@ from (
   from live_sections ls
   join live_menus lm on lm.id = ls.menu_id
   union all
-  select lm.place, ls.place, li.place,
+  select lm.place, ls.place, li.place, 0,
     'dish ' || li.place || ' of ' || ls.name || ', ' || lm.name || ': '
-      || li.name,
+      || li.name || ', ' || li.price_kind
+      || coalesce(', $' || round(li.price_cents::numeric / 100, 2)::text, ''),
     case
       when lower(btrim(lm.name)) = 'dinner'
         and lower(btrim(ls.name)) = 'starters'
@@ -271,5 +361,23 @@ from (
   from live_items li
   join live_sections ls on ls.id = li.section_id
   join live_menus lm on lm.id = ls.menu_id
+  union all
+  select lm.place, ls.place, li.place, lz.place,
+    'size ' || lz.place || ' of ' || li.name || ', ' || ls.name || ': '
+      || coalesce(lz.name, '(no name yet)')
+      || coalesce(', $' || round(lz.price_cents::numeric / 100, 2)::text, ''),
+    case
+      when lower(btrim(lm.name)) = 'dinner'
+        and lower(btrim(ls.name)) = 'starters'
+        and lower(btrim(li.name)) = 'soup of the day'
+        and lz.place <= 2
+        and lower(btrim(lz.name)) in ('cup', 'bowl')
+        then 'needed'
+      else 'extra, left as it is'
+    end
+  from live_sizes lz
+  join live_items li on li.id = lz.item_id
+  join live_sections ls on ls.id = li.section_id
+  join live_menus lm on lm.id = ls.menu_id
 ) report
-order by menu_place, section_place, dish_place;
+order by menu_place, section_place, dish_place, size_place;

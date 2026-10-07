@@ -1,7 +1,7 @@
 -- Owner boundary check for items, the dishes of a section. Run in the
--- Supabase SQL editor after every migration that touches items, or the
--- functions that count and delete what a menu or a section holds.
--- Everything rolls back. Replace the uid below with your own auth.users id.
+-- Supabase SQL editor after every migration that touches items, the
+-- functions that count and delete what a menu or a section holds, or the
+-- function that moves a dish. Everything rolls back. Replace the uid below with your own auth.users id.
 -- A run that ends without an error passed every check.
 begin;
 
@@ -32,10 +32,29 @@ declare
   a_other_section uuid;
   b_section uuid;
   c_section uuid;
+  c_dish uuid;
 begin
   if not exists (select 1 from auth.users u where u.id = uid) then
     raise exception 'FAIL: put your auth.users id in boundary.uid';
   end if;
+
+  -- price_text is gone (migration 6): market price is a choice, and the
+  -- published view no longer names the column.
+  if exists (
+    select 1 from pg_attribute att
+    where att.attrelid = 'public.items'::regclass
+      and att.attname = 'price_text' and not att.attisdropped
+  ) then
+    raise exception 'FAIL: price_text is still a column of items';
+  end if;
+  if exists (
+    select 1 from pg_attribute att
+    where att.attrelid = 'public.published_items'::regclass
+      and att.attname = 'price_text' and not att.attisdropped
+  ) then
+    raise exception 'FAIL: published_items still names price_text';
+  end if;
+  raise notice 'ok: price_text is gone from items and from published_items';
 
   -- anon holds nothing on the table.
   if has_any_column_privilege('anon', 'public.items',
@@ -69,7 +88,7 @@ begin
     and att.attnum > 0 and not att.attisdropped
     and has_column_privilege('authenticated', 'public.items', att.attname,
       'update');
-  expected := 'deleted_at, name, sort';
+  expected := 'deleted_at, description, name, note, price_cents, price_kind, sort';
   if held is distinct from expected then
     raise exception 'FAIL: authenticated updates %, expected %', held, expected;
   end if;
@@ -120,9 +139,10 @@ begin
   insert into public.items (section_id, name, sort)
   values (a_other_section, 'Boundary check other dish', 1);
   insert into public.items (section_id, name, sort)
-  values (c_section, 'Boundary check C dish', 1);
+  values (c_section, 'Boundary check C dish', 1) returning id into c_dish;
 
   perform set_config('boundary.a', a::text, true);
+  perform set_config('boundary.c_dish', c_dish::text, true);
   perform set_config('boundary.b', b::text, true);
   perform set_config('boundary.c', c::text, true);
   perform set_config('boundary.a_menu', a_menu::text, true);
@@ -147,12 +167,21 @@ declare
   b_restaurant uuid := current_setting('boundary.b')::uuid;
   a_section uuid := current_setting('boundary.a_section')::uuid;
   a_second uuid := current_setting('boundary.a_second')::uuid;
+  a_other uuid := current_setting('boundary.a_other')::uuid;
+  a_other_section uuid := current_setting('boundary.a_other_section')::uuid;
   b_section uuid := current_setting('boundary.b_section')::uuid;
   c_section uuid := current_setting('boundary.c_section')::uuid;
+  c_dish uuid := current_setting('boundary.c_dish')::uuid;
   mine uuid;
   two uuid;
   three uuid;
+  cup uuid;
   got uuid;
+  held_section uuid;
+  held_restaurant uuid;
+  is_last boolean;
+  size_item uuid;
+  size_restaurant uuid;
   ids uuid[];
   other_ids uuid[];
   flipped uuid[];
@@ -237,21 +266,87 @@ begin
     raise notice 'ok: section_id is not writable after insert';
   end;
 
+  -- The dish page's own columns (migration 6): the description, the price
+  -- choice, the price, and the note land, each under its rule.
+  update public.items
+  set description = 'Line one' || chr(10) || 'Line two',
+      price_kind = 'sizes', price_cents = 1250, note = 'Comes with fries'
+  where id = mine;
+  raise notice 'ok: an owner writes a description, a price choice, a price, and a note';
+
+  begin
+    update public.items set description = repeat('x', 501) where id = mine;
+    raise exception 'FAIL: a 501 character description was accepted';
+  exception when check_violation then
+    raise notice 'ok: a description is 500 characters at most';
+  end;
+
+  begin
+    update public.items set description = 'A tab' || chr(9) || 'here'
+    where id = mine;
+    raise exception 'FAIL: a description with a tab was accepted';
+  exception when check_violation then
+    raise notice 'ok: a description holds no control character but a line break';
+  end;
+
+  begin
+    update public.items
+    set description = 'Windows' || chr(13) || chr(10) || 'break'
+    where id = mine;
+    raise exception 'FAIL: a description with a Windows line break was accepted';
+  exception when check_violation then
+    raise notice 'ok: a Windows line break is refused; the app turns it into a plain one first';
+  end;
+
+  begin
+    update public.items set description = '   ' where id = mine;
+    raise exception 'FAIL: a blank description was accepted';
+  exception when check_violation then
+    raise notice 'ok: a blank description is refused; the app stores null';
+  end;
+
+  begin
+    update public.items set note = 'Two' || chr(10) || 'lines' where id = mine;
+    raise exception 'FAIL: a note with a line break was accepted';
+  exception when check_violation then
+    raise notice 'ok: a note is one line';
+  end;
+
+  begin
+    update public.items set note = repeat('n', 121) where id = mine;
+    raise exception 'FAIL: a 121 character note was accepted';
+  exception when check_violation then
+    raise notice 'ok: a note is 120 characters at most';
+  end;
+
+  begin
+    update public.items set price_cents = 10000000 where id = mine;
+    raise exception 'FAIL: a price over $99,999.99 was accepted';
+  exception when check_violation then
+    raise notice 'ok: a price is at most $99,999.99';
+  end;
+
+  begin
+    update public.items set price_cents = -1 where id = mine;
+    raise exception 'FAIL: a negative price was accepted';
+  exception when check_violation then
+    raise notice 'ok: a price is never negative';
+  end;
+
+  begin
+    update public.items set price_kind = 'range' where id = mine;
+    raise exception 'FAIL: a fourth price choice was accepted';
+  exception when invalid_text_representation then
+    raise notice 'ok: the price choice is one price, prices by size, or market price';
+  end;
+
+  update public.items set price_kind = 'market' where id = mine;
+  update public.items
+  set price_kind = 'one', description = null, note = null, price_cents = null
+  where id = mine;
+  raise notice 'ok: each price choice takes, and the texts and the price clear to null';
+
   -- Nothing this task does not build is writable after insert either.
-  begin
-    update public.items set description = 'A description' where id = mine;
-    raise exception 'FAIL: an owner wrote a description';
-  exception when insufficient_privilege then
-    raise notice 'ok: description is not writable';
-  end;
-
-  begin
-    update public.items set price_cents = 1200 where id = mine;
-    raise exception 'FAIL: an owner wrote a price';
-  exception when insufficient_privilege then
-    raise notice 'ok: price_cents is not writable';
-  end;
-
   begin
     update public.items set allergens = '{peanuts}' where id = mine;
     raise exception 'FAIL: an owner wrote allergens';
@@ -368,6 +463,138 @@ begin
   end if;
   update public.sections set deleted_at = null where id = a_section;
   raise notice 'ok: a deleted section keeps its dishes as they were';
+
+  -- move_item(): a dish goes to another section of its own restaurant,
+  -- last, with its sizes, and nowhere else (D-129). section_id itself
+  -- stays unwritable, as the check further up proves.
+  insert into public.item_sizes (item_id, name, price_cents)
+  values (two, 'Boundary check cup', 500) returning id into cup;
+  perform public.move_item(two, a_second);
+  select i.section_id, i.restaurant_id,
+         i.sort > all (
+           select o.sort from public.items o
+           where o.section_id = a_second
+             and o.deleted_at is null
+             and o.id <> i.id
+         )
+    into held_section, held_restaurant, is_last
+  from public.items i where i.id = two;
+  if held_section is distinct from a_second
+     or held_restaurant is distinct from a
+     or is_last is not true then
+    raise exception 'FAIL: a moved dish is not last in the section it went to, in its own restaurant';
+  end if;
+  select z.item_id, z.restaurant_id into size_item, size_restaurant
+  from public.item_sizes z where z.id = cup;
+  if size_item is distinct from two or size_restaurant is distinct from a then
+    raise exception 'FAIL: a moved dish left its size behind';
+  end if;
+  raise notice 'ok: a dish moves to another section of its restaurant, last, and its size goes with it';
+
+  begin
+    perform public.move_item(two, a_second);
+    raise exception 'FAIL: a dish was moved to the section it is in';
+  exception when raise_exception then
+    if sqlerrm <> 'move_same_section' then raise; end if;
+    raise notice 'ok: a move to the section a dish is in is refused';
+  end;
+
+  -- A name the section already has, whatever the case or the outer
+  -- spaces: the second section holds a Boundary check one of its own.
+  update public.items set name = ' BOUNDARY check ONE ' where id = mine;
+  begin
+    perform public.move_item(mine, a_second);
+    raise exception 'FAIL: a dish moved into a section that has its name';
+  exception when raise_exception then
+    if sqlerrm <> 'move_name_taken' then raise; end if;
+    raise notice 'ok: a name the section already has is refused, any case or spacing';
+  end;
+  update public.items set name = 'Boundary check one' where id = mine;
+  select i.section_id into held_section from public.items i where i.id = mine;
+  if held_section is distinct from a_section then
+    raise exception 'FAIL: a refused move moved the dish';
+  end if;
+
+  -- Another menu of the same restaurant takes it.
+  perform public.move_item(two, a_other_section);
+  select i.section_id into held_section from public.items i where i.id = two;
+  if held_section is distinct from a_other_section then
+    raise exception 'FAIL: a dish did not move to a section of another menu';
+  end if;
+  raise notice 'ok: a dish moves to a section of another menu of its restaurant';
+
+  -- The other restaurant, though this user is a member of both.
+  begin
+    perform public.move_item(two, b_section);
+    raise exception 'FAIL: a dish crossed to another restaurant';
+  exception when raise_exception then
+    if sqlerrm <> 'move_section_gone' then raise; end if;
+    raise notice 'ok: a dish does not cross to another restaurant, even for a member of both';
+  end;
+
+  begin
+    perform public.move_item(two, c_section);
+    raise exception 'FAIL: a dish moved to a section its owner cannot read';
+  exception when raise_exception then
+    if sqlerrm <> 'move_section_gone' then raise; end if;
+    raise notice 'ok: a section of a restaurant this user is not in reads as gone';
+  end;
+
+  begin
+    perform public.move_item(c_dish, a_section);
+    raise exception 'FAIL: an owner moved a dish that is not theirs';
+  exception when raise_exception then
+    if sqlerrm <> 'move_not_found' then raise; end if;
+    raise notice 'ok: a dish that is not this user''s reads as not there';
+  end;
+
+  -- A deleted section takes no dish, and gives none up.
+  update public.sections set deleted_at = now() where id = a_second;
+  begin
+    perform public.move_item(two, a_second);
+    raise exception 'FAIL: a dish moved into a deleted section';
+  exception when raise_exception then
+    if sqlerrm <> 'move_section_gone' then raise; end if;
+    raise notice 'ok: a deleted section takes no dish';
+  end;
+  update public.sections set deleted_at = null where id = a_second;
+
+  -- A section of a deleted menu takes no dish, and gives none up.
+  update public.menus set deleted_at = now() where id = a_other;
+  begin
+    perform public.move_item(mine, a_other_section);
+    raise exception 'FAIL: a dish moved into a section of a deleted menu';
+  exception when raise_exception then
+    if sqlerrm <> 'move_section_gone' then raise; end if;
+    raise notice 'ok: a section of a deleted menu takes no dish';
+  end;
+  begin
+    perform public.move_item(two, a_section);
+    raise exception 'FAIL: a dish moved out of a section of a deleted menu';
+  exception when raise_exception then
+    if sqlerrm <> 'move_not_found' then raise; end if;
+    raise notice 'ok: a section of a deleted menu gives no dish up';
+  end;
+  update public.menus set deleted_at = null where id = a_other;
+
+  -- A deleted dish does not move.
+  update public.items set deleted_at = now() where id = two;
+  begin
+    perform public.move_item(two, a_section);
+    raise exception 'FAIL: a deleted dish moved';
+  exception when raise_exception then
+    if sqlerrm <> 'move_not_found' then raise; end if;
+    raise notice 'ok: a deleted dish does not move';
+  end;
+  update public.items set deleted_at = null where id = two;
+
+  -- And back, which is what Undo sends.
+  perform public.move_item(two, a_section);
+  select i.section_id into held_section from public.items i where i.id = two;
+  if held_section is distinct from a_section then
+    raise exception 'FAIL: a dish did not move back';
+  end if;
+  raise notice 'ok: a dish moves back to the section it came from';
 
   -- The order function takes exactly the section's live dishes, each once.
   select array_agg(i.id order by i.sort, i.created_at, i.id) into ids
@@ -642,6 +869,7 @@ declare
   a uuid := current_setting('boundary.a')::uuid;
   a_menu uuid := current_setting('boundary.a_menu')::uuid;
   a_section uuid := current_setting('boundary.a_section')::uuid;
+  a_second uuid := current_setting('boundary.a_second')::uuid;
   ids uuid[] := string_to_array(current_setting('boundary.order'), ',')::uuid[];
   seen integer;
   touched integer;
@@ -698,6 +926,14 @@ begin
     if sqlerrm <> 'delete_not_found' then raise; end if;
     raise notice 'ok: a stranger deletes no menu';
   end;
+
+  begin
+    perform public.move_item(ids[1], a_second);
+    raise exception 'FAIL: a stranger moved a dish';
+  exception when raise_exception then
+    if sqlerrm <> 'move_not_found' then raise; end if;
+    raise notice 'ok: a stranger moves nothing';
+  end;
 end;
 $$;
 
@@ -712,11 +948,11 @@ declare
   in_place boolean;
   live boolean;
 begin
-  select bool_and(i.sort = t.ord) into in_place
+  select bool_and(i.sort = t.ord and i.section_id = a_section) into in_place
   from unnest(ids) with ordinality as t (id, ord)
   join public.items i on i.id = t.id;
   if in_place is not true then
-    raise exception 'FAIL: the order changed under a stranger';
+    raise exception 'FAIL: the order or the section changed under a stranger';
   end if;
 
   select (select m.deleted_at is null from public.menus m where m.id = a_menu)
@@ -729,7 +965,7 @@ begin
 end;
 $$;
 
--- A diner: the table and the four functions are closed, and the views are
+-- A diner: the table and the five functions are closed, and the views are
 -- empty.
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
@@ -773,6 +1009,13 @@ begin
     raise exception 'FAIL: anon ran move_section';
   exception when insufficient_privilege then
     raise notice 'ok: anon cannot run move_section';
+  end;
+
+  begin
+    perform public.move_item(gen_random_uuid(), gen_random_uuid());
+    raise exception 'FAIL: anon ran move_item';
+  exception when insufficient_privilege then
+    raise notice 'ok: anon cannot run move_item';
   end;
 
   select (select count(*) from public.published_menus)

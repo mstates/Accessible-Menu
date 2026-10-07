@@ -35,13 +35,14 @@ begin
     and p.prorettype not in ('trigger'::regtype, 'event_trigger'::regtype)
     and p.proname not in ('create_restaurant', 'is_owner', 'owns_object',
       'set_menu_order', 'set_section_order', 'set_item_order',
-      'section_dish_counts', 'delete_with_contents', 'move_section')
+      'section_dish_counts', 'delete_with_contents', 'move_section',
+      'move_item')
     and has_function_privilege('authenticated', p.oid, 'execute');
   if open_to_authenticated is not null then
     raise exception 'FAIL: authenticated can run %', open_to_authenticated;
   end if;
 
-  raise notice 'ok: no function in public is open beyond create_restaurant, is_owner, owns_object, set_menu_order, set_section_order, set_item_order, section_dish_counts, delete_with_contents, and move_section';
+  raise notice 'ok: no function in public is open beyond create_restaurant, is_owner, owns_object, set_menu_order, set_section_order, set_item_order, section_dish_counts, delete_with_contents, move_section, and move_item';
 end;
 $$;
 
