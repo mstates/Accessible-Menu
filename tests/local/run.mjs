@@ -12,11 +12,11 @@
 //   npm run local                    build, serve, run tests/local
 //   npm run local -- --owner-gate    then the whole owner gate, against the
 //                                    same stand-in, freshly seeded
-//   npm run local -- --no-build      serve the build already in .next, which
-//                                    must have been built by this script
+//   npm run local -- --no-build      serve the build already in .next-local,
+//                                    which this script built
 //
-// Afterwards .next holds a build against the stand-in. `npm run a11y` builds
-// again before it serves, so the gate never reads it.
+// The build goes to .next-local, so .next, where next dev, npm run build,
+// and the gate's build go, never holds a build against the stand-in.
 import { spawn } from "node:child_process";
 import { createConnection } from "node:net";
 import { fileURLToPath } from "node:url";
@@ -42,6 +42,7 @@ const env = {
   A11Y_OWNER_PASSWORD: "standin",
   A11Y_OWNER_CODE: "12345678",
   LOCAL_BASE_URL: app,
+  NEXT_DIST_DIR: ".next-local",
 };
 
 const bin = (name) => `${root}node_modules/.bin/${name}`;
@@ -162,6 +163,6 @@ try {
 }
 
 console.log(
-  "\n.next now holds a build against the stand-in; npm run a11y builds again before it serves.",
+  "\n.next-local holds the build against the stand-in; .next is untouched.",
 );
 process.exit(failed ? 1 : 0);

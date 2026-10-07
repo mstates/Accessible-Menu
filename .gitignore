@@ -10,6 +10,7 @@
 
 # next.js
 /.next/
+/.next-local/
 /out/
 /build
 

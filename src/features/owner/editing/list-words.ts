@@ -12,8 +12,10 @@ import type { Held } from "@/domain/menu";
 
 export type EditingStrings = Copy["owner"]["editing"];
 
-// The placeholder a list's sentences carry: "{menu} moved up."
-export type ListNoun = "menu" | "section" | "dish";
+// The placeholder a list's sentences carry: "{menu} moved up." A size is
+// not a list of its own, but its texts on the dish page are said with the
+// same placeholder: "Price for {size} was not saved."
+export type ListNoun = "menu" | "section" | "dish" | "size";
 
 type Counted = { one: string; other: string };
 
@@ -85,11 +87,22 @@ export type FieldWords = {
   back?: string;
 };
 
+// The words a text needs to be committed, failed, and said, whatever page
+// it is on (texts.ts): a list's words carry these and the list's sentences
+// besides, and a page with no list carries these alone.
+export type TextWords<Field extends string = string> = {
+  noun: ListNoun;
+  strings: { errors: ListStrings["errors"] };
+  editing: EditingStrings;
+  // The message for each rule a text can break, by the rule's name.
+  rules: Readonly<Record<string, string>>;
+  fields: Readonly<Record<Field, FieldWords>>;
+};
+
 export type ListWords<Field extends string = string> = {
   noun: ListNoun;
   strings: ListStrings;
   editing: EditingStrings;
-  // The message for each rule a text can break, by the rule's name.
   rules: Readonly<Record<string, string>>;
   fields: Readonly<Record<Field, FieldWords>>;
 };
@@ -204,7 +217,7 @@ export type ListProblem =
 
 // A sentence with the row's name in the list's own placeholder.
 function named(
-  words: ListWords,
+  words: TextWords,
   template: string,
   name: string,
   more: Record<string, string | number> = {},
@@ -273,7 +286,7 @@ export function addedSentence(
 
 // What was not saved, by field: "Note for Starters was not saved."
 export function notSavedSentence(
-  words: ListWords,
+  words: TextWords,
   field: string,
   name: string,
 ): string {
@@ -305,7 +318,7 @@ export function deleteQuestion(
 // What went wrong, in words. The name is the one the owner typed or the row
 // it concerns, for the sentence about a name already in use.
 export function problemText(
-  words: ListWords,
+  words: TextWords,
   problem: ListProblem,
   name: string,
 ): string {

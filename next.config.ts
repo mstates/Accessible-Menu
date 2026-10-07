@@ -17,7 +17,18 @@ if (!menuOrigin.ok) {
   );
 }
 
+// The build folder. `npm run local` builds against the Supabase stand-in
+// into .next-local, so a build against the stand-in never sits in .next,
+// where next dev, npm run build, and the gate's build go (D-142). Only the
+// two names are taken, so a stray value fails here instead of building
+// somewhere surprising.
+const distDir = process.env.NEXT_DIST_DIR ?? ".next";
+if (distDir !== ".next" && distDir !== ".next-local") {
+  throw new Error("NEXT_DIST_DIR must be .next or .next-local.");
+}
+
 const nextConfig: NextConfig = {
+  distDir,
   // next dev would otherwise append an agent-rules block, em dash included,
   // to CLAUDE.md whenever it detects Claude Code. The Next docs it points at
   // are readable at node_modules/next/dist/docs without the block.

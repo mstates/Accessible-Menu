@@ -19,7 +19,6 @@ import {
   nameTaken,
   type Held,
 } from "@/domain/menu";
-import { commitOf } from "./commit";
 import {
   addedSentence,
   deletedSentence,
@@ -30,7 +29,6 @@ import {
   listUndoSchema,
   movedSentence,
   notDone,
-  notSavedSentence,
   notUndoneSentence,
   problemText,
   removedSentence,
@@ -54,9 +52,21 @@ import {
   settleAdds,
   type PendingAdd,
 } from "./pending-adds";
+import {
+  commitText,
+  textOf,
+  type ListResult,
+  type ListRow,
+  type TextEditor,
+  type TextHome,
+} from "./texts";
 import { afterUndo, newestUndo, pushUndo, type UndoOutcome } from "./undo";
 import { useEditing, type Editing } from "./useEditing";
 import { useUndoStack } from "./useUndoStack";
+
+// A row and a save's answer are texts.ts's, where every text's commit path
+// lives; they are named here too, since every list reads them from here.
+export type { ListResult, ListRow } from "./texts";
 
 // One editing list (D-111, D-128): the menus of a restaurant, the sections
 // of a menu, or the dishes of a section. This is the state and the handlers
@@ -72,11 +82,6 @@ import { useUndoStack } from "./useUndoStack";
 // (D-118). A name added with Enter leaves the field at once and shows as a
 // row marked not saved yet, its add waiting its turn behind every save
 // before it; nothing typed is dropped or erased (D-125).
-
-export type ListRow = { id: string; name: string };
-
-export type ListResult<Value = null> =
-  { ok: true; value: Value } | { ok: false; problem: ListProblem };
 
 // The five saves of a list, as its server actions answer them.
 export type ListActions<Field extends string> = {
@@ -189,24 +194,6 @@ function applyChange<Row extends ListRow>(
 // the numbers its question shows, which stay as they were while it is open.
 type Asking = { id: string; name: string; held: Held };
 
-// Where a text lives, a row of the list or the page's own record, and all a
-// save of it needs to know: its key in the editing state, its element id,
-// its saved value, its rules and words, how it is sent, and the Undo entry
-// it leaves.
-type TextHome<F extends string> = {
-  row: ListRow;
-  words: ListWords<F>;
-  key: (field: F) => string;
-  id: (field: F) => string;
-  saved: (field: F) => string;
-  clean: (field: F, value: string) => string;
-  rule: (field: F, value: string) => string | null;
-  // The row of the list that already has this name, for a row's name only.
-  taken: (field: F, value: string) => ListRow | null;
-  send: (field: F, value: string) => Promise<ListResult<Record<F, string>>>;
-  entry: (field: F, from: string, to: string) => ListUndo;
-};
-
 const NAME = "name";
 const ADD_KEY = "add";
 
@@ -231,6 +218,9 @@ export function useRowList<
     >;
   }, [fields, ownFields, otherSchema]);
   const undo = useUndoStack(config.undoKey, schema);
+  // The page's one editing state and one Undo, which every text's commit
+  // path takes (texts.ts).
+  const editor: TextEditor<ListUndo | Other> = { editing, undo };
   const [shown, change] = useOptimistic(rows, applyChange<Row>);
   const [newName, setNewName] = useState("");
   const [blankAdd, setBlankAdd] = useState<string | null>(null);
@@ -281,7 +271,7 @@ export function useRowList<
   }
 
   // A row's texts live in the row, and save through the list's own action.
-  function rowHome(row: Row): TextHome<Field> {
+  function rowHome(row: Row): TextHome<Field, ListUndo | Other> {
     return {
       row,
       words,
@@ -302,7 +292,9 @@ export function useRowList<
 
   // The page's own texts live on the page, above the list, and save
   // through their own action.
-  function ownHome(texts: OwnTexts<OwnField>): TextHome<OwnField> {
+  function ownHome(
+    texts: OwnTexts<OwnField>,
+  ): TextHome<OwnField, ListUndo | Other> {
     return {
       row: texts.row,
       words: texts.words,
@@ -322,82 +314,6 @@ export function useRowList<
         to,
       }),
     };
-  }
-
-  function failText<F extends string>(
-    home: TextHome<F>,
-    field: F,
-    problem: ListProblem,
-    name: string,
-    value: string,
-  ) {
-    const text = problemText(home.words, problem, name);
-    editing.failField(home.key(field), {
-      fieldId: home.id(field),
-      problem: text,
-      sentence: failureSentence(
-        notSavedSentence(home.words, field, home.row.name),
-        text,
-      ),
-      value,
-    });
-  }
-
-  // One text was committed, a row's or the page's own. Nothing is sent
-  // unless the value changed. Try again passes force, which sends the value
-  // that failed once more.
-  function commitText<F extends string>(
-    home: TextHome<F>,
-    field: F,
-    force = false,
-  ) {
-    const key = home.key(field);
-    const now = editing.peek();
-    const typed = now.drafts[key] ?? null;
-    const saved = home.saved(field);
-    const decision = commitOf(
-      {
-        saved,
-        draft: typed,
-        inFlight: now.sent[key] ?? null,
-        failed: force ? null : (now.failures[key]?.value ?? null),
-      },
-      (value) => home.clean(field, value),
-    );
-    if (decision.kind === "nothing") return;
-    if (decision.kind === "reset") {
-      editing.reset(key);
-      return;
-    }
-    const value = decision.value;
-    const rule = home.rule(field, value);
-    if (rule) {
-      failText(home, field, { kind: "invalid", rule }, value, value);
-      return;
-    }
-    const taken = home.taken(field, value);
-    if (taken) {
-      failText(home, field, { kind: "name-taken" }, taken.name, value);
-      return;
-    }
-    editing.sending(key, value);
-    startTransition(async () => {
-      await editing.run(async () => {
-        const result = await editing.call(() => home.send(field, value));
-        editing.answered(key);
-        if (!result.ok) {
-          failText(home, field, result.problem, value, value);
-          return;
-        }
-        editing.landedField(key, typed);
-        undo.replace(
-          pushUndo<ListUndo | Other>(
-            undo.peek(),
-            home.entry(field, saved, result.value[field]),
-          ),
-        );
-      });
-    });
   }
 
   function move(row: Row, direction: Direction) {
@@ -766,7 +682,7 @@ export function useRowList<
           (candidate) => home.key(candidate) === key,
         );
         if (field) {
-          commitText(home, field, true);
+          commitText(editor, home, field, true);
           continue;
         }
       }
@@ -774,7 +690,7 @@ export function useRowList<
         const field = fields.find(
           (candidate) => fieldKey(candidate, row.id) === key,
         );
-        if (field) commitText(rowHome(row), field, true);
+        if (field) commitText(editor, rowHome(row), field, true);
       }
     }
   }
@@ -788,21 +704,8 @@ export function useRowList<
     else editing.type(ADD_KEY, value);
   }
 
-  // What one text shows, and what it does when it is typed in or
-  // committed.
-  function textOf<F extends string>(home: TextHome<F>, field: F) {
-    const key = home.key(field);
-    return {
-      id: home.id(field),
-      value: editing.drafts[key] ?? home.saved(field),
-      error: editing.failures[key]?.problem ?? null,
-      onChange: (value: string) => editing.type(key, value),
-      onCommit: () => commitText(home, field),
-    };
-  }
-
   function fieldOf(row: Row, field: Field) {
-    return textOf(rowHome(row), field);
+    return textOf(editor, rowHome(row), field);
   }
 
   // The page's own texts, drawn above the list, or null when it has none.
@@ -810,7 +713,7 @@ export function useRowList<
     ? {
         fields: own.fields,
         words: own.words,
-        fieldOf: (field: OwnField) => textOf(ownHome(own), field),
+        fieldOf: (field: OwnField) => textOf(editor, ownHome(own), field),
       }
     : null;
 
