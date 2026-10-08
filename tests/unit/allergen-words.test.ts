@@ -22,7 +22,7 @@ import {
   sameNamedLine,
   stampLine,
   type SameNamedPlace,
-} from "../../src/features/owner/dish/allergen-words";
+} from "../../src/features/owner/allergens/allergen-words";
 import {
   dishUndoSchema,
   dishWords,

@@ -129,7 +129,7 @@ export type OtherUndo<Other> = {
 // above its dishes (D-135). They are not a row of the list, but they share
 // its saved status, its queue, and its Undo (D-111), and they save, fail,
 // and are tried again the way a row's texts are.
-export type OwnTexts<OwnField extends string> = {
+export type OwnTexts<OwnField extends string, Other = never> = {
   // The record: its id, and the name its sentences carry.
   row: ListRow;
   fields: readonly OwnField[];
@@ -143,6 +143,13 @@ export type OwnTexts<OwnField extends string> = {
     value: string,
     expected?: string,
   ) => Promise<ListResult<Record<OwnField, string>>>;
+  // The Undo entry a change to one of these texts leaves, when it is not
+  // the plain own-text entry: a section's line remembers its allergen
+  // lists with its words (D-153). Nothing, or undefined, keeps the plain
+  // entry.
+  entry?: (field: OwnField, from: string, to: string) => Other | undefined;
+  // A save of one of these texts landed, with the server's answer.
+  landed?: (field: OwnField, value: Record<OwnField, string>) => void;
 };
 
 export type RowListConfig<
@@ -171,7 +178,10 @@ export type RowListConfig<
   // The link to the row's own page, one level down.
   link?: { label: string; href: (row: Row) => string };
   other?: OtherUndo<Other>;
-  own?: OwnTexts<OwnField>;
+  own?: OwnTexts<OwnField, Other>;
+  // Sends a failed save of something else on the page again, when the key
+  // is its: a section's line's allergen group (D-152). Asked first.
+  tryAgain?: (key: string, value: string) => boolean;
 };
 
 type Direction = "up" | "down";
@@ -293,7 +303,7 @@ export function useRowList<
   // The page's own texts live on the page, above the list, and save
   // through their own action.
   function ownHome(
-    texts: OwnTexts<OwnField>,
+    texts: OwnTexts<OwnField, Other>,
   ): TextHome<OwnField, ListUndo | Other> {
     return {
       row: texts.row,
@@ -305,14 +315,16 @@ export function useRowList<
       rule: texts.rule,
       taken: () => null,
       send: (field, value) => texts.setText(field, value),
-      entry: (field, from, to) => ({
-        kind: "own",
-        field,
-        id: texts.row.id,
-        name: texts.row.name,
-        from,
-        to,
-      }),
+      entry: (field, from, to) =>
+        texts.entry?.(field, from, to) ?? {
+          kind: "own",
+          field,
+          id: texts.row.id,
+          name: texts.row.name,
+          from,
+          to,
+        },
+      landed: texts.landed,
     };
   }
 
@@ -670,8 +682,10 @@ export function useRowList<
       setAdds((current) => addSentAgain(current, entry.key));
       send(entry.key, entry.name);
     }
-    for (const key of Object.keys(editing.peek().failures)) {
+    const { failures } = editing.peek();
+    for (const key of Object.keys(failures)) {
       if (isAddFailure(key)) continue;
+      if (config.tryAgain?.(key, failures[key]?.value ?? "")) continue;
       if (key === ADD_KEY) {
         add();
         continue;
@@ -762,6 +776,9 @@ export function useRowList<
     tryAgain,
     undoNewest,
     record,
+    // Where focus belongs after the page next changes, for something else
+    // on the page that moves focus the way the list does.
+    focusNextRef: focusNext,
   };
 }
 

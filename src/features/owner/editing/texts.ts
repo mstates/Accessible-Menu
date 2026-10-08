@@ -41,6 +41,11 @@ export type TextHome<F extends string, Entry> = {
   taken: (field: F, value: string) => ListRow | null;
   send: (field: F, value: string) => Promise<ListResult<Record<F, string>>>;
   entry: (field: F, from: string, to: string) => Entry;
+  // A save of this text landed, with the server's answer: for a page whose
+  // record carries more than its texts, what else that answer holds (a
+  // section's line and its check, D-153). Called after the entry is built
+  // from the state the save changed, before it is pushed.
+  landed?: (field: F, value: Record<F, string>) => void;
 };
 
 // A page's one editing state and its one Undo stack.
@@ -129,9 +134,9 @@ export function commitText<F extends string, Entry>(
         return;
       }
       editing.landedField(key, typed);
-      undo.replace(
-        pushUndo(undo.peek(), home.entry(field, saved, result.value[field])),
-      );
+      const entry = home.entry(field, saved, result.value[field]);
+      home.landed?.(field, result.value);
+      undo.replace(pushUndo(undo.peek(), entry));
     });
   });
 }

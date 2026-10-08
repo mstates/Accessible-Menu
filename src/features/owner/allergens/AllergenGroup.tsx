@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, type FocusEvent } from "react";
+import { Fragment, useLayoutEffect, useRef, type FocusEvent } from "react";
 import {
   US_MAJOR_ALLERGENS,
   type AllergenCopy,
@@ -19,30 +19,24 @@ import {
   stampLine,
   type AllergenStrings,
 } from "./allergen-words";
-import {
-  ADD_OTHER_ID,
-  allergenBoxId,
-  applyButtonId,
-  CHECK_ID,
-  otherButtonId,
-  type AllergenGroupState,
-} from "./useDishAllergens";
+import type { AllergenGroupView } from "./useAllergenGroup";
 
 type Props = {
   strings: AllergenStrings;
   // The diner-facing words, for the sentence diners will read.
   allergenCopy: AllergenCopy;
-  group: AllergenGroupState;
-  // The other allergens the restaurant's dishes already name first, then
-  // the starter list, each once.
+  group: AllergenGroupView;
+  // The group's heading, and the lead under it: a dish's name the dish, a
+  // line's quote the line's words (D-152).
+  heading: string;
+  lead: string;
+  // The other allergens the restaurant's dishes and lines already name
+  // first, then the starter list, each once.
   suggestions: readonly string[];
   // The restaurant's time zone, which the stamp's date is read in.
   timeZone: string;
   lang: string;
 };
-
-const HEADING_ID = "dish-allergens-heading";
-const SENTENCE_ID = "dish-allergen-sentence";
 
 // A wrapper that takes a failed save's focus and hands it to the box
 // inside, so a reader hears the box and its state (the price group's
@@ -54,39 +48,61 @@ function handToBox(event: FocusEvent<HTMLDivElement>) {
     ?.focus();
 }
 
-// The allergen group on a dish's page (D-128, D-148), under its own
-// heading: the nine major allergens as boxes, each with a hint under its
-// words; the other allergens as rows named by their place, each a field
-// that suggests names and a Remove button; one box that checks the list;
-// under it, always, the sentence diners will read, from the one builder
-// (D-35, module rule 8), with the words in bold as the diner page draws
-// them, and who checked it and when; and, while the dish is checked, a
-// line and a button for each same-named dish elsewhere in the restaurant
-// (D-129). The check box is described by its hint, by that sentence, which
-// is always on the page, so nothing ever points at a gone id (D-147), and
-// by its error while one stands. Everything saves through the page's one
-// queue, status, and Undo (D-111).
-export function DishAllergens({
+// The allergen group (D-128, D-148, D-152), under its own heading: the nine
+// major allergens as boxes, each with a hint under its words; the other
+// allergens as rows named by their place, each a field that suggests names
+// and a Remove button; one box that checks the list; under it, always, the
+// sentence diners will read, from the one builder (D-35, module rule 8),
+// with the words in bold as the diner page draws them, and who checked it
+// and when; and, while a dish is checked, a line and a button for each
+// same-named dish elsewhere in the restaurant (D-129). The check box is
+// described by its hint, by that sentence, which is always on the page, so
+// nothing ever points at a gone id (D-147), and by its error while one
+// stands. Everything saves through the page's one queue, status, and Undo
+// (D-111).
+export function AllergenGroup({
   strings,
   allergenCopy,
   group,
+  heading,
+  lead,
   suggestions,
   timeZone,
   lang,
 }: Props) {
+  const { ids } = group;
   const sentence = dinerSentence(allergenCopy, group.lists, group.check.shown);
   const stamp = stampLine(strings, group.check.stamp, timeZone, lang);
   const shownMajors = new Set<string>(group.allergens.shown);
 
+  // The group leaving the page with focus inside it (a line cleared, here or
+  // from another tab) hands focus to the page's fallback. The cleanup runs
+  // as the group unmounts, before its nodes go, so the active element is
+  // still inside; it reads the latest leaving through a ref, so it runs at
+  // unmount alone.
+  const container = useRef<HTMLDivElement>(null);
+  const leaving = useRef(group.leaving);
+  useLayoutEffect(() => {
+    leaving.current = group.leaving;
+  });
+  useLayoutEffect(
+    () => () => {
+      if (container.current?.contains(document.activeElement)) {
+        leaving.current();
+      }
+    },
+    [],
+  );
+
   return (
-    <div className="mt-8 flex flex-col gap-6">
-      <h2 id={HEADING_ID} className="text-xl font-bold">
-        {strings.heading}
+    <div ref={container} className="mt-8 flex flex-col gap-6">
+      <h2 id={ids.heading} className="text-xl font-bold">
+        {heading}
       </h2>
 
       {/* The lead for the whole group, as a plain paragraph: tied to the
           group, React Aria would read it with every box as well. */}
-      <p className="text-foreground-muted">{strings.groupHint}</p>
+      <p className="text-foreground-muted">{lead}</p>
 
       <CheckboxGroup
         label={strings.groupLabel}
@@ -102,11 +118,11 @@ export function DishAllergens({
       >
         {US_MAJOR_ALLERGENS.map((id) => {
           const error = group.allergens.errorOf(id);
-          const errorId = `${allergenBoxId(id)}-error`;
+          const errorId = `${ids.box(id)}-error`;
           return (
             <div
               key={id}
-              id={allergenBoxId(id)}
+              id={ids.box(id)}
               role="presentation"
               tabIndex={-1}
               className="flex flex-col outline-none"
@@ -158,7 +174,7 @@ export function DishAllergens({
                 />
                 <div>
                   <Button
-                    id={otherButtonId(row.key)}
+                    id={ids.otherButton(row.key)}
                     aria-label={otherAction(
                       strings,
                       strings.removeOther,
@@ -175,7 +191,7 @@ export function DishAllergens({
         ) : null}
         <div>
           <Button
-            id={ADD_OTHER_ID}
+            id={ids.addOther}
             aria-disabled={group.others.full ? true : undefined}
             onPress={group.others.add}
           >
@@ -185,7 +201,7 @@ export function DishAllergens({
       </div>
 
       <div
-        id={CHECK_ID}
+        id={ids.check}
         role="presentation"
         tabIndex={-1}
         className="flex flex-col gap-2 outline-none"
@@ -196,7 +212,9 @@ export function DishAllergens({
           onChange={(on) => group.check.set(on)}
           description={strings.checkHint}
           aria-describedby={
-            group.check.error ? `${SENTENCE_ID} ${CHECK_ID}-error` : SENTENCE_ID
+            group.check.error
+              ? `${ids.sentence} ${ids.check}-error`
+              : ids.sentence
           }
           validationBehavior="aria"
           isInvalid={group.check.error ? true : undefined}
@@ -204,11 +222,14 @@ export function DishAllergens({
           {strings.checkLabel}
         </Checkbox>
         {group.check.error ? (
-          <span id={`${CHECK_ID}-error`} className="pl-9 text-sm font-semibold">
+          <span
+            id={`${ids.check}-error`}
+            className="pl-9 text-sm font-semibold"
+          >
             {group.check.error}
           </span>
         ) : null}
-        <p id={SENTENCE_ID} className="pl-9">
+        <p id={ids.sentence} className="pl-9">
           <DinersRead strings={strings} sentence={sentence} /> {stamp}
         </p>
       </div>
@@ -220,7 +241,7 @@ export function DishAllergens({
               <p>{sameNamedLine(strings, place)}</p>
               <div>
                 <Button
-                  id={applyButtonId(place.id)}
+                  id={ids.apply(place.id)}
                   aria-label={applyName(strings, place)}
                   onPress={() => group.sameNamed.apply(place)}
                 >

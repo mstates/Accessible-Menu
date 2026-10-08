@@ -2,6 +2,15 @@ import { expect, test, type Page } from "@playwright/test";
 import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
 import { pageTitle } from "../../src/copy/title";
+import { US_MAJOR_ALLERGENS } from "../../src/domain/allergens";
+import {
+  dinerSentence,
+  dinersReadText,
+} from "../../src/features/owner/allergens/allergen-words";
+import {
+  lineAllergenStrings,
+  lineLead,
+} from "../../src/features/owner/line/line-words";
 import {
   restaurantDishPath,
   restaurantMenuPath,
@@ -11,11 +20,16 @@ import {
 import {
   expectNoAxeViolations,
   expectNoHorizontalScroll,
+  expectNoMissingIds,
   open,
   pageChecks,
 } from "./checks";
 import { ownerEnv, ownerFixture } from "./owner-env";
-import { breadcrumbMarks, sectionControls } from "./owner-controls";
+import {
+  breadcrumbMarks,
+  checkboxMarks,
+  sectionControls,
+} from "./owner-controls";
 import { listRowChecks } from "./owner-lists";
 import { restaurantName } from "./pages";
 import { expectWrites, guardWrites } from "./write-guard";
@@ -26,13 +40,18 @@ import { expectWrites, guardWrites } from "./write-guard";
 // into a field that saves when it is left (D-108, D-111, D-115): every test
 // here runs behind the write guard. The row tests every list shares run
 // from listRowChecks in owner-lists.ts; this file holds what is a section's
-// page's own: its name, its breadcrumb, and its move to another menu
-// (D-129). One move test presses Move section and says it expects a write;
-// the guard answers it inside the browser as an action the server does not
-// know, which is how the failed state is reached. Real saves and the
-// "Saved." they say (D-118), an add or a delete that lands, Undo with
-// something to undo, a taken name, and a section that really moves are
-// covered by the unit tests, by the boundary scripts, and by hand.
+// page's own: its name, its breadcrumb, its line's allergen group (D-152),
+// and its move to another menu (D-129). One move test presses Move section
+// and says it expects a write, and the group's tests press a box and hold
+// the write; the guard answers each inside the browser as an action the
+// server does not know, which is how the failed state is reached. Real
+// saves and the "Saved." they say (D-118), an add or a delete that lands,
+// Undo with something to undo, a taken name, a section that really moves,
+// and the line's group's landed writes are covered by the unit tests, by
+// the boundary scripts, by the local checks, and by hand. The data file
+// gives the section with dishes a line, checked with milk and wheat, and
+// the empty section none, so the gate reads a page with the group and one
+// without.
 //
 // A section's page is named by its id, which the setup finds and writes
 // down, so every path here is read when a test runs, never when this file
@@ -43,6 +62,9 @@ const menusPath = restaurantMenusPath(code);
 const strings = en.owner.dishes;
 const editing = en.owner.editing;
 const nav = en.owner.restaurants.nav;
+// The line's group speaks with the dish page's words, the line's own over
+// them (D-152).
+const line = lineAllergenStrings(en.owner.dish.allergens, strings.line);
 
 guardWrites();
 
@@ -54,18 +76,21 @@ function emptyPath(): string {
   return restaurantSectionPath(code, ownerFixture().emptySection.id);
 }
 
+// The section with dishes has a checked line, so its page draws check marks
+// (D-152); the empty section has no line, so no box.
 const checks = {
   controls: (page: Page) =>
     sectionControls(page, ownerFixture().withSections.name),
-  marks: breadcrumbMarks,
+  marks: [...breadcrumbMarks, ...checkboxMarks],
 };
+const unchecked = { ...checks, marks: breadcrumbMarks };
 
 test.describe("a section's page, with dishes", () => {
   pageChecks(dishesPath, checks);
 });
 
 test.describe("a section's page, with no dishes", () => {
-  pageChecks(emptyPath, checks);
+  pageChecks(emptyPath, unchecked);
 });
 
 listRowChecks({
@@ -75,10 +100,12 @@ listRowChecks({
   path: dishesPath,
   h1: () => ownerFixture().withDishes.name,
   // The name field and Move up, Move down, and Delete; the section's note
-  // and every-dish line, the add field, Add, Undo, and the move's Select
-  // and button. The link to the dish's page is not a field or a button.
+  // and every-dish line, the line's group's Add another allergen (its boxes
+  // and the combobox are not counted), the add field, Add, Undo, and the
+  // move's Select and button. The link to the dish's page is not a field or
+  // a button.
   rowControls: 4,
-  pageControls: 7,
+  pageControls: 8,
   // Each row's link to its dish's own page (D-128).
   rowLink: {
     label: strings.editDish,
@@ -226,9 +253,10 @@ test("a section's page is named for its section, its title names its menu, the b
 
 // D-135, and WCAG 3.3.2: the sentence that says how the page saves comes
 // right after the h1, before the first field it governs; then the
-// section's two texts, then the status and Undo, then the dishes' own lead
-// right above the dishes.
-test("the section's note and every-dish line come first, after the sentence that says how they save, each with its hint", async ({
+// section's two texts, then the line's allergen group under its heading
+// (D-152), then the status and Undo, then the dishes' own lead right above
+// the dishes.
+test("the section's note and every-dish line come first, after the sentence that says how they save, each with its hint, and the line's group follows them", async ({
   page,
 }) => {
   await openDishes(page);
@@ -255,6 +283,7 @@ test("the section's note and every-dish line come first, after the sentence that
     main.getByText(strings.section.lead, { exact: true }),
     note,
     everyItem,
+    main.getByRole("heading", { level: 2, name: line.heading }),
     savedStatus(page),
     main.getByText(strings.lead, { exact: true }),
     rows(page).first(),
@@ -274,7 +303,7 @@ test("the section's note and every-dish line come first, after the sentence that
           ),
         next,
       ),
-      "the h1, the lead, the note, the every-dish line, the status, the dishes' lead, then the dishes, in that order",
+      "the h1, the lead, the note, the every-dish line, the line's group, the status, the dishes' lead, then the dishes, in that order",
     ).toBe(true);
   }
 });
@@ -312,13 +341,231 @@ test("Tab through the section's unchanged note and Enter in its unchanged every-
   await expect(savedStatus(page)).toHaveText(editing.saved);
 });
 
-// D-128: the row headings are checked with every list's; the page's one
-// other level 2 heading names the section's move, after the list.
-test("the move has its own heading, after every dish's", async ({ page }) => {
+// D-128: the row headings are checked with every list's; the page's two
+// other level 2 headings name the line's allergen group, before the list,
+// and the section's move, after it (D-152).
+test("the line's group and the move have their own headings, around every dish's", async ({
+  page,
+}) => {
   const names = await openDishes(page);
   await expect(
     page.locator("main").getByRole("heading", { level: 2 }),
-  ).toHaveText([...names, strings.move.heading]);
+  ).toHaveText([line.heading, ...names, strings.move.heading]);
+});
+
+// The line's allergen group (D-152), as the dish page's (D-149): under the
+// line, its heading, the lead quoting the line's words, the nine boxes
+// each described by its own hint, Add another allergen, and the check box
+// described by its hint and the sentence diners read with who checked it.
+function box(page: Page, name: string) {
+  return page.getByRole("checkbox", { name, exact: true });
+}
+
+function checkBox(page: Page) {
+  return box(page, line.checkLabel);
+}
+
+function sentenceLine(page: Page) {
+  return page.locator("#line-allergen-sentence");
+}
+
+function checkDescription(sentence: string, stamp: string | RegExp) {
+  const head = `${line.checkHint} ${sentence} `;
+  return stamp instanceof RegExp
+    ? new RegExp(`^${escape(head)}${stamp.source}$`)
+    : `${head}${stamp}`;
+}
+
+function escape(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const checkedByYou = /Checked by you on [A-Z][a-z]+ \d{1,2}, \d{4}\./;
+
+function reads(
+  lists: { allergens: readonly string[]; others: string[] },
+  checked: boolean,
+) {
+  return dinersReadText(
+    line,
+    dinerSentence(
+      en.allergens,
+      {
+        allergens: lists.allergens as (typeof US_MAJOR_ALLERGENS)[number][],
+        others: lists.others,
+      },
+      checked,
+    ),
+  );
+}
+
+test("the line's allergen group shows under a line with words, with the nine boxes, the check described by the sentence diners read, and no group under a section with no line", async ({
+  page,
+}) => {
+  await openDishes(page);
+  const main = page.locator("main");
+  const words = await everyItemField(page).inputValue();
+  expect(words, "the test section has a line").not.toBe("");
+  await expect(
+    main.getByRole("heading", { level: 2, name: line.heading }),
+  ).toHaveCount(1);
+  await expect(
+    main.getByText(lineLead(strings.line, words), { exact: true }),
+  ).toHaveCount(1);
+  const group = page.getByRole("group", { name: line.groupLabel, exact: true });
+  await expect(group).toHaveCount(1);
+  await expect(group).toHaveAccessibleDescription("");
+  const boxes = group.getByRole("checkbox");
+  await expect(boxes, "nine boxes, in the FDA's order").toHaveCount(9);
+  for (const [index, id] of US_MAJOR_ALLERGENS.entries()) {
+    await expect(boxes.nth(index)).toHaveAccessibleName(line.names[id]);
+    await expect(boxes.nth(index)).toHaveAccessibleDescription(line.hints[id]);
+  }
+  await expect(box(page, line.names.milk)).toBeChecked();
+  await expect(box(page, line.names.wheat)).toBeChecked();
+  await expect(
+    page.locator(`main ol[aria-label="${line.othersLabel}"] > li`),
+    "the test line names no other allergen",
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: line.addOther, exact: true }),
+  ).toHaveCount(1);
+  await expect(checkBox(page)).toBeChecked();
+  await expect(checkBox(page)).toHaveAccessibleDescription(
+    checkDescription(
+      reads({ allergens: ["milk", "wheat"], others: [] }, true),
+      checkedByYou,
+    ),
+  );
+  await expect(sentenceLine(page)).toContainText(
+    reads({ allergens: ["milk", "wheat"], others: [] }, true),
+  );
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+
+  await open(page, emptyPath());
+  await expect(everyItemField(page)).toHaveValue("");
+  await expect(
+    page.locator("main").getByRole("heading", { level: 2, name: line.heading }),
+    "no line, no group",
+  ).toHaveCount(0);
+  await expect(checkBox(page)).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: line.addOther, exact: true }),
+  ).toHaveCount(0);
+});
+
+test("a tick on the checked line shows at once and clears the check, is refused once when it cannot land, and both go back", async ({
+  page,
+}) => {
+  const writes = expectWrites(page, { hold: true });
+  const { withDishes } = ownerFixture();
+  await openDishes(page);
+  await page.getByText(line.names.sesame, { exact: true }).click();
+  await expect(box(page, line.names.sesame)).toBeChecked();
+  await expect(checkBox(page), "the check clears at once").not.toBeChecked();
+  await expect(checkBox(page)).toHaveAccessibleDescription(
+    checkDescription(
+      reads({ allergens: ["milk", "wheat", "sesame"], others: [] }, false),
+      line.cleared,
+    ),
+  );
+  await expectNoMissingIds(page);
+
+  writes.release();
+  const failure = `${fill(line.notSaved.allergens, {
+    section: withDishes.name,
+  })} ${editing.problems.outOfDate}`;
+  await expect(savedStatus(page)).toHaveText(failure);
+  await expect(
+    log(page).getByText(failure, { exact: true }),
+    "the failure is said once",
+  ).toHaveCount(1);
+  await expect(
+    box(page, line.names.sesame),
+    "the box is back",
+  ).not.toBeChecked();
+  await expect(box(page, line.names.sesame)).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await expect(checkBox(page), "the check is back").toBeChecked();
+  await expect(checkBox(page)).toHaveAccessibleDescription(
+    checkDescription(
+      reads({ allergens: ["milk", "wheat"], others: [] }, true),
+      checkedByYou,
+    ),
+  );
+  expect(writes.answered.length).toBeGreaterThan(0);
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+test("an uncheck of the line shows at once, and the check comes back when it cannot land", async ({
+  page,
+}) => {
+  const writes = expectWrites(page, { hold: true });
+  const { withDishes } = ownerFixture();
+  await openDishes(page);
+  await page.getByText(line.checkLabel, { exact: true }).click();
+  await expect(checkBox(page)).not.toBeChecked();
+  await expect(checkBox(page)).toHaveAccessibleDescription(
+    checkDescription(
+      reads({ allergens: ["milk", "wheat"], others: [] }, false),
+      line.notChecked,
+    ),
+  );
+  await expectNoMissingIds(page);
+
+  writes.release();
+  const failure = `${fill(line.notSaved.check, {
+    section: withDishes.name,
+  })} ${editing.problems.outOfDate}`;
+  await expect(savedStatus(page)).toHaveText(failure);
+  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
+  await expect(checkBox(page), "the check is back").toBeChecked();
+  await expect(
+    checkBox(page),
+    "the hint, the sentence, then the problem",
+  ).toHaveAccessibleDescription(
+    new RegExp(
+      `^${escape(`${line.checkHint} ${reads({ allergens: ["milk", "wheat"], others: [] }, true)} `)}${checkedByYou.source} ${escape(editing.problems.outOfDate)}$`,
+    ),
+  );
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+test("Add another allergen on the line adds a blank row with focus in its field and sends nothing, and removing it sends nothing", async ({
+  page,
+}) => {
+  await openDishes(page);
+  await page.getByRole("button", { name: line.addOther, exact: true }).click();
+  const field = page.getByRole("combobox", {
+    name: `${line.otherLabel} ${fill(line.otherLabelFor, { position: 1 })}`,
+    exact: true,
+  });
+  await expect(field).toHaveCount(1);
+  await expect(field, "the new row's field takes focus").toBeFocused();
+  await expect(field).toHaveAccessibleDescription(line.otherHint);
+  await expect(log(page)).toHaveText(fill(line.otherAdded, { position: 1 }));
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+  await page
+    .getByRole("button", {
+      name: fill(line.otherAction, {
+        action: line.removeOther,
+        other: fill(line.unnamedOther, { position: 1 }),
+      }),
+      exact: true,
+    })
+    .click();
+  await expect(field).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: line.addOther, exact: true }),
+    "focus goes back to Add another allergen",
+  ).toBeFocused();
+  await expect(savedStatus(page)).toHaveText(editing.saved);
 });
 
 // The menus the test restaurant has, in order, read from its Menus page.

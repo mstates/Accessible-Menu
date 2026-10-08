@@ -1,3 +1,4 @@
+import type { OwnerAllergens } from "./allergens";
 import { cleanMenuName } from "./menu";
 
 // The owner-side section: the row an owner reads on a menu's page and the
@@ -15,6 +16,12 @@ export type OwnerSection = {
   // with each one (D-120). Empty when there is none.
   everyItem: string;
 };
+
+// A section as its own page reads it (D-135): with its line's own allergens
+// and their check (D-152), which the group under the line shows while the
+// line has words. The lists are empty and the check null while it is blank;
+// the database keeps that so (migration 8).
+export type OwnerSectionPage = OwnerSection & { line: OwnerAllergens };
 
 // A section as its menu's page reads it: with how many of its dishes are not
 // deleted, which is what a delete would take with it (D-119).

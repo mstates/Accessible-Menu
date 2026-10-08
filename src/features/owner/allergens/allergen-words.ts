@@ -5,11 +5,11 @@ import {
   checkedOnDate,
   majorAllergensOf,
   US_MAJOR_ALLERGENS,
+  type AllergenCheck,
   type AllergenCopy,
   type AllergenLists,
   type AllergenSentence,
 } from "@/domain/allergens";
-import type { AllergenCheck } from "@/domain/dish";
 import type { AllergenId } from "@/domain/types";
 import {
   failureSentence,
@@ -19,16 +19,51 @@ import {
   type TextWords,
 } from "../editing/list-words";
 import type { UndoOutcome } from "../editing/undo";
-import type { AllergenUndo, UndoLists } from "./dish-words";
+import type { GroupChange, UndoLists } from "./group-undo";
 
-// Every sentence the allergen group on a dish's page shows or speaks, built
-// in one place from copy (D-148), and what its Undo entries say. The nine
-// boxes, the other-allergen rows, the check, the sentence diners will read
-// with who checked it and when, and the same-named offer (D-129). The
-// sentence diners read comes from the domain builder, the one place it
-// lives (module rule 8). Pure: no React, no network.
+// Every sentence the allergen group shows or speaks, built in one place
+// from copy (D-148, D-152), and what its Undo entries say. The nine boxes,
+// the other-allergen rows, the check, the sentence diners will read with
+// who checked it and when, and, on a dish's page, the same-named offer
+// (D-129). The sentence diners read comes from the domain builder, the one
+// place it lives (module rule 8). A sentence that names its subject names
+// a dish or a section, through the placeholder each slice of copy carries
+// ("{dish}", "{section}"), since a sentence is heard on its own (D-135).
+// Pure: no React, no network.
 
-export type AllergenStrings = Copy["owner"]["dish"]["allergens"];
+// The slice of copy the group speaks with, as plain strings: the dish
+// page's as it is, or a line's, which is the dish page's with the line's
+// own sentences over it (line-words.ts).
+type Plain<T> = T extends string
+  ? string
+  : T extends readonly (infer Item)[]
+    ? readonly Plain<Item>[]
+    : { readonly [Key in keyof T]: Plain<T[Key]> };
+
+export type AllergenStrings = Plain<Copy["owner"]["dish"]["allergens"]>;
+
+// What the group speaks for: the dish, or the section whose line it is,
+// and the placeholder its sentences fill with the name.
+export type AllergenSubject = {
+  id: string;
+  noun: "dish" | "section";
+  name: string;
+};
+
+// The entries the group leaves, as this file reads them.
+export type AllergenUndo = GroupChange;
+
+// A sentence with the subject's name in its placeholder. A bare name is a
+// dish's, which is how the dish page's own callers and tests name it.
+function named(
+  template: string,
+  subject: string | AllergenSubject,
+  more: Record<string, string | number> = {},
+): string {
+  const key = typeof subject === "string" ? "dish" : subject.noun;
+  const name = typeof subject === "string" ? subject : subject.name;
+  return fill(template, { [key]: name, ...more });
+}
 
 // The nine as the boxes name them.
 export function allergenName(strings: AllergenStrings, id: AllergenId): string {
@@ -58,6 +93,7 @@ export function otherWords(
   const rules: Record<string, string> = {
     otherRequired: strings.errors.otherRequired,
     otherLength: strings.errors.otherLength,
+    otherComma: strings.errors.otherComma,
     "otherMajor:both": strings.errors.otherMajorBoth,
   };
   for (const id of US_MAJOR_ALLERGENS) {
@@ -143,24 +179,26 @@ export function blankRemovedSentence(
 export function allergensNotSavedSentence(
   strings: AllergenStrings,
   words: TextWords,
-  dish: string,
+  subject: string | AllergenSubject,
   problem: ListProblem,
 ): string {
+  const name = typeof subject === "string" ? subject : subject.name;
   return failureSentence(
-    fill(strings.notSaved.allergens, { dish }),
-    problemText(words, problem, dish),
+    named(strings.notSaved.allergens, subject),
+    problemText(words, problem, name),
   );
 }
 
 export function checkNotSavedSentence(
   strings: AllergenStrings,
   words: TextWords,
-  dish: string,
+  subject: string | AllergenSubject,
   problem: ListProblem,
 ): string {
+  const name = typeof subject === "string" ? subject : subject.name;
   return failureSentence(
-    fill(strings.notSaved.check, { dish }),
-    problemText(words, problem, dish),
+    named(strings.notSaved.check, subject),
+    problemText(words, problem, name),
   );
 }
 
@@ -363,18 +401,29 @@ function placeOf(entry: Extract<AllergenUndo, { kind: "apply" }>) {
   return { dish: entry.dish, section: entry.section, menu: entry.menu };
 }
 
+// The subject an entry's sentences name: the entry's name, in the noun's
+// placeholder.
+function subjectOf(
+  entry: { name: string },
+  noun: AllergenSubject["noun"],
+): AllergenSubject {
+  return { id: "", noun, name: entry.name };
+}
+
 // The Undo control's whole name for one of the group's changes, which is
 // also its visible text.
 export function allergenUndoLabel(
   strings: AllergenStrings,
   entry: AllergenUndo,
+  noun: AllergenSubject["noun"] = "dish",
 ): string {
   switch (entry.kind) {
     case "allergen":
-      return fill(entry.on ? strings.undo.ticked : strings.undo.unticked, {
-        allergen: strings.names[entry.allergen],
-        dish: entry.name,
-      });
+      return named(
+        entry.on ? strings.undo.ticked : strings.undo.unticked,
+        subjectOf(entry, noun),
+        { allergen: strings.names[entry.allergen] },
+      );
     case "others": {
       const change = othersChange(entry.before.others, entry.after.others);
       switch (change.kind) {
@@ -385,14 +434,15 @@ export function allergenUndoLabel(
         case "renamed":
           return fill(strings.undo.otherRenamed, change);
         case "changed":
-          return fill(strings.undo.othersChanged, { dish: entry.name });
+          return named(strings.undo.othersChanged, subjectOf(entry, noun));
       }
       break;
     }
     case "check":
-      return fill(entry.on ? strings.undo.checked : strings.undo.unchecked, {
-        dish: entry.name,
-      });
+      return named(
+        entry.on ? strings.undo.checked : strings.undo.unchecked,
+        subjectOf(entry, noun),
+      );
     case "apply":
       return fill(strings.sameNamed.undo.applied, placeOf(entry));
   }
@@ -404,6 +454,7 @@ export function allergenUndoneSentence(
   strings: AllergenStrings,
   entry: AllergenUndo,
   clearedCheck: boolean,
+  noun: AllergenSubject["noun"] = "dish",
 ): string {
   const cleared = clearedCheck ? ` ${strings.clearedNow}` : "";
   switch (entry.kind) {
@@ -430,14 +481,16 @@ export function allergenUndoneSentence(
             fill(strings.undo.otherRenamedBack, { from: change.from }) + cleared
           );
         case "changed":
-          return fill(strings.undo.othersBack, { dish: entry.name }) + cleared;
+          return (
+            named(strings.undo.othersBack, subjectOf(entry, noun)) + cleared
+          );
       }
       break;
     }
     case "check":
-      return fill(
+      return named(
         entry.on ? strings.undo.checkedBack : strings.undo.uncheckedBack,
-        { dish: entry.name },
+        subjectOf(entry, noun),
       );
     case "apply":
       return fill(

@@ -1,7 +1,7 @@
+import type { AllergenCheck, OwnerAllergens } from "./allergens";
 import { cleanMenuName } from "./menu";
 import { parsePrice, type PriceRule } from "./money";
 import { cleanNote } from "./section";
-import type { AllergenId } from "./types";
 
 // The owner-side dish: the row an owner reads on a section's page, with its
 // name, and the dish as its own page reads it (D-128), with everything an
@@ -19,20 +19,11 @@ export type OwnerDish = { id: string; name: string };
 export const PRICE_KINDS = ["one", "sizes", "market"] as const;
 export type PriceKind = (typeof PRICE_KINDS)[number];
 
-// Who checked a dish's allergen list and when (D-89, D-148), as the page
-// shows it: the stamp's time, and whether the person is the one signed in.
-// The stamp itself is written by the database and never by an owner.
-export type AllergenCheck = { at: string; byYou: boolean };
-
 // A dish's allergens as the owner's page reads and writes them (D-148): the
-// major allergens ticked from the fixed list, the other allergens typed,
-// and the check, which is null until a person checks the list and again
-// after any change to it.
-export type OwnerDishAllergens = {
-  allergens: AllergenId[];
-  otherAllergens: string[];
-  check: AllergenCheck | null;
-};
+// shape every allergen group shares (allergens.ts), a section's line's
+// included (D-152), with who checked the list and when.
+export type { AllergenCheck };
+export type OwnerDishAllergens = OwnerAllergens;
 
 // A dish on its own page. price is the one price as its field shows it, two
 // decimals or blank for none; the sizes are read beside it.

@@ -9,12 +9,12 @@ import { ComboBox } from "@/ui/ComboBox";
 import { PageLink } from "@/ui/PageLink";
 import { Radio, RadioGroup } from "@/ui/RadioGroup";
 import type { SelectGroup } from "@/ui/Select";
+import { AllergenGroup } from "../allergens/AllergenGroup";
+import type { SameNamedPlace } from "../allergens/allergen-words";
 import { AutosaveTextField } from "../editing/AutosaveTextField";
 import type { EditingStrings } from "../editing/list-words";
 import { SavedStatus } from "../editing/SavedStatus";
 import { restaurantDishPath } from "../paths";
-import type { SameNamedPlace } from "./allergen-words";
-import { DishAllergens } from "./DishAllergens";
 import {
   lastDishSentence,
   nextDishLabel,
@@ -42,8 +42,8 @@ type Props = {
   targets: SelectGroup[];
   // The diner-facing allergen words, for the sentence diners will read.
   allergenCopy: AllergenCopy;
-  // The other allergens the restaurant's dishes already name, most used
-  // first.
+  // The other allergens the restaurant's dishes and lines already name,
+  // most used first.
   otherNames: string[];
   // The same-named dishes the allergen check names (D-129).
   sameNamed: SameNamedPlace[];
@@ -286,10 +286,12 @@ function DishEditor({
         />
       </div>
 
-      <DishAllergens
+      <AllergenGroup
         strings={strings.allergens}
         allergenCopy={allergenCopy}
         group={page.allergens}
+        heading={strings.allergens.heading}
+        lead={strings.allergens.groupHint}
         suggestions={otherSuggestions}
         timeZone={timeZone}
         lang={lang}

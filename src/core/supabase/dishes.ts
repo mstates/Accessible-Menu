@@ -440,10 +440,11 @@ export async function listOwnerSameNamedDishes(
     }));
 }
 
-// The other allergens the restaurant's live dishes already name, most used
+// The other allergens the restaurant's live dishes already name, as stored,
+// repeats included; the domain ranks them with the lines' names, most used
 // first and then by name, for the other-allergen field to suggest before
-// the starter list (D-148), the way size names are suggested (D-139). A
-// read that fails throws.
+// the starter list (D-148, D-152), the way size names are suggested
+// (D-139). A read that fails throws.
 export async function listOwnerOtherAllergenNames(
   client: SupabaseClient,
   restaurantId: string,
@@ -456,23 +457,10 @@ export async function listOwnerOtherAllergenNames(
   if (error) {
     throw new Error(`other allergens could not be read: ${error.message}`);
   }
-  const counts = new Map<string, { name: string; uses: number }>();
-  const rows = z
+  return z
     .array(z.object({ custom_allergens: z.array(z.string()) }))
-    .parse(data);
-  for (const row of rows) {
-    for (const raw of row.custom_allergens) {
-      const other = raw.trim();
-      if (other === "") continue;
-      const key = other.toLowerCase();
-      const seen = counts.get(key);
-      if (seen) seen.uses += 1;
-      else counts.set(key, { name: other, uses: 1 });
-    }
-  }
-  return [...counts.values()]
-    .sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name))
-    .map((entry) => entry.name);
+    .parse(data)
+    .flatMap((row) => row.custom_allergens);
 }
 
 // A dish's description or note, stored as null when blank.

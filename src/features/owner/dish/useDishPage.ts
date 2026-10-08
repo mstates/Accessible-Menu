@@ -53,7 +53,7 @@ import {
   setDishText,
   setSizeText,
 } from "./actions";
-import type { SameNamedPlace } from "./allergen-words";
+import type { SameNamedPlace } from "../allergens/allergen-words";
 import {
   dishUndoSchema,
   dishWords,

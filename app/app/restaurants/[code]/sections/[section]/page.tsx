@@ -4,9 +4,16 @@ import { cache } from "react";
 import { z } from "zod";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
-import { listOwnerDishes } from "@/core/supabase/dishes";
+import {
+  listOwnerDishes,
+  listOwnerOtherAllergenNames,
+} from "@/core/supabase/dishes";
 import { findOwnerMenu, listOwnerMenuNames } from "@/core/supabase/menus";
-import { findOwnerSection } from "@/core/supabase/sections";
+import {
+  findOwnerSectionPage,
+  listOwnerLineOtherAllergenNames,
+} from "@/core/supabase/sections";
+import { rankOtherAllergenNames } from "@/domain/allergens";
 import { DishList } from "@/features/owner/DishList";
 import { loadRestaurant } from "@/features/owner/load-restaurant";
 import {
@@ -30,14 +37,20 @@ const strings = en.owner.dishes;
 // that failed is thrown to the owner error page, never shown as a missing
 // section. The address names the section and not its menu, so it stays good
 // when the section moves to another menu (D-128, D-129); the menu is read
-// from the section every time.
+// from the section every time. The section is read with its line's own
+// allergens and their check (D-152), which only this page reads.
 const loadSection = cache(async (rawCode: string, rawSection: string) => {
-  const { supabase, email, restaurant } = await loadRestaurant(rawCode);
+  const { supabase, email, userId, restaurant } = await loadRestaurant(rawCode);
   const nothing = { supabase, email, restaurant, section: null, menu: null };
   if (!email || !restaurant) return nothing;
   const id = z.uuid().safeParse(rawSection);
   if (!id.success) return nothing;
-  const section = await findOwnerSection(supabase, restaurant.id, id.data);
+  const section = await findOwnerSectionPage(
+    supabase,
+    restaurant.id,
+    id.data,
+    userId,
+  );
   if (section === "failed") throw new Error("the section could not be read");
   if (section === "not-found") return nothing;
   const menu = await findOwnerMenu(supabase, restaurant.id, section.menuId);
@@ -57,14 +70,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-// One section's own page (D-128): its note and its every-dish line (D-135),
-// its dishes, and its move to another menu (D-129). The page is named for
-// the section, in the title and in the h1, and the title names its menu
-// right after it. Menus stays marked in the
-// restaurant's nav as the part this page sits inside, and the breadcrumb
-// above the h1 leads back to the menu and to Menus. The dishes and the
-// restaurant's other menus are read on every render, and every save ends
-// with a refresh, so what the page shows is what the server holds.
+// One section's own page (D-128): its note and its every-dish line (D-135)
+// with the line's own allergens and their check (D-152), its dishes, and
+// its move to another menu (D-129). The page is named for the section, in
+// the title and in the h1, and the title names its menu right after it.
+// Menus stays marked in the restaurant's nav as the part this page sits
+// inside, and the breadcrumb above the h1 leads back to the menu and to
+// Menus. The dishes, the restaurant's other menus, and the other allergens
+// in use on dishes and on lines are read on every render, and every save
+// ends with a refresh, so what the page shows is what the server holds.
 export default async function RestaurantSectionPage({ params }: Props) {
   const { code, section: sectionId } = await params;
   const { supabase, email, restaurant, section, menu } = await loadSection(
@@ -73,9 +87,17 @@ export default async function RestaurantSectionPage({ params }: Props) {
   );
   if (!email) redirect("/app/sign-in");
   if (!restaurant || !section || !menu) notFound();
-  const [dishes, menus] = await Promise.all([
+  const [dishes, menus, dishOtherNames, lineOtherNames] = await Promise.all([
     listOwnerDishes(supabase, section.id),
     listOwnerMenuNames(supabase, restaurant.id),
+    listOwnerOtherAllergenNames(supabase, restaurant.id),
+    listOwnerLineOtherAllergenNames(supabase, restaurant.id),
+  ]);
+  // The restaurant's own other allergens, on dishes and on lines, most used
+  // first (D-149, D-152).
+  const otherNames = rankOtherAllergenNames([
+    ...dishOtherNames,
+    ...lineOtherNames,
   ]);
 
   return (
@@ -113,6 +135,7 @@ export default async function RestaurantSectionPage({ params }: Props) {
       <DishList
         strings={strings}
         sectionStrings={en.owner.sections}
+        allergenStrings={en.owner.dish.allergens}
         editing={en.owner.editing}
         code={restaurant.code}
         section={{
@@ -120,10 +143,15 @@ export default async function RestaurantSectionPage({ params }: Props) {
           name: section.name,
           note: section.note,
           everyItem: section.everyItem,
+          line: section.line,
         }}
         menu={menu}
         otherMenus={menus.filter((other) => other.id !== menu.id)}
         dishes={dishes}
+        allergenCopy={en.allergens}
+        otherNames={otherNames}
+        timeZone={restaurant.timezone}
+        lang={en.lang}
       />
     </PageFrame>
   );

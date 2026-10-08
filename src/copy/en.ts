@@ -501,7 +501,69 @@ export const en = {
           "For the whole section. Diners read it once, under the section name.",
         everyItemLabel: "Shown with every dish",
         everyItemHint:
-          'For an option or side, like "Add spaghetti to any dish for 3 dollars." Diners read it with each dish in this section. Allergens still go on each dish.',
+          'For an option or side, like "Add spaghetti to any dish for 3 dollars." Diners read it with each dish in this section. Once it is saved, list its allergens below.',
+      },
+      // The line's own allergens (task 4b, D-152, D-153): the dish page's
+      // group under the line, with these words in place of the dish's. The
+      // sentences name the section, since a sentence is heard on its own
+      // (D-135); the heading names the line, since the headings list reads
+      // it alone; the lead quotes the words the server holds, so the owner
+      // sees which line a check covers.
+      line: {
+        heading: "Allergens in the line shown with every dish",
+        lead: 'For "{words}": tick each major allergen this line contains, add any others below, then check the list once it is complete.',
+        checkHint:
+          "Check this once every allergen in this line is listed above. A change to the line or its list clears the check.",
+        othersFull: "A line lists ten other allergens at most.",
+        cleared:
+          "Not checked since the line or its list changed. Check it again once the list is complete.",
+        listsChanged:
+          "The line or its allergen list changed since this page showed it, so it is not checked. Look at the line as it is now, then check it.",
+        listsMoved:
+          "The line or its allergen list changed since this page showed it, so nothing was saved. Look at the line as it is now.",
+        checkChanged:
+          "The check changed since this page showed it. The page shows it as it is now.",
+        // Said after "Saved." when clearing the line took its list or its
+        // check with it.
+        wentWithIt: "Its allergen list went with it. Undo brings it back.",
+        notSaved: {
+          allergens:
+            "The allergens of the line for every dish in {section} were not saved.",
+          check:
+            "The allergen check for the line for every dish in {section} was not saved.",
+        },
+        errors: {
+          otherTaken: "This line already lists {other}.",
+          otherMajorBoth:
+            "Peanuts and Tree nuts have their own boxes above. Tick the one this line has, or both.",
+        },
+        undo: {
+          ticked:
+            "Undo: ticked {allergen} for the line for every dish in {section}",
+          unticked:
+            "Undo: unticked {allergen} for the line for every dish in {section}",
+          othersChanged:
+            "Undo: changed the other allergens for the line for every dish in {section}",
+          othersBack:
+            "Undone. The other allergens for the line for every dish in {section} are as they were.",
+          checked:
+            "Undo: checked the allergens for the line for every dish in {section}",
+          unchecked:
+            "Undo: unchecked the allergens for the line for every dish in {section}",
+          checkedBack:
+            "Undone. The allergens for the line for every dish in {section} are not checked.",
+          uncheckedBack:
+            "Undone. The allergens for the line for every dish in {section} are checked by you.",
+          listsChanged:
+            "The line or its allergen list was changed again since, so nothing was undone.",
+          // The words' own Undo (sections.undo.everyItem names it): what it
+          // says when a cleared line comes back with its list, and when the
+          // line stays because it has allergens now (D-119).
+          wordsRestored:
+            "Undone. The line for every dish in {section} is back with its allergen list, not checked.",
+          wordsGrew:
+            "The line for every dish in {section} has allergens now, so it stays. To clear it, empty the field.",
+        },
       },
       // Moving the section itself to another menu of the restaurant, from
       // its own page (D-129). Nothing is sent until the button is pressed.
@@ -794,6 +856,9 @@ export const en = {
             "{allergen} has its own box above. Tick it there instead.",
           otherMajorBoth:
             "Peanuts and Tree nuts have their own boxes above. Tick the one this dish has, or both.",
+          // A comma reads as two allergens to a diner (D-151).
+          otherComma:
+            "An allergen name holds no comma. Put each allergen in its own row, with Add another allergen.",
         },
         undo: {
           ticked: "Undo: ticked {allergen} for {dish}",

@@ -22,6 +22,9 @@ type Props<
   // own texts come first puts what it says about its rows here, right above
   // them.
   intro?: string;
+  // What the screen adds right after its own texts, before the status: a
+  // section's page puts its line's allergen group here (D-152).
+  afterOwn?: ReactNode;
   // What the screen adds after the add form: a section's page puts the
   // section's move here, under the same status and the same Undo.
   children?: ReactNode;
@@ -43,7 +46,7 @@ export function RowList<
   Field extends string,
   Other extends { kind: string } = never,
   OwnField extends string = never,
->({ list, intro, children }: Props<Row, Field, Other, OwnField>) {
+>({ list, intro, afterOwn, children }: Props<Row, Field, Other, OwnField>) {
   const { words, fields, link, editing, shown, unsaved, own } = list;
   const { strings, editing: editingWords } = words;
 
@@ -67,6 +70,8 @@ export function RowList<
           })}
         </div>
       ) : null}
+
+      {afterOwn}
 
       <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
         <SavedStatus

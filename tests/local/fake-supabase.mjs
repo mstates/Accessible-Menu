@@ -2,8 +2,10 @@
 // sign-in, the user, sign-out, and a small slice of the Data API over an
 // in-memory store that follows migration three's rules for menus,
 // migration four's for sections, migration five's for items and its four
-// functions, and migration six's for a dish's own texts and price, its
-// sizes, and move_item(). It lets saves land on this machine, which the gate can
+// functions, migration six's for a dish's own texts and price, its sizes,
+// and move_item(), migration seven's for a dish's allergen lists and their
+// check, and migration eight's for a section's line shown with every dish
+// and its own lists and check. It lets saves land on this machine, which the gate can
 // never do (D-115): `npm run local` starts it, builds and serves the app
 // against it, and runs the checks in tests/local (D-142). It holds no key
 // and names no real project: the session it hands out is an unsigned
@@ -58,6 +60,11 @@ function seed(withDishes = true) {
     created_at: stamp(),
   }));
   const dinner = menus[1];
+  // Starters' line shown with every dish, as CI Diner's data file gives it
+  // (D-152): checked with milk and wheat; Mains and Desserts keep no line.
+  const line = {
+    Starters: "Add a buttered roll to any dish for 2 dollars.",
+  };
   sections = ["Starters", "Mains", "Desserts"].map((name, index) => ({
     id: randomUUID(),
     menu_id: dinner.id,
@@ -65,7 +72,12 @@ function seed(withDishes = true) {
     name,
     sort: index + 1,
     note: null,
-    every_item: null,
+    every_item: line[name] ?? null,
+    every_item_allergens: line[name] ? ["milk", "wheat"] : [],
+    every_item_custom_allergens: [],
+    every_item_allergens_reviewed: Boolean(line[name]),
+    every_item_allergens_reviewed_by: line[name] ? user.id : null,
+    every_item_allergens_reviewed_at: line[name] ? stamp() : null,
     deleted_at: null,
     created_at: stamp(),
   }));
@@ -263,6 +275,22 @@ function sectionProblem(row) {
   ) {
     return check("sections", "sections_every_item_text");
   }
+  const lists = allergenListsProblem(
+    row.every_item_allergens,
+    row.every_item_custom_allergens,
+    "sections",
+    "sections_line_allergens_offered",
+    "sections_line_other_allergens_count",
+  );
+  if (lists) return lists;
+  if (
+    line === null &&
+    (row.every_item_allergens.length > 0 ||
+      row.every_item_custom_allergens.length > 0 ||
+      row.every_item_allergens_reviewed)
+  ) {
+    return check("sections", "sections_line_blank_holds_nothing");
+  }
   if (row.deleted_at === null) {
     const taken = sections.some(
       (s) =>
@@ -324,22 +352,26 @@ const MAJOR_WORDS = [
   "sesame",
 ];
 
-// Migration seven's rules for a dish's two allergen lists: the nine the US
+// The commas that read as separators to a diner (D-151, Q-65): plain,
+// fullwidth, ideographic.
+const COMMA = /[,\uFF0C\u3001]/u;
+
+// Migration eight's one rule for a pair of allergen lists, a dish's or a
+// line's (migration seven's rules, the comma among them): the nine the US
 // offers, each once; another allergen one line of 40 characters at most,
-// with no outer space, once whatever the case, never one of the nine, and
-// ten at most.
-function allergenListsProblem(row) {
-  const { allergens, custom_allergens: others } = row;
+// with no outer space, no comma, once whatever the case, never one of the
+// nine, and ten at most. The two constraints are named for the table.
+function allergenListsProblem(allergens, others, table, offered, count) {
   if (!Array.isArray(allergens) || !Array.isArray(others)) {
-    return check("items", "items_allergens_offered");
+    return check(table, offered);
   }
   if (allergens.some((id) => !US_NINE.includes(id))) {
-    return check("items", "items_allergens_offered");
+    return check(table, offered);
   }
   if (new Set(allergens).size !== allergens.length) {
     return named("allergens_repeated");
   }
-  if (others.length > 10) return check("items", "items_other_allergens_count");
+  if (others.length > 10) return check(table, count);
   const seen = new Set();
   for (const other of others) {
     if (
@@ -351,6 +383,7 @@ function allergenListsProblem(row) {
     ) {
       return named("other_allergen_text");
     }
+    if (COMMA.test(other)) return named("other_allergen_comma");
     if (MAJOR_WORDS.includes(other.toLowerCase())) {
       return named("other_allergen_major");
     }
@@ -360,26 +393,57 @@ function allergenListsProblem(row) {
   return null;
 }
 
-// Migration seven's trigger: any change to a list clears the check and its
-// stamp; a check that begins is stamped with the person and now; an
-// uncheck clears the stamp. The stamp is never what the caller wrote.
-function withAllergenCheck(row, next) {
+// Migration seven's check trigger, and migration eight's for a line, whose
+// columns carry a prefix: any change to a list clears the check and its
+// stamp; a check that begins is stamped with the person and now; an uncheck
+// clears the stamp. The stamp is never what the caller wrote.
+function withAllergenCheck(row, next, prefix = "") {
+  const lists = `${prefix}allergens`;
+  const others = `${prefix}custom_allergens`;
+  const flag = `${prefix}allergens_reviewed`;
+  const by = `${prefix}allergens_reviewed_by`;
+  const at = `${prefix}allergens_reviewed_at`;
   const out = { ...next };
-  out.allergens_reviewed_by = row.allergens_reviewed_by;
-  out.allergens_reviewed_at = row.allergens_reviewed_at;
+  out[by] = row[by];
+  out[at] = row[at];
   const listChanged =
-    JSON.stringify(next.allergens) !== JSON.stringify(row.allergens) ||
-    JSON.stringify(next.custom_allergens) !==
-      JSON.stringify(row.custom_allergens);
-  if (listChanged) out.allergens_reviewed = false;
-  if (out.allergens_reviewed && !row.allergens_reviewed) {
-    out.allergens_reviewed_by = user.id;
-    out.allergens_reviewed_at = stamp();
-  } else if (!out.allergens_reviewed) {
-    out.allergens_reviewed_by = null;
-    out.allergens_reviewed_at = null;
+    JSON.stringify(next[lists]) !== JSON.stringify(row[lists]) ||
+    JSON.stringify(next[others]) !== JSON.stringify(row[others]);
+  if (listChanged) out[flag] = false;
+  if (out[flag] && !row[flag]) {
+    out[by] = user.id;
+    out[at] = stamp();
+  } else if (!out[flag]) {
+    out[by] = null;
+    out[at] = null;
   }
   return out;
+}
+
+// Migration eight's rules for a section's line shown with every dish, as a
+// write would leave it: a change to the words clears the check; clearing
+// the line in a statement clears its lists and its check with it; lists or
+// a check written to a line that is already blank are refused. Answers
+// with the row, or with the problem.
+function withLineCheck(row, next) {
+  const out = { ...next };
+  const holds =
+    out.every_item_allergens.length > 0 ||
+    out.every_item_custom_allergens.length > 0 ||
+    out.every_item_allergens_reviewed;
+  if (out.every_item === null) {
+    if (row.every_item !== null) {
+      out.every_item_allergens = [];
+      out.every_item_custom_allergens = [];
+      out.every_item_allergens_reviewed = false;
+    } else if (holds) {
+      return { problem: named("line_blank_holds_nothing") };
+    }
+  }
+  if (out.every_item !== row.every_item) {
+    out.every_item_allergens_reviewed = false;
+  }
+  return { row: withAllergenCheck(row, out, "every_item_") };
 }
 
 // Migration five's rules for one item row, migration six's for its texts
@@ -420,7 +484,13 @@ function itemProblem(row) {
     return check("items", "items_price_cents_range");
   }
   if (!PRICE_KINDS.includes(kind)) return badEnum(kind);
-  const lists = allergenListsProblem(row);
+  const lists = allergenListsProblem(
+    row.allergens,
+    row.custom_allergens,
+    "items",
+    "items_allergens_offered",
+    "items_other_allergens_count",
+  );
   if (lists) return lists;
   if (row.deleted_at === null) {
     const taken = items.some(
@@ -798,11 +868,37 @@ const server = http.createServer(async (req, res) => {
         sort: 99,
         note: null,
         every_item: null,
+        every_item_allergens: [],
+        every_item_custom_allergens: [],
+        every_item_allergens_reviewed: false,
+        every_item_allergens_reviewed_by: null,
+        every_item_allergens_reviewed_at: null,
         deleted_at: null,
         created_at: stamp(),
       };
       sections.push(row);
       return send(res, 200, row);
+    }
+    // A section's line changed somewhere else: another tab, another person.
+    // Migration eight's rules apply, so a check standing on the line clears
+    // (D-152). words empty means the line is cleared.
+    if (path === "/__test/set-line") {
+      const section = sections.find((s) => s.id === params.get("id"));
+      if (!section) return send(res, 404, { message: "no such section" });
+      const split = (text) => (text ? text.split(",").filter(Boolean) : []);
+      const words = params.get("words") ?? "";
+      const next = withLineCheck(section, {
+        ...section,
+        every_item: words === "" ? null : words,
+        every_item_allergens: split(params.get("allergens")),
+        every_item_custom_allergens: split(params.get("others")),
+        every_item_allergens_reviewed: params.get("checked") === "1",
+      });
+      if (next.problem) return send(res, ...next.problem);
+      const problem = sectionProblem(next.row);
+      if (problem) return send(res, ...problem);
+      Object.assign(section, next.row);
+      return send(res, 200, section);
     }
 
     // Auth.
@@ -967,6 +1063,11 @@ const server = http.createServer(async (req, res) => {
           sort: payload.sort ?? 0,
           note: null,
           every_item: null,
+          every_item_allergens: [],
+          every_item_custom_allergens: [],
+          every_item_allergens_reviewed: false,
+          every_item_allergens_reviewed_by: null,
+          every_item_allergens_reviewed_at: null,
           deleted_at: null,
           created_at: stamp(),
         };
@@ -976,17 +1077,30 @@ const server = http.createServer(async (req, res) => {
         return respondRows(req, res, [row], params, 201);
       }
       if (req.method === "PATCH") {
-        const allowed = ["name", "note", "every_item", "sort", "deleted_at"];
+        const allowed = [
+          "name",
+          "note",
+          "every_item",
+          "sort",
+          "deleted_at",
+          "every_item_allergens",
+          "every_item_custom_allergens",
+          "every_item_allergens_reviewed",
+        ];
         const extra = Object.keys(payload).filter(
           (key) => !allowed.includes(key),
         );
         if (extra.length) return denied(res, `column ${extra[0]}`);
         const targets = sections.filter((row) => matches(row, params));
+        const nexts = new Map();
         for (const row of targets) {
-          const problem = sectionProblem({ ...row, ...payload });
+          const next = withLineCheck(row, { ...row, ...payload });
+          if (next.problem) return send(res, ...next.problem);
+          const problem = sectionProblem(next.row);
           if (problem) return send(res, ...problem);
+          nexts.set(row, next.row);
         }
-        for (const row of targets) Object.assign(row, payload);
+        for (const row of targets) Object.assign(row, nexts.get(row));
         return respondRows(req, res, targets, params);
       }
       if (req.method === "DELETE") return denied(res, "table sections");

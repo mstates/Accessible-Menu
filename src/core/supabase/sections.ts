@@ -1,22 +1,28 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import type { AllergenLists } from "@/domain/allergens";
 import type { Held } from "@/domain/menu";
 import type {
   ListedSection,
   OwnerSection,
+  OwnerSectionPage,
   SectionText,
 } from "@/domain/section";
+import { ALLERGEN_IDS, type AllergenId } from "@/domain/types";
 
 // Owner-side reads and writes on a menu's sections, through the owner's own
 // client so row level security decides what is visible (D-75) and the table
-// constraints decide what is valid (migration 4). A delete marks the row and
-// keeps it, so Undo can bring it back; reads leave marked rows out. Owners
-// write name, note, every_item, sort, and deleted_at as columns and nothing
-// else. A delete goes through delete_with_contents(), which counts what the
-// section holds in the statement that marks it, and a move to another menu
-// goes through move_section(), since menu_id is not a column owners write
-// (migration 5). Nothing here can publish. The only place the row shape is
-// known; features see OwnerSection.
+// constraints and triggers decide what is valid (migrations 4 and 8). A
+// delete marks the row and keeps it, so Undo can bring it back; reads leave
+// marked rows out. Owners write name, note, every_item, sort, deleted_at,
+// the line's two allergen lists, and the line's check as columns and
+// nothing else: never who checked the line's list or when, which the
+// database stamps (D-152). A delete goes through delete_with_contents(),
+// which counts what the section holds in the statement that marks it, and
+// a move to another menu goes through move_section(), since menu_id is not
+// a column owners write (migration 5). Nothing here can publish. The only
+// place the row shape is known; features see OwnerSection, and the
+// section's own page OwnerSectionPage.
 
 const columns = "id, name, note, every_item, sort";
 
@@ -34,6 +40,49 @@ function toSection(row: z.infer<typeof rowSchema>): OwnerSection {
     name: row.name,
     note: row.note ?? "",
     everyItem: row.every_item ?? "",
+  };
+}
+
+// The section as its own page reads it (D-135), with its line's own
+// allergens and their check (D-152): the two lists, the flag, who, and when.
+// Only the section's page and the line's writes read these columns, so
+// every other read keeps working before migration eight is applied.
+const pageColumns = `${columns}, menu_id, every_item_allergens, every_item_custom_allergens, every_item_allergens_reviewed, every_item_allergens_reviewed_by, every_item_allergens_reviewed_at`;
+
+const pageSchema = rowSchema.extend({
+  menu_id: z.string(),
+  every_item_allergens: z.array(z.enum(ALLERGEN_IDS)),
+  every_item_custom_allergens: z.array(z.string()),
+  every_item_allergens_reviewed: z.boolean(),
+  every_item_allergens_reviewed_by: z.string().nullable(),
+  every_item_allergens_reviewed_at: z.string().nullable(),
+});
+
+type PageRow = z.infer<typeof pageSchema>;
+
+// viewer is the signed-in person, so the page can say a check is theirs.
+function toSectionPage(
+  row: PageRow,
+  viewer: string | null,
+): OwnerSectionPage & { menuId: string } {
+  return {
+    ...toSection(row),
+    menuId: row.menu_id,
+    line: {
+      allergens: row.every_item_allergens,
+      otherAllergens: row.every_item_custom_allergens,
+      check:
+        row.every_item_allergens_reviewed &&
+        row.every_item_allergens_reviewed_at !== null
+          ? {
+              at: row.every_item_allergens_reviewed_at,
+              byYou:
+                viewer !== null &&
+                row.every_item_allergens_reviewed_by !== null &&
+                row.every_item_allergens_reviewed_by === viewer,
+            }
+          : null,
+    },
   };
 }
 
@@ -58,16 +107,27 @@ export type SectionWriteError =
   | { kind: "menu-gone" }
   // A move named the menu the section is already in.
   | { kind: "same-menu" }
+  // The database refused the row by a named rule of its own, the line's
+  // allergen triggers' (migration 8); the name is the rule.
+  | { kind: "refused"; rule: string }
   | { kind: "failed" };
 
 export type SectionWriteResult<Value = unknown> =
   { ok: true; value: Value } | { ok: false; error: SectionWriteError };
 
-function refused(code: string | undefined): SectionWriteResult<never> {
-  return {
-    ok: false,
-    error: { kind: code === UNIQUE_VIOLATION ? "name-taken" : "failed" },
-  };
+// Postgres's code for an error a trigger raises by name.
+const RAISED = "P0001";
+
+function refused(
+  code: string | undefined,
+  message = "",
+): SectionWriteResult<never> {
+  if (code === UNIQUE_VIOLATION)
+    return { ok: false, error: { kind: "name-taken" } };
+  if (code === RAISED && /^[a-z_]+$/.test(message)) {
+    return { ok: false, error: { kind: "refused", rule: message } };
+  }
+  return { ok: false, error: { kind: "failed" } };
 }
 
 const notFound: SectionWriteResult<never> = {
@@ -215,6 +275,140 @@ export async function findOwnerSection(
   return row.success
     ? { ...toSection(row.data), menuId: row.data.menu_id }
     : "failed";
+}
+
+// One section of the restaurant that is not deleted, as its own page reads
+// it: everything findOwnerSection reads, and its line's own allergens with
+// their check (D-152). The same things read the same: a section that is
+// not this owner's, a deleted one, and an id that matches nothing.
+export async function findOwnerSectionPage(
+  client: SupabaseClient,
+  restaurantId: string,
+  id: string,
+  viewer: string | null = null,
+): Promise<(OwnerSectionPage & { menuId: string }) | "not-found" | "failed"> {
+  const { data, error } = await client
+    .from("sections")
+    .select(pageColumns)
+    .eq("id", id)
+    .eq("restaurant_id", restaurantId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) return "failed";
+  if (!data) return "not-found";
+  const row = pageSchema.safeParse(data);
+  return row.success ? toSectionPage(row.data, viewer) : "failed";
+}
+
+// A Postgres array literal, for comparing an array column against the value
+// the page showed: {"milk","wheat"}. Every element is quoted, with its
+// quotes and backslashes escaped, so any name travels whole. The same as the
+// one in dishes.ts, its second use; the third lifts it (module rule 12).
+function arrayLiteral(values: readonly string[]): string {
+  const quoted = values.map(
+    (value) => `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`,
+  );
+  return `{${quoted.join(",")}}`;
+}
+
+// What a write on a section's line may set: its words, one or both of its
+// lists, or its check (D-152). Who and when are never written here: the
+// database stamps them.
+export type LinePatch = {
+  every_item?: string | null;
+  every_item_allergens?: readonly AllergenId[];
+  every_item_custom_allergens?: readonly string[];
+  every_item_allergens_reviewed?: boolean;
+};
+
+// What the section must still hold for the write to land (D-153): the
+// words the page showed, a string or null for a blank line, and the lists,
+// for every write in the line's group; the flag, for an uncheck. A miss
+// comes back as not found, which the caller reads as the line having
+// changed.
+export type LineExpected = {
+  words?: string | null;
+  lists?: AllergenLists;
+  every_item_allergens_reviewed?: boolean;
+};
+
+// Writes a section's line: its words, its allergen lists, or its check,
+// scoped to the menu the page read the section in, and lands only if the
+// section still holds what the page showed (D-153). The database clears the
+// check on any change to the words or a list, clears the lists and the check
+// when the words go, stamps who and when on a check, in the same statement
+// (migration 8), and answers with the row as it is now. A rule a trigger
+// refuses by name comes back as refused with that name.
+export async function writeOwnerSectionLine(
+  client: SupabaseClient,
+  menuId: string,
+  id: string,
+  viewer: string | null,
+  patch: LinePatch,
+  expected: LineExpected,
+): Promise<SectionWriteResult<OwnerSectionPage & { menuId: string }>> {
+  const values: Record<string, unknown> = {};
+  if (patch.every_item !== undefined) values.every_item = patch.every_item;
+  if (patch.every_item_allergens !== undefined) {
+    values.every_item_allergens = [...patch.every_item_allergens];
+  }
+  if (patch.every_item_custom_allergens !== undefined) {
+    values.every_item_custom_allergens = [...patch.every_item_custom_allergens];
+  }
+  if (patch.every_item_allergens_reviewed !== undefined) {
+    values.every_item_allergens_reviewed = patch.every_item_allergens_reviewed;
+  }
+  let update = client
+    .from("sections")
+    .update(values)
+    .eq("id", id)
+    .eq("menu_id", menuId)
+    .is("deleted_at", null);
+  if (expected.words !== undefined) {
+    update =
+      expected.words === null
+        ? update.is("every_item", null)
+        : update.eq("every_item", expected.words);
+  }
+  if (expected.lists) {
+    update = update
+      .eq("every_item_allergens", arrayLiteral(expected.lists.allergens))
+      .eq("every_item_custom_allergens", arrayLiteral(expected.lists.others));
+  }
+  if (expected.every_item_allergens_reviewed !== undefined) {
+    update = update.eq(
+      "every_item_allergens_reviewed",
+      expected.every_item_allergens_reviewed,
+    );
+  }
+  const { data, error } = await update.select(pageColumns).maybeSingle();
+  if (error) return refused(error.code, error.message);
+  if (!data) return notFound;
+  const row = pageSchema.safeParse(data);
+  return row.success
+    ? { ok: true, value: toSectionPage(row.data, viewer) }
+    : failed;
+}
+
+// The other allergens the restaurant's live sections' lines name, as
+// stored, repeats included; the domain ranks them with the dishes' (D-149).
+// A read that fails throws.
+export async function listOwnerLineOtherAllergenNames(
+  client: SupabaseClient,
+  restaurantId: string,
+): Promise<string[]> {
+  const { data, error } = await client
+    .from("sections")
+    .select("every_item_custom_allergens")
+    .eq("restaurant_id", restaurantId)
+    .is("deleted_at", null);
+  if (error) {
+    throw new Error(`other allergens could not be read: ${error.message}`);
+  }
+  return z
+    .array(z.object({ every_item_custom_allergens: z.array(z.string()) }))
+    .parse(data)
+    .flatMap((row) => row.every_item_custom_allergens);
 }
 
 // A new section goes last, with a name only. The trigger takes its

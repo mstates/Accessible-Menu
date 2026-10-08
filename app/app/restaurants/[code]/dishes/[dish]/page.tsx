@@ -13,12 +13,13 @@ import {
 import { findOwnerMenu, listOwnerMenuNames } from "@/core/supabase/menus";
 import {
   findOwnerSection,
+  listOwnerLineOtherAllergenNames,
   listOwnerSectionNames,
 } from "@/core/supabase/sections";
 import { listOwnerSizeNames, listOwnerSizes } from "@/core/supabase/sizes";
-import { sameAllergenLists } from "@/domain/allergens";
+import { rankOtherAllergenNames, sameAllergenLists } from "@/domain/allergens";
 import { nextDish } from "@/domain/dish";
-import type { SameNamedPlace } from "@/features/owner/dish/allergen-words";
+import type { SameNamedPlace } from "@/features/owner/allergens/allergen-words";
 import { DishPage } from "@/features/owner/dish/DishPage";
 import { loadRestaurant } from "@/features/owner/load-restaurant";
 import {
@@ -93,9 +94,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 // the part this page sits inside, and the breadcrumb above the h1 leads
 // back to the section, the menu, and Menus. The sizes, the section's
 // dishes, the restaurant's menus and sections, the size names in use, the
-// other allergens in use, and the same-named dishes are read on every
-// render, and every save ends with a refresh, so what the page shows is
-// what the server holds.
+// other allergens in use on dishes and on lines (D-152), and the
+// same-named dishes are read on every render, and every save ends with a
+// refresh, so what the page shows is what the server holds.
 export default async function RestaurantDishPage({ params }: Props) {
   const { code, dish: dishId } = await params;
   const { supabase, email, restaurant, dish, section, menu } = await loadDish(
@@ -104,16 +105,31 @@ export default async function RestaurantDishPage({ params }: Props) {
   );
   if (!email) redirect("/app/sign-in");
   if (!restaurant || !dish || !section || !menu) notFound();
-  const [sizes, dishes, menus, sections, sizeNames, otherNames, namesakes] =
-    await Promise.all([
-      listOwnerSizes(supabase, dish.id),
-      listOwnerDishes(supabase, section.id),
-      listOwnerMenuNames(supabase, restaurant.id),
-      listOwnerSectionNames(supabase, restaurant.id),
-      listOwnerSizeNames(supabase, restaurant.id),
-      listOwnerOtherAllergenNames(supabase, restaurant.id),
-      listOwnerSameNamedDishes(supabase, restaurant.id, dish.id, dish.name),
-    ]);
+  const [
+    sizes,
+    dishes,
+    menus,
+    sections,
+    sizeNames,
+    dishOtherNames,
+    lineOtherNames,
+    namesakes,
+  ] = await Promise.all([
+    listOwnerSizes(supabase, dish.id),
+    listOwnerDishes(supabase, section.id),
+    listOwnerMenuNames(supabase, restaurant.id),
+    listOwnerSectionNames(supabase, restaurant.id),
+    listOwnerSizeNames(supabase, restaurant.id),
+    listOwnerOtherAllergenNames(supabase, restaurant.id),
+    listOwnerLineOtherAllergenNames(supabase, restaurant.id),
+    listOwnerSameNamedDishes(supabase, restaurant.id, dish.id, dish.name),
+  ]);
+  // The restaurant's own other allergens, on dishes and on lines, most used
+  // first (D-149, D-152).
+  const otherNames = rankOtherAllergenNames([
+    ...dishOtherNames,
+    ...lineOtherNames,
+  ]);
   // Every other live section of a live menu, under its menu (D-129).
   const targets: SelectGroup[] = menus
     .map((other) => ({

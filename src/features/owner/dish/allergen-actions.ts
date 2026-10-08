@@ -9,6 +9,7 @@ import {
 } from "@/core/supabase/dishes";
 import {
   cleanOtherAllergen,
+  hasOtherAllergenComma,
   OTHER_ALLERGEN_LIMITS,
   otherAllergenProblem,
   sameListsAsStored,
@@ -18,9 +19,13 @@ import {
 import type { OwnerDishAllergens, OwnerDishDetail } from "@/domain/dish";
 import { nameKey } from "@/domain/menu";
 import { ALLERGEN_IDS, type AllergenId } from "@/domain/types";
-import type { ListProblem } from "../editing/list-words";
+import { majorRuleOf } from "../allergens/allergen-words";
+import type {
+  GroupApplyResult,
+  GroupProblem,
+  GroupResult,
+} from "../allergens/target";
 import { dishScope } from "../owner-scope";
-import { majorRuleOf, type ApplyProblem } from "./allergen-words";
 
 // A dish's allergens save through these (D-148): the major allergens
 // ticked, the other allergens typed, the check, and D-129's apply to a
@@ -38,26 +43,12 @@ import { majorRuleOf, type ApplyProblem } from "./allergen-words";
 // security decides whether the rows are this owner's. Nothing here can
 // publish (migration 3).
 
-type ServerProblem = Exclude<
-  ListProblem,
-  { kind: "unreachable" } | { kind: "out-of-date" }
->;
-
-// A write that found the dish holding other lists than the page showed.
-export type AllergenProblem = ServerProblem | { kind: "lists-changed" };
-
-export type AllergenResult =
-  | { ok: true; value: OwnerDishAllergens }
-  | { ok: false; problem: AllergenProblem };
-
-type ServerApplyProblem = Exclude<
-  ApplyProblem,
-  { kind: "unreachable" } | { kind: "out-of-date" }
->;
-
-export type ApplyResult =
-  | { ok: true; value: OwnerDishAllergens }
-  | { ok: false; problem: ServerApplyProblem };
+// The group's own result shapes (allergens/target.ts): a write that found
+// the dish holding other lists than the page showed is lists-changed.
+export type AllergenProblem = GroupProblem;
+export type AllergenResult = GroupResult;
+export type ApplyResult = GroupApplyResult;
+type ServerApplyProblem = Extract<ApplyResult, { ok: false }>["problem"];
 
 const idSchema = z.uuid();
 const listsSchema = z.object({
@@ -119,6 +110,8 @@ function fromWrite(error: DishWriteError): AllergenProblem {
           return { kind: "name-taken" };
         case "other_allergen_text":
           return { kind: "invalid", rule: "otherLength" };
+        case "other_allergen_comma":
+          return { kind: "invalid", rule: "otherComma" };
         case "other_allergen_major":
           return { kind: "invalid", rule: "otherMajor:both" };
         default:
@@ -173,6 +166,9 @@ export async function setDishOtherAllergens(
   }
   for (const [index, value] of cleaned.entries()) {
     if (value === "") return refuse({ kind: "invalid", rule: "otherRequired" });
+    if (hasOtherAllergenComma(value)) {
+      return refuse({ kind: "invalid", rule: "otherComma" });
+    }
     const major = majorRuleOf(value);
     if (major) return refuse({ kind: "invalid", rule: major });
     const rule = otherAllergenProblem(value, cleaned, index);

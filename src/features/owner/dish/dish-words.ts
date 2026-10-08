@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
-import { US_MAJOR_ALLERGENS } from "@/domain/allergens";
 import {
   DISH_TEXTS,
   PRICE_KINDS,
@@ -11,7 +10,14 @@ import {
   type PriceKind,
   type SizeText,
 } from "@/domain/dish";
-import { ALLERGEN_IDS } from "@/domain/types";
+import { allergenUndoLabel } from "../allergens/allergen-words";
+import {
+  allergenChangeSchema,
+  applyChangeSchema,
+  checkChangeSchema,
+  othersChangeSchema,
+  type UndoLists,
+} from "../allergens/group-undo";
 import {
   failureSentence,
   problemText,
@@ -21,7 +27,6 @@ import {
   type TextWords,
 } from "../editing/list-words";
 import type { UndoOutcome } from "../editing/undo";
-import { allergenUndoLabel } from "./allergen-words";
 
 // Every sentence a dish's page shows or speaks, built in one place from
 // copy, and the shape of its Undo entries (D-128, D-139). The page is the
@@ -33,15 +38,9 @@ import { allergenUndoLabel } from "./allergen-words";
 export type DishStrings = Copy["owner"]["dish"];
 export type MoveStrings = DishStrings["move"];
 
-// A dish's two allergen lists as an Undo entry remembers them (D-148): a
-// change to a list is taken back only while the dish still holds the lists
-// that change left, and a check is put back only on the lists it covered.
-const listsSchema = z.object({
-  allergens: z.array(z.enum(ALLERGEN_IDS)),
-  others: z.array(z.string()),
-});
-
-export type UndoLists = z.infer<typeof listsSchema>;
+// A dish's two allergen lists as an Undo entry remembers them (D-148), the
+// group's own shape (allergens/group-undo.ts).
+export type { UndoLists };
 
 // One change the owner can take back on a dish's page: a text of the dish,
 // its price choice, a text of a size, a size added or removed, the dish
@@ -96,40 +95,11 @@ export const dishUndoSchema = z.discriminatedUnion("kind", [
     }),
     to: z.object({ id: z.string(), name: z.string(), menu: z.string() }),
   }),
-  z.object({
-    kind: z.literal("allergen"),
-    id: z.string(),
-    name: z.string(),
-    allergen: z.enum(US_MAJOR_ALLERGENS),
-    on: z.boolean(),
-    before: listsSchema,
-    after: listsSchema,
-  }),
-  z.object({
-    kind: z.literal("others"),
-    id: z.string(),
-    name: z.string(),
-    before: listsSchema,
-    after: listsSchema,
-  }),
-  z.object({
-    kind: z.literal("check"),
-    id: z.string(),
-    name: z.string(),
-    on: z.boolean(),
-    lists: listsSchema,
-  }),
-  z.object({
-    kind: z.literal("apply"),
-    // The other dish, and where it is.
-    id: z.string(),
-    dish: z.string(),
-    section: z.string(),
-    menu: z.string(),
-    before: listsSchema.extend({ reviewed: z.boolean() }),
-    after: listsSchema,
-    at: z.string(),
-  }),
+  // The allergen group's own changes, in its shape (D-149).
+  allergenChangeSchema,
+  othersChangeSchema,
+  checkChangeSchema,
+  applyChangeSchema,
 ]);
 
 export type DishUndo = z.infer<typeof dishUndoSchema>;

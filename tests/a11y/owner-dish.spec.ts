@@ -27,7 +27,7 @@ import {
   dinerSentence,
   otherAction,
   otherSuffix,
-} from "../../src/features/owner/dish/allergen-words";
+} from "../../src/features/owner/allergens/allergen-words";
 import { US_MAJOR_ALLERGENS } from "../../src/domain/allergens";
 import { ownerEnv, ownerFixture } from "./owner-env";
 import { restaurantName } from "./pages";

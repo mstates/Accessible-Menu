@@ -5,7 +5,7 @@ import { DAY_KEYS } from "../../src/domain/hours";
 import {
   otherAction,
   otherLabel,
-} from "../../src/features/owner/dish/allergen-words";
+} from "../../src/features/owner/allergens/allergen-words";
 import {
   sizeAction,
   sizeLabel,
@@ -154,15 +154,42 @@ export async function menuControls(page: Page): Promise<Control[]> {
   ];
 }
 
+// A section's page: the breadcrumb's link to its menu, the rows' controls,
+// and, while the line shown with every dish has words, its allergen group's
+// buttons (D-152): each other allergen's two, named by the row as the page
+// shows it, and Add another allergen.
 export async function sectionControls(
   page: Page,
   menu: string,
 ): Promise<Control[]> {
   const words = en.owner.dishes;
+  const allergens = en.owner.dish.allergens;
+  const hasGroup =
+    (await page
+      .getByRole("checkbox", { name: allergens.checkLabel, exact: true })
+      .count()) > 0;
+  const otherNames = await page
+    .locator(`main ol[aria-label="${allergens.othersLabel}"] > li`)
+    .evaluateAll((rows) =>
+      rows.map(
+        (row) =>
+          row.querySelector<HTMLInputElement>('input[id$="-name"]')?.value ??
+          "",
+      ),
+    );
+  const others = otherNames.flatMap((name, index) => {
+    const label = otherLabel(allergens, name, index + 1);
+    return [
+      button(otherAction(allergens, allergens.showOtherNames, label)),
+      button(otherAction(allergens, allergens.removeOther, label)),
+    ];
+  });
   return [
     site,
     ...nav,
     link(menu),
+    ...others,
+    ...(hasGroup ? [button(allergens.addOther)] : []),
     ...(await rowControls(page, words, "dish", words.editDish)),
     button(words.move.submit),
   ];

@@ -7,7 +7,7 @@ import {
   dinerSentence,
   otherAction,
   otherSuffix,
-} from "../../src/features/owner/dish/allergen-words";
+} from "../../src/features/owner/allergens/allergen-words";
 import { restaurantDishPath } from "../../src/features/owner/paths";
 import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture, ownerStatePath } from "../a11y/owner-env";
@@ -294,7 +294,7 @@ test("the check says Saved. once, reads checked by you with the date in the rest
   expect((await row(dishes.market.id)).allergens_reviewed_at).toBeNull();
 });
 
-test("another allergen is added in the page only, a name that means one of the nine or runs long or repeats is refused unsent, a name that lands clears the check, and a rename and a remove are undone", async ({
+test("another allergen is added in the page only, a name that means one of the nine or runs long or holds a comma or repeats is refused unsent, a name that lands clears the check, and a rename and a remove are undone", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -342,6 +342,21 @@ test("another allergen is added in the page only, a name that means one of the n
     `${fill(allergens.notSaved.other, { other: fill(allergens.unnamedOther, { position: 1 }) })} ${allergens.errors.otherLength}`,
   );
   expect(await writesSoFar()).toBe(before);
+
+  // A comma reads as two allergens to a diner (D-151): refused unsent, in
+  // any of its three forms.
+  for (const name of [
+    "nuts, except almonds",
+    "nuts\uFF0C except almonds",
+    "nuts\u3001 except almonds",
+  ]) {
+    await first.fill(name);
+    await page.keyboard.press("Enter");
+    await expect(status(page)).toHaveText(
+      `${fill(allergens.notSaved.other, { other: fill(allergens.unnamedOther, { position: 1 }) })} ${allergens.errors.otherComma}`,
+    );
+    expect(await writesSoFar(), `a comma is not sent: ${name}`).toBe(before);
+  }
 
   await first.fill("celery");
   await page.keyboard.press("Enter");
