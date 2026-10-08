@@ -15,12 +15,15 @@ export const loadRestaurant = cache(async (rawCode: string) => {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase.auth.getClaims();
   const email = data?.claims.email ?? null;
-  if (!email) return { supabase, email, restaurant: null };
+  // The signed-in person, for what a page says about who did a thing (D-148).
+  const userId = data?.claims.sub ?? null;
+  if (!email) return { supabase, email, userId, restaurant: null };
   const code = normalizeMenuCode(rawCode);
-  if (!isMenuCode(code)) return { supabase, email, restaurant: null };
+  if (!isMenuCode(code)) return { supabase, email, userId, restaurant: null };
   return {
     supabase,
     email,
+    userId,
     restaurant: await getOwnerRestaurantByCode(supabase, code),
   };
 });

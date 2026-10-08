@@ -53,6 +53,7 @@ import {
   setDishText,
   setSizeText,
 } from "./actions";
+import type { SameNamedPlace } from "./allergen-words";
 import {
   dishUndoSchema,
   dishWords,
@@ -70,19 +71,22 @@ import {
   undoneSentence,
   type DishStrings,
   type DishUndo,
+  type TextUndo,
 } from "./dish-words";
+import { useDishAllergens } from "./useDishAllergens";
 
 // A dish's own page (D-111, D-128, D-139): the state and the handlers
-// behind its texts, its price choice, its sizes, and its Undo. The page has
-// texts and no list, so it does not use the shared list; it composes the
-// same editing state, the same Undo stack, and the same text-commit path
-// (texts.ts) the lists use, and keeps one queue, one saved status, and one
-// Undo for everything on it. The price choice saves on change and says
-// "Saved." once, as a field does (D-118); the other choices' values stay
-// stored and come back on switching back (Michael, October 7, 2026). A size
-// is added blank and takes focus in its name once it lands; a remove takes
-// effect at once, with Undo. Sizes keep the places the page showed them in
-// while the page is open (holdSizeOrder).
+// behind its texts, its price choice, its sizes, its allergens (D-148,
+// useDishAllergens), and its Undo. The page has texts and no list, so it
+// does not use the shared list; it composes the same editing state, the
+// same Undo stack, and the same text-commit path (texts.ts) the lists use,
+// and keeps one queue, one saved status, and one Undo for everything on
+// it. The price choice saves on change and says "Saved." once, as a field
+// does (D-118); the other choices' values stay stored and come back on
+// switching back (Michael, October 7, 2026). A size is added blank and
+// takes focus in its name once it lands; a remove takes effect at once,
+// with Undo. Sizes keep the places the page showed them in while the page
+// is open (holdSizeOrder).
 
 type Props = {
   strings: DishStrings;
@@ -92,6 +96,9 @@ type Props = {
   // The sizes as the server holds them, in price order. Every save ends
   // with a refresh, so this is always the truth.
   sizes: OwnerSize[];
+  // The live dishes elsewhere in the restaurant with this dish's name whose
+  // lists differ, or which are not checked (D-129).
+  sameNamed: SameNamedPlace[];
   // Says a sentence once the page shows the dish in that section.
   sayOnceIn: (sectionId: string, sentence: string) => void;
 };
@@ -121,6 +128,7 @@ export function useDishPage({
   code,
   dish,
   sizes,
+  sameNamed,
   sayOnceIn,
 }: Props) {
   const announce = useAnnounce();
@@ -187,6 +195,19 @@ export function useDishPage({
     if (active === element) return;
     if (active === null || active === document.body) element?.focus();
     else focusNext.current = null;
+  });
+
+  // The allergen group shares the page's editing state, Undo, and focus.
+  const allergens = useDishAllergens({
+    strings,
+    editingStrings,
+    code,
+    dish,
+    editor,
+    words,
+    announce,
+    focusNextRef: focusNext,
+    sameNamed,
   });
 
   function labelOf(size: OwnerSize, index: number): string {
@@ -360,10 +381,7 @@ export function useDishPage({
     | { ok: true; sentence: string | null }
     | { ok: false; outcome: Exclude<UndoOutcome, "applied">; sentence: string };
 
-  function notReversed(
-    entry: Exclude<DishUndo, { kind: "relocate" }>,
-    problem: ListProblem,
-  ): Reversed {
+  function notReversed(entry: TextUndo, problem: ListProblem): Reversed {
     return {
       ok: false,
       ...notUndoneSentence(strings, editingStrings, words, entry, problem),
@@ -455,6 +473,11 @@ export function useDishPage({
         );
         return { ok: true, sentence: null };
       }
+      case "allergen":
+      case "others":
+      case "check":
+      case "apply":
+        return allergens.reverse(entry);
     }
   }
 
@@ -494,6 +517,7 @@ export function useDishPage({
     editing.focusFirstFailed();
     const { failures } = editing.peek();
     for (const key of Object.keys(failures)) {
+      if (allergens.tryAgain(key, failures[key]?.value ?? "")) continue;
       if (key === KIND_KEY) {
         const failed = failures[key]?.value;
         if (failed === "one" || failed === "sizes" || failed === "market") {
@@ -539,6 +563,7 @@ export function useDishPage({
       add: addSize,
       remove: removeSize,
     },
+    allergens,
     undoNewest,
     tryAgain,
     // A change the page made that is not a text's goes on the same Undo

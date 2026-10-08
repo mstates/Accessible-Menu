@@ -31,7 +31,15 @@ export type ScopeProblem =
 type Refused = { ok: false; problem: ScopeProblem };
 
 export type OwnerScope =
-  { ok: true; client: SupabaseClient; restaurantId: string } | Refused;
+  | {
+      ok: true;
+      client: SupabaseClient;
+      restaurantId: string;
+      // The signed-in person, for what a page says about who did a thing:
+      // whether an allergen check is theirs (D-148).
+      userId: string;
+    }
+  | Refused;
 
 const idSchema = z.uuid();
 
@@ -48,11 +56,22 @@ export async function ownerScope(rawCode: string): Promise<OwnerScope> {
   const restaurant = await findOwnerRestaurantId(client, code);
   if (restaurant === "failed") return refuse("failed");
   if (restaurant === "not-found") return refuse("gone");
-  return { ok: true, client, restaurantId: restaurant.id };
+  return {
+    ok: true,
+    client,
+    restaurantId: restaurant.id,
+    userId: data.claims.sub,
+  };
 }
 
 export type MenuScope =
-  | { ok: true; client: SupabaseClient; restaurantId: string; menuId: string }
+  | {
+      ok: true;
+      client: SupabaseClient;
+      restaurantId: string;
+      userId: string;
+      menuId: string;
+    }
   | Refused;
 
 // The owner's session and restaurant, then the menu: one of this
@@ -81,6 +100,7 @@ export type SectionScope =
       ok: true;
       client: SupabaseClient;
       restaurantId: string;
+      userId: string;
       sectionId: string;
       // The menu the section is in now, which is not in the page's address:
       // a section can move (D-129).
@@ -121,6 +141,7 @@ export type DishScope =
       ok: true;
       client: SupabaseClient;
       restaurantId: string;
+      userId: string;
       dishId: string;
       // The section the dish is in now, and that section's menu, neither of
       // which is in the page's address: a dish can move (D-129).

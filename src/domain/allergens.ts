@@ -1,9 +1,10 @@
-import type {
-  AllergenId,
-  AllergenRegion,
-  Item,
-  PrepNoteId,
-  Restaurant,
+import {
+  ALLERGEN_IDS,
+  type AllergenId,
+  type AllergenRegion,
+  type Item,
+  type PrepNoteId,
+  type Restaurant,
 } from "./types";
 
 // The strings this module needs. The locale's copy object satisfies it.
@@ -19,7 +20,7 @@ export type AllergenCopy = {
 };
 
 // Q-4: the union is stored; the region decides which list owners see.
-export const US_MAJOR_ALLERGENS: readonly AllergenId[] = [
+export const US_MAJOR_ALLERGENS = [
   "milk",
   "eggs",
   "fish",
@@ -29,7 +30,9 @@ export const US_MAJOR_ALLERGENS: readonly AllergenId[] = [
   "wheat",
   "soy",
   "sesame",
-];
+] as const satisfies readonly AllergenId[];
+
+export type UsMajorAllergen = (typeof US_MAJOR_ALLERGENS)[number];
 
 export const EU_ALLERGENS: readonly AllergenId[] = [
   "milk",
@@ -121,4 +124,139 @@ export function confirmationLine(
     unconfirmed,
     text: template.replace("{count}", String(unconfirmed)),
   };
+}
+
+// The owner side (task 4, D-148). Owners in the US see the nine (D-94,
+// Q-4); an allergen the EU names is typed as another allergen, like any
+// other. Also table constraints and a trigger in the database (migration
+// 7), which is the boundary. These checks exist to name the field and the
+// message.
+export const OTHER_ALLERGEN_LIMITS = { length: 40, count: 10 } as const;
+
+export type OtherAllergenRule = "otherLength" | "otherTaken" | "otherMajor";
+
+// The words that mean one of the nine, each pointing at its box, so a name
+// typed as another allergen is sent to the box instead. "nuts" alone could
+// mean either, so it points at both (Michael, at approval). The migration
+// refuses the same words, and tests/unit keeps the two lists equal.
+export const MAJOR_ALLERGEN_WORDS: Readonly<
+  Record<string, readonly AllergenId[]>
+> = {
+  milk: ["milk"],
+  dairy: ["milk"],
+  egg: ["eggs"],
+  eggs: ["eggs"],
+  fish: ["fish"],
+  shellfish: ["shellfish"],
+  crustaceans: ["shellfish"],
+  "tree nut": ["tree-nuts"],
+  "tree nuts": ["tree-nuts"],
+  "tree-nuts": ["tree-nuts"],
+  nuts: ["peanuts", "tree-nuts"],
+  peanut: ["peanuts"],
+  peanuts: ["peanuts"],
+  wheat: ["wheat"],
+  soy: ["soy"],
+  soya: ["soy"],
+  soybean: ["soy"],
+  soybeans: ["soy"],
+  sesame: ["sesame"],
+};
+
+// Another allergen's name is one line, cleaned the way a menu's name is: a
+// pasted tab or line break becomes a space, and the outer space goes.
+export function cleanOtherAllergen(value: string): string {
+  return value.replace(/\p{Cc}+/gu, " ").trim();
+}
+
+// Names are compared the way the trigger compares them (migration 7): case
+// and outer spaces do not count.
+export function otherAllergenKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+// The boxes a typed name belongs to, or none.
+export function majorAllergensOf(name: string): readonly AllergenId[] {
+  return MAJOR_ALLERGEN_WORDS[otherAllergenKey(name)] ?? [];
+}
+
+// The rule a cleaned name breaks, or null when it can be saved. index is the
+// row's own place among others, or null for a new row, so a name never
+// collides with itself.
+export function otherAllergenProblem(
+  value: string,
+  others: readonly string[],
+  index: number | null,
+): OtherAllergenRule | null {
+  if (value.length > OTHER_ALLERGEN_LIMITS.length) return "otherLength";
+  if (majorAllergensOf(value).length > 0) return "otherMajor";
+  const key = otherAllergenKey(value);
+  const taken = others.some(
+    (other, at) => at !== index && otherAllergenKey(other) === key,
+  );
+  return taken ? "otherTaken" : null;
+}
+
+// The two lists a dish holds, as the page shows them and as a write carries
+// them (D-148): every write that changes or checks a list lands only if the
+// dish still holds the lists the page showed.
+export type AllergenLists = {
+  allergens: readonly AllergenId[];
+  others: readonly string[];
+};
+
+// The list with one major allergen ticked or unticked, in the fixed order
+// the boxes show, which is the order the enum declares.
+export function toggleAllergen(
+  list: readonly AllergenId[],
+  id: AllergenId,
+  on: boolean,
+): AllergenId[] {
+  const set = new Set(list);
+  if (on) set.add(id);
+  else set.delete(id);
+  return ALLERGEN_IDS.filter((candidate) => set.has(candidate));
+}
+
+// Whether two dishes read the same to a diner: the same major allergens,
+// whatever their order, and the same other names, whatever their case or
+// order. The same-named offer shows only when they differ (D-129).
+export function sameAllergenLists(a: AllergenLists, b: AllergenLists): boolean {
+  const majors = (lists: AllergenLists) =>
+    [...new Set(lists.allergens)].sort().join(",");
+  const others = (lists: AllergenLists) =>
+    [...new Set(lists.others.map(otherAllergenKey))].sort().join("\n");
+  return majors(a) === majors(b) && others(a) === others(b);
+}
+
+// Whether two lists are the same as stored, element for element: what the
+// apply compares before it writes, so its check never refuses itself over
+// the order of other allergens (Michael, at approval).
+export function sameListsAsStored(a: AllergenLists, b: AllergenLists): boolean {
+  return (
+    a.allergens.length === b.allergens.length &&
+    a.allergens.every((id, index) => b.allergens[index] === id) &&
+    a.others.length === b.others.length &&
+    a.others.every((name, index) => b.others[index] === name)
+  );
+}
+
+// The date a check was made, as the stamp line shows it, in the
+// restaurant's time zone: "October 8, 2026". A stamp that is not a date
+// reads as nothing, so a bad value never breaks the page.
+export function checkedOnDate(
+  at: string,
+  timeZone: string,
+  lang: string,
+): string {
+  const when = new Date(at);
+  if (Number.isNaN(when.getTime())) return "";
+  try {
+    return new Intl.DateTimeFormat(lang, {
+      dateStyle: "long",
+      timeZone,
+    }).format(when);
+  } catch {
+    return new Intl.DateTimeFormat(lang, { dateStyle: "long" }).format(when);
+  }
 }

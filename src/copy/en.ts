@@ -662,6 +662,161 @@ export const en = {
             "{dish} cannot go back while {section} has another dish called {dish}.",
         },
       },
+      // The dish's allergens and their check (task 4, D-148): the nine
+      // major allergens as boxes with a hint each, other allergens as typed
+      // rows, one box that checks the list, and the sentence diners read
+      // under it with who checked it and when. The same-named offer is
+      // D-129's. Every write that changes or checks a list carries the
+      // lists the page showed and lands only if the dish still holds them.
+      allergens: {
+        heading: "Allergens",
+        groupLabel: "Major allergens",
+        groupHint:
+          "Tick each major allergen this dish contains, add any others below, then check the list once it is complete.",
+        names: {
+          milk: "Milk",
+          eggs: "Eggs",
+          fish: "Fish",
+          shellfish: "Shellfish",
+          "tree-nuts": "Tree nuts",
+          peanuts: "Peanuts",
+          wheat: "Wheat",
+          soy: "Soy",
+          sesame: "Sesame",
+        },
+        // Each hint names the places an owner misses the allergen; none
+        // says a dish is safe.
+        hints: {
+          milk: "Butter, ghee, cheese, cream, yogurt, and whey count too.",
+          eggs: "Mayonnaise, aioli, meringue, and egg wash count too.",
+          fish: "Anchovies, fish sauce, and Worcestershire sauce count too.",
+          shellfish:
+            "Shrimp, crab, and lobster, and also clams, mussels, oysters, and scallops.",
+          "tree-nuts":
+            "Almonds, walnuts, pecans, cashews, pistachios, and pesto count too.",
+          peanuts: "Peanut oil, peanut butter, and satay sauce count too.",
+          wheat:
+            "Flour, bread crumbs, pasta, soy sauce, and beer batter count too.",
+          soy: "Soy sauce, tofu, edamame, miso, and tempeh count too.",
+          sesame: "Tahini, hummus, sesame oil, and seeds on buns count too.",
+        },
+        othersLabel: "Other allergens",
+        otherLabel: "Other allergen",
+        // Follows the field's label, so every row's field names its place:
+        // "Other allergen 2".
+        otherLabelFor: "{position}",
+        otherHint: "Like celery, mustard, or sulfites. One allergen per row.",
+        // A row with no name yet, as its buttons name it: "allergen 2".
+        unnamedOther: "allergen {position}",
+        // A row control's whole name: its visible label first, then its
+        // row.
+        otherAction: "{action}, {other}",
+        showOtherNames: "Show allergen names",
+        addOther: "Add another allergen",
+        removeOther: "Remove allergen",
+        otherAdded: "Other allergen {position} added.",
+        otherRemoved: "{other} removed. Undo is available.",
+        blankRemoved: "Other allergen {position} removed.",
+        othersFull: "A dish lists ten other allergens at most.",
+        // Suggested after the restaurant's own other allergens.
+        suggestions: [
+          "Celery",
+          "Mustard",
+          "Sulfites",
+          "Lupin",
+          "Gluten",
+          "Corn",
+          "Coconut",
+        ],
+        checkLabel: "The allergen list is complete",
+        checkHint:
+          "Check this once every allergen in this dish is listed above. A change to the list clears the check.",
+        dinersRead: "Diners read: {sentence}",
+        checkedByYou: "Checked by you on {date}.",
+        // While a check is on its way, before the stamp's date arrives.
+        checkedByYouNow: "Checked by you.",
+        checkedOn: "Checked on {date}.",
+        notChecked: "Not checked yet.",
+        cleared:
+          "Not checked since the list changed. Check it again once the list is complete.",
+        // Said after "Saved." when a change to a list clears the check.
+        clearedNow: "The list is not checked now.",
+        // A check, or a change to a list, found the dish holding other lists
+        // than the page showed: nothing was written, and the page shows the
+        // lists as they are now.
+        listsChanged:
+          "The allergen list changed since this page showed it, so it is not checked. Look at the list as it is now, then check it.",
+        listsMoved:
+          "The allergen list changed since this page showed it, so nothing was saved. Look at the list as it is now.",
+        // An uncheck found the dish unchecked already, from another tab or
+        // another device.
+        checkChanged:
+          "The check changed since this page showed it. The page shows it as it is now.",
+        sameNamed: {
+          different:
+            "{dish} is also in {section}, {menu}, with a different allergen list.",
+          unchecked: "{dish} is also in {section}, {menu}, not checked yet.",
+          apply: "Apply this list there",
+          // The button's whole name: its visible words first (WCAG 2.5.3).
+          applyTo: "{action}, {dish} in {section}, {menu}",
+          applied:
+            "Applied. {dish} in {section}, {menu} has this list, checked by you.",
+          errors: {
+            sourceChanged:
+              "This dish's list changed since this page showed it, so nothing was applied.",
+            sourceUnchecked:
+              "This dish is not checked now, so nothing was applied.",
+            targetChanged:
+              "{dish} in {section}, {menu} changed since this page loaded, so nothing was applied. Open its page to see it.",
+            targetGone:
+              "{dish} in {section}, {menu} is no longer there, so nothing was applied.",
+            failed: "Nothing was applied.",
+          },
+          undo: {
+            applied: "Undo: applied this list to {dish} in {section}, {menu}",
+            back: "Undone. {dish} in {section}, {menu} has its old list back. It is not checked now.",
+            backUnchanged: "Undone. {dish} in {section}, {menu} is as it was.",
+            changed:
+              "{dish} in {section}, {menu} has changed since, so it stays as it is.",
+          },
+        },
+        notSaved: {
+          allergens: "The allergens of {dish} were not saved.",
+          other: "{other} was not saved.",
+          check: "The allergen check for {dish} was not saved.",
+        },
+        notRemoved: "{other} was not removed.",
+        errors: {
+          otherRequired: "Type an allergen, or remove this row.",
+          otherLength: "Keep an allergen name to 40 characters.",
+          otherTaken: "This dish already lists {other}.",
+          otherMajor:
+            "{allergen} has its own box above. Tick it there instead.",
+          otherMajorBoth:
+            "Peanuts and Tree nuts have their own boxes above. Tick the one this dish has, or both.",
+        },
+        undo: {
+          ticked: "Undo: ticked {allergen} for {dish}",
+          unticked: "Undo: unticked {allergen} for {dish}",
+          tickedBack: "Undone. {allergen} is unticked again.",
+          untickedBack: "Undone. {allergen} is ticked again.",
+          otherAdded: "Undo: added {other}",
+          otherRemoved: "Undo: removed {other}",
+          otherRenamed: "Undo: renamed {from} to {to}",
+          othersChanged: "Undo: changed the other allergens for {dish}",
+          otherAddedBack: "Undone. {other} is removed.",
+          otherRemovedBack: "Undone. {other} is back.",
+          otherRenamedBack: "Undone. The name is {from} again.",
+          othersBack:
+            "Undone. The other allergens for {dish} are as they were.",
+          checked: "Undo: checked the allergens for {dish}",
+          unchecked: "Undo: unchecked the allergens for {dish}",
+          checkedBack: "Undone. The allergens for {dish} are not checked.",
+          uncheckedBack: "Undone. The allergens for {dish} are checked by you.",
+          listsChanged:
+            "The allergen list was changed again since, so nothing was undone.",
+        },
+      },
     },
   },
   directory: {
@@ -686,7 +841,7 @@ export const en = {
   },
   allergens: {
     names: {
-      milk: "dairy",
+      milk: "milk",
       eggs: "eggs",
       fish: "fish",
       shellfish: "shellfish",

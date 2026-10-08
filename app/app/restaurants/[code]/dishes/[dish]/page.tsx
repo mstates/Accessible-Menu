@@ -4,14 +4,21 @@ import { cache } from "react";
 import { z } from "zod";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
-import { findOwnerDish, listOwnerDishes } from "@/core/supabase/dishes";
+import {
+  findOwnerDish,
+  listOwnerDishes,
+  listOwnerOtherAllergenNames,
+  listOwnerSameNamedDishes,
+} from "@/core/supabase/dishes";
 import { findOwnerMenu, listOwnerMenuNames } from "@/core/supabase/menus";
 import {
   findOwnerSection,
   listOwnerSectionNames,
 } from "@/core/supabase/sections";
 import { listOwnerSizeNames, listOwnerSizes } from "@/core/supabase/sizes";
+import { sameAllergenLists } from "@/domain/allergens";
 import { nextDish } from "@/domain/dish";
+import type { SameNamedPlace } from "@/features/owner/dish/allergen-words";
 import { DishPage } from "@/features/owner/dish/DishPage";
 import { loadRestaurant } from "@/features/owner/load-restaurant";
 import {
@@ -39,7 +46,7 @@ const strings = en.owner.dish;
 // so it stays good when the dish moves (D-128, D-129); the section and the
 // menu are read from the dish every time.
 const loadDish = cache(async (rawCode: string, rawDish: string) => {
-  const { supabase, email, restaurant } = await loadRestaurant(rawCode);
+  const { supabase, email, userId, restaurant } = await loadRestaurant(rawCode);
   const nothing = {
     supabase,
     email,
@@ -51,7 +58,7 @@ const loadDish = cache(async (rawCode: string, rawDish: string) => {
   if (!email || !restaurant) return nothing;
   const id = z.uuid().safeParse(rawDish);
   if (!id.success) return nothing;
-  const dish = await findOwnerDish(supabase, restaurant.id, id.data);
+  const dish = await findOwnerDish(supabase, restaurant.id, id.data, userId);
   if (dish === "failed") throw new Error("the dish could not be read");
   if (dish === "not-found") return nothing;
   const section = await findOwnerSection(
@@ -79,15 +86,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 // One dish's own page (D-128): its description, its price (D-139), and its
-// note, its sizes, the link to the next dish, and its move to another
-// section (D-129). The page is named for the dish, in the title and in the
-// h1, and the title names its section and its menu right after it. Menus
-// stays marked in the restaurant's nav as the part this page sits inside,
-// and the breadcrumb above the h1 leads back to the section, the menu, and
-// Menus. The sizes, the section's dishes, the restaurant's menus and
-// sections, and the size names in use are read on every render, and every
-// save ends with a refresh, so what the page shows is what the server
-// holds.
+// note, its sizes, its allergens and their check (D-148), the link to the
+// next dish, and its move to another section (D-129). The page is named for
+// the dish, in the title and in the h1, and the title names its section and
+// its menu right after it. Menus stays marked in the restaurant's nav as
+// the part this page sits inside, and the breadcrumb above the h1 leads
+// back to the section, the menu, and Menus. The sizes, the section's
+// dishes, the restaurant's menus and sections, the size names in use, the
+// other allergens in use, and the same-named dishes are read on every
+// render, and every save ends with a refresh, so what the page shows is
+// what the server holds.
 export default async function RestaurantDishPage({ params }: Props) {
   const { code, dish: dishId } = await params;
   const { supabase, email, restaurant, dish, section, menu } = await loadDish(
@@ -96,13 +104,16 @@ export default async function RestaurantDishPage({ params }: Props) {
   );
   if (!email) redirect("/app/sign-in");
   if (!restaurant || !dish || !section || !menu) notFound();
-  const [sizes, dishes, menus, sections, sizeNames] = await Promise.all([
-    listOwnerSizes(supabase, dish.id),
-    listOwnerDishes(supabase, section.id),
-    listOwnerMenuNames(supabase, restaurant.id),
-    listOwnerSectionNames(supabase, restaurant.id),
-    listOwnerSizeNames(supabase, restaurant.id),
-  ]);
+  const [sizes, dishes, menus, sections, sizeNames, otherNames, namesakes] =
+    await Promise.all([
+      listOwnerSizes(supabase, dish.id),
+      listOwnerDishes(supabase, section.id),
+      listOwnerMenuNames(supabase, restaurant.id),
+      listOwnerSectionNames(supabase, restaurant.id),
+      listOwnerSizeNames(supabase, restaurant.id),
+      listOwnerOtherAllergenNames(supabase, restaurant.id),
+      listOwnerSameNamedDishes(supabase, restaurant.id, dish.id, dish.name),
+    ]);
   // Every other live section of a live menu, under its menu (D-129).
   const targets: SelectGroup[] = menus
     .map((other) => ({
@@ -113,6 +124,33 @@ export default async function RestaurantDishPage({ params }: Props) {
         .map((entry) => ({ id: entry.id, label: entry.name })),
     }))
     .filter((group) => group.items.length > 0);
+  // The same-named dishes the allergen check names (D-129): live dishes, in
+  // live sections of live menus, whose lists differ from this dish's as a
+  // diner reads them, or which are not checked. Where each one is comes
+  // from the same reads the move targets use.
+  const ownLists = { allergens: dish.allergens, others: dish.otherAllergens };
+  const sameNamed: SameNamedPlace[] = namesakes.flatMap((other) => {
+    const inSection = sections.find((entry) => entry.id === other.sectionId);
+    const inMenu = inSection
+      ? menus.find((entry) => entry.id === inSection.menuId)
+      : undefined;
+    if (!inSection || !inMenu) return [];
+    const lists = { allergens: other.allergens, others: other.otherAllergens };
+    if (other.reviewed && sameAllergenLists(lists, ownLists)) return [];
+    return [
+      {
+        id: other.id,
+        name: other.name,
+        section: inSection.name,
+        menu: inMenu.name,
+        lists,
+        reviewed: other.reviewed,
+        reason: other.reviewed
+          ? ("different" as const)
+          : ("unchecked" as const),
+      },
+    ];
+  });
 
   return (
     <PageFrame
@@ -160,6 +198,9 @@ export default async function RestaurantDishPage({ params }: Props) {
           note: dish.note,
           priceKind: dish.priceKind,
           price: dish.price,
+          allergens: dish.allergens,
+          otherAllergens: dish.otherAllergens,
+          check: dish.check,
         }}
         section={{ id: section.id, name: section.name }}
         menu={menu}
@@ -167,6 +208,11 @@ export default async function RestaurantDishPage({ params }: Props) {
         sizeNames={sizeNames}
         next={nextDish(dishes, dish.id)}
         targets={targets}
+        allergenCopy={en.allergens}
+        otherNames={otherNames}
+        sameNamed={sameNamed}
+        timeZone={restaurant.timezone}
+        lang={en.lang}
       />
     </PageFrame>
   );

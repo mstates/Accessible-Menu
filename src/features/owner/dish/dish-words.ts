@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
+import { US_MAJOR_ALLERGENS } from "@/domain/allergens";
 import {
   DISH_TEXTS,
   PRICE_KINDS,
@@ -10,6 +11,7 @@ import {
   type PriceKind,
   type SizeText,
 } from "@/domain/dish";
+import { ALLERGEN_IDS } from "@/domain/types";
 import {
   failureSentence,
   problemText,
@@ -19,23 +21,38 @@ import {
   type TextWords,
 } from "../editing/list-words";
 import type { UndoOutcome } from "../editing/undo";
+import { allergenUndoLabel } from "./allergen-words";
 
 // Every sentence a dish's page shows or speaks, built in one place from
 // copy, and the shape of its Undo entries (D-128, D-139). The page is the
 // dish, so its labels do not name it; every sentence the log says does,
 // since a sentence is heard on its own. A size's texts are named for their
-// size. Pure: no React, no network.
+// size. The allergen group's own sentences are in allergen-words.ts
+// (D-148). Pure: no React, no network.
 
 export type DishStrings = Copy["owner"]["dish"];
 export type MoveStrings = DishStrings["move"];
 
+// A dish's two allergen lists as an Undo entry remembers them (D-148): a
+// change to a list is taken back only while the dish still holds the lists
+// that change left, and a check is put back only on the lists it covered.
+const listsSchema = z.object({
+  allergens: z.array(z.enum(ALLERGEN_IDS)),
+  others: z.array(z.string()),
+});
+
+export type UndoLists = z.infer<typeof listsSchema>;
+
 // One change the owner can take back on a dish's page: a text of the dish,
-// its price choice, a text of a size, a size added or removed, and the dish
-// moved to another section. A changed text remembers both texts and is
-// taken back only while the field still holds the one that change wrote.
-// A removed size remembers the order the page showed, so Undo puts it back
-// in its place. A move remembers the section the dish came from and the
-// order that section had.
+// its price choice, a text of a size, a size added or removed, the dish
+// moved to another section, a major allergen ticked or unticked, the other
+// allergens changed, the list checked or unchecked, and this dish's lists
+// applied to a same-named dish (D-129). A changed text remembers both texts
+// and is taken back only while the field still holds the one that change
+// wrote. A removed size remembers the order the page showed, so Undo puts
+// it back in its place. A move remembers the section the dish came from and
+// the order that section had. An apply remembers the other dish's lists
+// and check as they were, and the stamp the apply made.
 export const dishUndoSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("own"),
@@ -79,9 +96,52 @@ export const dishUndoSchema = z.discriminatedUnion("kind", [
     }),
     to: z.object({ id: z.string(), name: z.string(), menu: z.string() }),
   }),
+  z.object({
+    kind: z.literal("allergen"),
+    id: z.string(),
+    name: z.string(),
+    allergen: z.enum(US_MAJOR_ALLERGENS),
+    on: z.boolean(),
+    before: listsSchema,
+    after: listsSchema,
+  }),
+  z.object({
+    kind: z.literal("others"),
+    id: z.string(),
+    name: z.string(),
+    before: listsSchema,
+    after: listsSchema,
+  }),
+  z.object({
+    kind: z.literal("check"),
+    id: z.string(),
+    name: z.string(),
+    on: z.boolean(),
+    lists: listsSchema,
+  }),
+  z.object({
+    kind: z.literal("apply"),
+    // The other dish, and where it is.
+    id: z.string(),
+    dish: z.string(),
+    section: z.string(),
+    menu: z.string(),
+    before: listsSchema.extend({ reviewed: z.boolean() }),
+    after: listsSchema,
+    at: z.string(),
+  }),
 ]);
 
 export type DishUndo = z.infer<typeof dishUndoSchema>;
+
+// The entries the allergen group leaves, which it takes back itself.
+export type AllergenUndo = Extract<
+  DishUndo,
+  { kind: "allergen" | "others" | "check" | "apply" }
+>;
+
+// The entries whose Undo the page's texts and sizes take back.
+export type TextUndo = Exclude<DishUndo, AllergenUndo | { kind: "relocate" }>;
 
 // The words the dish's own texts are committed, failed, and said in
 // (texts.ts): the page's rules and errors, with the dish as the placeholder
@@ -275,15 +335,18 @@ export function undoLabel(strings: DishStrings, entry: DishUndo): string {
         dish: entry.name,
         section: entry.to.name,
       });
+    case "allergen":
+    case "others":
+    case "check":
+    case "apply":
+      return allergenUndoLabel(strings.allergens, entry);
   }
 }
 
 // What Undo says once it has put a change back. A move's own sentence is
-// said by the page, once the page shows the dish back in its section.
-export function undoneSentence(
-  strings: DishStrings,
-  entry: Exclude<DishUndo, { kind: "relocate" }>,
-): string {
+// said by the page, once the page shows the dish back in its section, and
+// the allergen group says its own (allergen-words.ts).
+export function undoneSentence(strings: DishStrings, entry: TextUndo): string {
   switch (entry.kind) {
     case "own":
       return fill(strings.undo[`${entry.field}Back`], { dish: entry.name });
@@ -314,7 +377,7 @@ export function notUndoneSentence(
   strings: DishStrings,
   editing: EditingStrings,
   words: TextWords,
-  entry: Exclude<DishUndo, { kind: "relocate" }>,
+  entry: TextUndo,
   problem: ListProblem,
 ): { outcome: Exclude<UndoOutcome, "applied">; sentence: string } {
   if (problem.kind === "grew" && entry.kind === "size-add") {

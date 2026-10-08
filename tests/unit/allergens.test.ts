@@ -1,14 +1,34 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { en } from "../../src/copy";
 import {
   allergenSentence,
   allergensForRegion,
+  checkedOnDate,
+  cleanOtherAllergen,
   confirmationLine,
   EU_ALLERGENS,
+  MAJOR_ALLERGEN_WORDS,
+  majorAllergensOf,
+  OTHER_ALLERGEN_LIMITS,
+  otherAllergenProblem,
   restaurantAllergenNote,
+  sameAllergenLists,
+  sameListsAsStored,
+  toggleAllergen,
   US_MAJOR_ALLERGENS,
 } from "../../src/domain/allergens";
 import { ALLERGEN_IDS, type AllergenId } from "../../src/domain/types";
+
+const root = fileURLToPath(new URL("../../", import.meta.url));
+const dir = join(root, "supabase/migrations");
+const sql = readdirSync(dir)
+  .filter((name) => name.endsWith(".sql"))
+  .sort()
+  .map((name) => readFileSync(join(dir, name), "utf8"))
+  .join("\n");
 
 const copy = en.allergens;
 
@@ -44,8 +64,8 @@ describe("the three allergen sentences (D-35)", () => {
     expect(sentence.kind).toBe("contains");
     if (sentence.kind !== "contains") return;
     expect(sentence.lead).toBe("Contains");
-    expect(sentence.words).toEqual(["peanuts", "dairy"]);
-    expect(sentence.text).toBe("Contains peanuts, dairy.");
+    expect(sentence.words).toEqual(["peanuts", "milk"]);
+    expect(sentence.text).toBe("Contains peanuts, milk.");
   });
 
   it("appends custom allergens after the fixed ones", () => {
@@ -141,5 +161,80 @@ describe("allergen lists by region (Q-4)", () => {
     for (const id of ALLERGEN_IDS) {
       expect(copy.names[id].length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("the owner's lists (D-148)", () => {
+  it("ticks and unticks a major allergen in the fixed order", () => {
+    expect(toggleAllergen([], "wheat", true)).toEqual(["wheat"]);
+    expect(toggleAllergen(["wheat"], "milk", true)).toEqual(["milk", "wheat"]);
+    expect(toggleAllergen(["milk", "wheat"], "wheat", false)).toEqual(["milk"]);
+    expect(toggleAllergen(["milk", "milk"], "milk", true)).toEqual(["milk"]);
+  });
+
+  it("cleans another allergen's name like a menu name", () => {
+    expect(cleanOtherAllergen("  celery\tseed ")).toBe("celery seed");
+  });
+
+  it("refuses a long name, a name that means one of the nine, and a repeat whatever the case", () => {
+    expect(otherAllergenProblem("x".repeat(41), [], null)).toBe("otherLength");
+    expect(otherAllergenProblem("x".repeat(40), [], null)).toBeNull();
+    expect(otherAllergenProblem("Milk", [], null)).toBe("otherMajor");
+    expect(otherAllergenProblem("dairy", [], null)).toBe("otherMajor");
+    expect(otherAllergenProblem("celery", ["Celery"], null)).toBe("otherTaken");
+    expect(otherAllergenProblem("celery", ["Celery"], 0)).toBeNull();
+    expect(otherAllergenProblem("mustard", ["celery"], null)).toBeNull();
+    expect(OTHER_ALLERGEN_LIMITS).toEqual({ length: 40, count: 10 });
+  });
+
+  it("points a word at its box, and nuts at both", () => {
+    expect(majorAllergensOf("Tree Nuts")).toEqual(["tree-nuts"]);
+    expect(majorAllergensOf("nuts")).toEqual(["peanuts", "tree-nuts"]);
+    expect(majorAllergensOf("kiwi")).toEqual([]);
+  });
+
+  it("reads two lists the same as a diner does, whatever the order or case, and as stored only element for element", () => {
+    const a = {
+      allergens: ["milk", "wheat"] as AllergenId[],
+      others: ["Celery"],
+    };
+    const b = {
+      allergens: ["wheat", "milk"] as AllergenId[],
+      others: ["celery"],
+    };
+    expect(sameAllergenLists(a, b)).toBe(true);
+    expect(sameListsAsStored(a, b)).toBe(false);
+    expect(sameListsAsStored(a, { ...a })).toBe(true);
+    expect(
+      sameAllergenLists(a, { allergens: ["milk"], others: ["celery"] }),
+    ).toBe(false);
+  });
+
+  it("reads a check's date in the restaurant's time zone, and a bad stamp as nothing", () => {
+    expect(
+      checkedOnDate("2026-10-08T03:30:00+00:00", "America/New_York", "en"),
+    ).toBe("October 7, 2026");
+    expect(
+      checkedOnDate("2026-10-08T03:30:00+00:00", "Pacific/Honolulu", "en"),
+    ).toBe("October 7, 2026");
+    expect(checkedOnDate("not a date", "America/New_York", "en")).toBe("");
+  });
+
+  it("offers the nine the migration allows, and refuses the words the migration refuses", () => {
+    const offered = sql.match(
+      /items_allergens_offered check \(\s*allergens <@ '\{([^}]+)\}'::public\.allergen\[\]/,
+    );
+    expect(offered).not.toBeNull();
+    expect((offered?.[1] ?? "").split(",")).toEqual([...US_MAJOR_ALLERGENS]);
+    const refused = sql.match(/raise exception 'other_allergen_major'[\s\S]*$/);
+    const words = sql.match(
+      /if lower\(other\) = any \(array\[([\s\S]*?)\]\) then\s+raise exception 'other_allergen_major'/,
+    );
+    expect(refused).not.toBeNull();
+    expect(words).not.toBeNull();
+    const inSql = [...(words?.[1] ?? "").matchAll(/'([^']+)'/g)].map(
+      (found) => found[1],
+    );
+    expect(inSql).toEqual(Object.keys(MAJOR_ALLERGEN_WORDS));
   });
 });

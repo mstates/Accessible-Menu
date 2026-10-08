@@ -17,25 +17,37 @@ import {
 } from "./checks";
 import {
   breadcrumbMarks,
+  checkboxMarks,
   dishControls,
   formMarks,
   radioMarks,
 } from "./owner-controls";
+import {
+  dinersReadText,
+  dinerSentence,
+  otherAction,
+  otherSuffix,
+} from "../../src/features/owner/dish/allergen-words";
+import { US_MAJOR_ALLERGENS } from "../../src/domain/allergens";
 import { ownerEnv, ownerFixture } from "./owner-env";
 import { restaurantName } from "./pages";
 import { expectWrites, guardWrites } from "./write-guard";
 
-// A dish's own page (D-128, D-139), signed in as the test owner (D-100), on
-// the three dishes the data file priced one way each: by size, at one
-// price, and at market price. The gate never writes and never types into a
-// field that saves when it is left (D-108, D-111, D-115): every test here
-// runs behind the write guard. Two tests press a control that saves, a
-// radio and Add a size, and say they expect a write; the guard answers it
-// inside the browser as an action the server does not know, which is how
-// the failed state is reached. Real saves, "Saved." (D-118), a size that
-// lands, a name chosen from the suggestions, Undo with something to undo,
-// and a dish that really moves are covered by tests/local, by the unit
-// tests, by the boundary scripts, and by hand.
+// A dish's own page (D-128, D-139, D-148), signed in as the test owner
+// (D-100), on the three dishes the data file priced one way each: by size,
+// at one price, and at market price, which it also listed one way each:
+// the first checked with milk, wheat, and celery, the second checked with
+// none, the third not checked, and a second Soup of the day in Mains for
+// the same-named line (D-129). The gate never writes and never types into
+// a field that saves when it is left (D-108, D-111, D-115): every test
+// here runs behind the write guard. The tests that press a control that
+// saves, a radio, Add a size, a box, say they expect a write; the guard
+// answers it inside the browser as an action the server does not know,
+// which is how the failed state is reached. Real saves, "Saved." (D-118),
+// a size that lands, a name chosen from the suggestions, a check that
+// lands with its stamp, a list that moved under the page, the apply, Undo
+// with something to undo, and a dish that really moves are covered by
+// tests/local, by the unit tests, by the boundary scripts, and by hand.
 //
 // A dish's page is named by its id, which the setup finds and writes down,
 // so every path here is read when a test runs, never when this file loads.
@@ -54,13 +66,20 @@ function dishPath(which: Priced): string {
   return restaurantDishPath(code, ownerFixture().dishes[which].id);
 }
 
+const controls = (page: Page) =>
+  dishControls(
+    page,
+    ownerFixture().withSections.name,
+    ownerFixture().withDishes.name,
+  );
 const checks = {
-  controls: (page: Page) =>
-    dishControls(
-      page,
-      ownerFixture().withSections.name,
-      ownerFixture().withDishes.name,
-    ),
+  controls,
+  marks: [...breadcrumbMarks, ...formMarks, ...radioMarks, ...checkboxMarks],
+};
+// The market price dish has nothing ticked and is not checked, so no box
+// draws a mark there.
+const unchecked = {
+  controls,
   marks: [...breadcrumbMarks, ...formMarks, ...radioMarks],
 };
 
@@ -73,7 +92,7 @@ test.describe("a dish's page, at one price", () => {
 });
 
 test.describe("a dish's page, at market price", () => {
-  pageChecks(() => dishPath("market"), checks);
+  pageChecks(() => dishPath("market"), unchecked);
 });
 
 function savedStatus(page: Page) {
@@ -132,6 +151,64 @@ function addSizeButton(page: Page) {
 
 function moveButton(page: Page) {
   return page.getByRole("button", { name: strings.move.submit, exact: true });
+}
+
+const allergens = strings.allergens;
+
+function majorGroup(page: Page) {
+  return page.getByRole("group", { name: allergens.groupLabel, exact: true });
+}
+
+function box(page: Page, name: string) {
+  return page.getByRole("checkbox", { name, exact: true });
+}
+
+function checkBox(page: Page) {
+  return box(page, allergens.checkLabel);
+}
+
+function otherRows(page: Page) {
+  return page.locator(`main ol[aria-label="${allergens.othersLabel}"] > li`);
+}
+
+function addOtherButton(page: Page) {
+  return page.getByRole("button", { name: allergens.addOther, exact: true });
+}
+
+function sentenceLine(page: Page) {
+  return page.locator("#dish-allergen-sentence");
+}
+
+// The check box is described by its hint and by the sentence under it, the
+// sentence diners will read and then the stamp line.
+function checkDescription(sentence: string, stamp: string | RegExp) {
+  const head = `${allergens.checkHint} ${sentence} `;
+  return stamp instanceof RegExp
+    ? new RegExp(`^${escape(head)}${stamp.source}$`)
+    : `${head}${stamp}`;
+}
+
+function escape(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const checkedByYou = /Checked by you on [A-Z][a-z]+ \d{1,2}, \d{4}\./;
+
+function reads(
+  lists: { allergens: readonly string[]; others: string[] },
+  checked: boolean,
+) {
+  return dinersReadText(
+    allergens,
+    dinerSentence(
+      en.allergens,
+      {
+        allergens: lists.allergens as (typeof US_MAJOR_ALLERGENS)[number][],
+        others: lists.others,
+      },
+      checked,
+    ),
+  );
 }
 
 // The Select's trigger. React Aria names it by its label and its value.
@@ -218,11 +295,13 @@ test("a dish's page is named for its dish, its title names its section and its m
   );
 });
 
-// D-128 and D-139, and WCAG 3.3.2: the sentence that says how the page
-// saves comes right after the h1, then the description, the price heading
-// naming its group, the choice's own fields, the note, the status, the next
-// dish, and the move.
-test("the page reads in order: the lead, the description, the price group under its heading with three choices, the sizes, the note, the status, the next dish, and the move", async ({
+// D-128, D-139, and D-148, and WCAG 3.3.2: the sentence that says how the
+// page saves comes right after the h1, then the description, the price
+// heading naming its group, the choice's own fields, the note, the allergen
+// heading, its group of nine, the other-allergen rows and Add another
+// allergen, the check and its sentence, the status, the next dish, and the
+// move.
+test("the page reads in order: the lead, the description, the price group under its heading with three choices, the sizes, the note, the allergens under their heading, the status, the next dish, and the move", async ({
   page,
 }) => {
   await openDish(page, "sizes");
@@ -262,12 +341,280 @@ test("the page reads in order: the lead, the description, the price group under 
       sizeRows(page).first(),
       addSizeButton(page),
       noteField(page),
+      main.getByRole("heading", { level: 2, name: allergens.heading }),
+      main.getByText(allergens.groupHint, { exact: true }),
+      majorGroup(page),
+      otherRows(page).first(),
+      addOtherButton(page),
+      checkBox(page),
+      sentenceLine(page),
       savedStatus(page),
       main.locator('a[href*="/dishes/"]'),
       main.getByRole("heading", { level: 2, name: strings.move.heading }),
     ],
-    "the h1, the lead, the description, the price heading, its group, the sizes, Add a size, the note, the status, the next dish, then the move, in that order",
+    "the h1, the lead, the description, the price heading, its group, the sizes, Add a size, the note, the allergen heading, the nine, the other allergens, Add another allergen, the check, its sentence, the status, the next dish, then the move, in that order",
   );
+});
+
+// D-148: the nine in the FDA's order, each with its hint; the other
+// allergens as rows named by their place; the check described by its hint
+// and by the sentence diners will read, with who checked it and when; and
+// the three dishes as the data file listed them.
+test("the allergen group shows the nine with their hints, the other allergens as rows, and the check described by the sentence diners read, on each of the three dishes", async ({
+  page,
+}) => {
+  const { dishes } = ownerFixture();
+  await openDish(page, "sizes");
+  const group = majorGroup(page);
+  await expect(group).toHaveCount(1);
+  await expect(
+    group,
+    "the lead is a paragraph before the group, not its description, or every box would read it",
+  ).toHaveAccessibleDescription("");
+  const boxes = group.getByRole("checkbox");
+  await expect(boxes, "nine boxes, in the FDA's order").toHaveCount(9);
+  for (const [index, id] of US_MAJOR_ALLERGENS.entries()) {
+    await expect(boxes.nth(index)).toHaveAccessibleName(allergens.names[id]);
+    await expect(boxes.nth(index)).toHaveAccessibleDescription(
+      allergens.hints[id],
+    );
+  }
+  for (const id of US_MAJOR_ALLERGENS) {
+    const ticked = id === "milk" || id === "wheat";
+    await expect(
+      box(page, allergens.names[id]),
+      `${id} ${ticked ? "ticked" : "not ticked"} on the soup`,
+    ).toBeChecked({ checked: ticked });
+  }
+  const rows = otherRows(page);
+  await expect(rows, "the soup lists one other allergen").toHaveCount(1);
+  const field = page.getByRole("combobox", {
+    name: `${allergens.otherLabel} ${otherSuffix(allergens, 1)}`,
+    exact: true,
+  });
+  await expect(field).toHaveCount(1);
+  await expect(field).toHaveValue("celery");
+  await expect(field).toHaveAccessibleDescription(allergens.otherHint);
+  for (const action of [allergens.showOtherNames, allergens.removeOther]) {
+    await expect(
+      page.getByRole("button", {
+        name: otherAction(allergens, action, "celery"),
+        exact: true,
+      }),
+    ).toHaveCount(1);
+  }
+  await expect(addOtherButton(page)).toHaveCount(1);
+  await expect(addOtherButton(page)).not.toHaveAttribute("aria-disabled");
+  await expect(checkBox(page)).toBeChecked();
+  await expect(checkBox(page)).toHaveAccessibleDescription(
+    checkDescription(
+      reads({ allergens: ["milk", "wheat"], others: ["celery"] }, true),
+      checkedByYou,
+    ),
+  );
+  await expect(
+    sentenceLine(page).locator("strong"),
+    "the allergen words are bold, as on the diner page",
+  ).toHaveText(["milk", "wheat", "celery"]);
+  // The same-named line (D-129): the data file's second Soup of the day,
+  // in Mains, not checked.
+  const line = page
+    .locator("main")
+    .getByText(new RegExp(`^${escape(dishes.sizes.name)} is also in `));
+  await expect(line).toHaveCount(1);
+  await expect(line).toHaveText(/, not checked yet\.$/);
+  const apply = page.getByRole("button", {
+    name: new RegExp(
+      `^${escape(allergens.sameNamed.apply)}, ${escape(dishes.sizes.name)} in `,
+    ),
+  });
+  await expect(apply).toHaveCount(1);
+  await expect(apply, "the visible words come first").toHaveText(
+    allergens.sameNamed.apply,
+  );
+
+  await openDish(page, "one");
+  for (const id of US_MAJOR_ALLERGENS) {
+    await expect(box(page, allergens.names[id])).not.toBeChecked();
+  }
+  await expect(otherRows(page)).toHaveCount(0);
+  await expect(checkBox(page)).toBeChecked();
+  await expect(checkBox(page)).toHaveAccessibleDescription(
+    checkDescription(reads({ allergens: [], others: [] }, true), checkedByYou),
+  );
+  await expect(page.locator('main button[id^="dish-apply-"]')).toHaveCount(0);
+
+  await openDish(page, "market");
+  await expect(checkBox(page)).not.toBeChecked();
+  await expect(checkBox(page)).toHaveAccessibleDescription(
+    checkDescription(
+      reads({ allergens: [], others: [] }, false),
+      allergens.notChecked,
+    ),
+  );
+  await expect(page.locator('main button[id^="dish-apply-"]')).toHaveCount(0);
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+// A tick saves at once, as the price choice does. The box shows at once
+// while its save waits, so the write is held to look at it there; once
+// released, the guard answers it, the save fails, and the box goes back.
+// The sentence under the check follows the boxes, so the ids it ties are
+// looked at after each change (D-147).
+test("a tick shows at once, is refused once when it cannot land, goes back, and nothing points at a missing id either way", async ({
+  page,
+}) => {
+  const writes = expectWrites(page, { hold: true });
+  const { dishes } = ownerFixture();
+  await openDish(page, "market");
+  await page.getByText(allergens.names.milk, { exact: true }).click();
+  await expect(box(page, allergens.names.milk)).toBeChecked();
+  await expect(
+    checkBox(page),
+    "an unchecked dish reads not confirmed whatever its list holds",
+  ).toHaveAccessibleDescription(
+    checkDescription(
+      reads({ allergens: ["milk"], others: [] }, false),
+      allergens.notChecked,
+    ),
+  );
+  await expectNoMissingIds(page);
+
+  writes.release();
+  const failure = `${fill(allergens.notSaved.allergens, {
+    dish: dishes.market.name,
+  })} ${editing.problems.outOfDate}`;
+  await expect(savedStatus(page)).toHaveText(failure);
+  await expect(
+    log(page).getByText(failure, { exact: true }),
+    "the failure is said once",
+  ).toHaveCount(1);
+  await expect(
+    box(page, allergens.names.milk),
+    "the box is back",
+  ).not.toBeChecked();
+  await expect(box(page, allergens.names.milk)).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  expect(writes.answered.length).toBeGreaterThan(0);
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+test("a tick on a checked dish clears the check at once and says so in the sentence, and the check comes back when the tick cannot land", async ({
+  page,
+}) => {
+  const writes = expectWrites(page, { hold: true });
+  await openDish(page, "sizes");
+  await page.getByText(allergens.names.sesame, { exact: true }).click();
+  await expect(box(page, allergens.names.sesame)).toBeChecked();
+  await expect(checkBox(page), "the check clears at once").not.toBeChecked();
+  await expect(checkBox(page)).toHaveAccessibleDescription(
+    checkDescription(
+      reads(
+        { allergens: ["milk", "wheat", "sesame"], others: ["celery"] },
+        false,
+      ),
+      allergens.cleared,
+    ),
+  );
+  await expect(
+    page.locator('main button[id^="dish-apply-"]'),
+    "the same-named line goes while the dish is not checked",
+  ).toHaveCount(0);
+  await expectNoMissingIds(page);
+
+  writes.release();
+  await expect(box(page, allergens.names.sesame)).not.toBeChecked();
+  await expect(checkBox(page), "the check is back").toBeChecked();
+  await expect(checkBox(page)).toHaveAccessibleDescription(
+    checkDescription(
+      reads({ allergens: ["milk", "wheat"], others: ["celery"] }, true),
+      checkedByYou,
+    ),
+  );
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+test("the check shows at once as checked by you, and goes back when it cannot land", async ({
+  page,
+}) => {
+  const writes = expectWrites(page, { hold: true });
+  const { dishes } = ownerFixture();
+  await openDish(page, "market");
+  await page.getByText(allergens.checkLabel, { exact: true }).click();
+  await expect(checkBox(page)).toBeChecked();
+  await expect(checkBox(page)).toHaveAccessibleDescription(
+    checkDescription(
+      reads({ allergens: [], others: [] }, true),
+      allergens.checkedByYouNow,
+    ),
+  );
+  await expectNoMissingIds(page);
+
+  writes.release();
+  const failure = `${fill(allergens.notSaved.check, {
+    dish: dishes.market.name,
+  })} ${editing.problems.outOfDate}`;
+  await expect(savedStatus(page)).toHaveText(failure);
+  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
+  await expect(checkBox(page)).not.toBeChecked();
+  await expect(
+    checkBox(page),
+    "the hint, the sentence, then the problem",
+  ).toHaveAccessibleDescription(
+    `${checkDescription(
+      reads({ allergens: [], others: [] }, false),
+      allergens.notChecked,
+    )} ${editing.problems.outOfDate}`,
+  );
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+// Add another allergen adds a row in the page only, and a blank row removed
+// sends nothing: the write guard is the proof.
+test("Add another allergen adds a blank row with focus in its field and sends nothing, and removing it sends nothing", async ({
+  page,
+}) => {
+  await openDish(page, "market");
+  await addOtherButton(page).focus();
+  await page.keyboard.press("Enter");
+  const field = page.getByRole("combobox", {
+    name: `${allergens.otherLabel} ${otherSuffix(allergens, 1)}`,
+    exact: true,
+  });
+  await expect(field).toHaveCount(1);
+  await expect(field, "focus lands in the new field").toBeFocused();
+  await expect(log(page)).toHaveText(
+    fill(allergens.otherAdded, { position: 1 }),
+  );
+  const remove = page.getByRole("button", {
+    name: otherAction(
+      allergens,
+      allergens.removeOther,
+      fill(allergens.unnamedOther, { position: 1 }),
+    ),
+    exact: true,
+  });
+  await expect(remove).toHaveCount(1);
+  await remove.focus();
+  await page.keyboard.press("Enter");
+  await expect(otherRows(page)).toHaveCount(0);
+  await expect(
+    addOtherButton(page),
+    "focus goes to Add another allergen",
+  ).toBeFocused();
+  await expect(
+    log(page).getByText(fill(allergens.blankRemoved, { position: 1 }), {
+      exact: true,
+    }),
+  ).toHaveCount(1);
+  await expect(savedStatus(page)).toHaveText(editing.saved);
+  await expectNoAxeViolations(page);
 });
 
 test("each price choice brings its own fields: one price a field with the decimal keypad, market price a sentence, and nothing else", async ({

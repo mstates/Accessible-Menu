@@ -14,8 +14,9 @@ export type EditingStrings = Copy["owner"]["editing"];
 
 // The placeholder a list's sentences carry: "{menu} moved up." A size is
 // not a list of its own, but its texts on the dish page are said with the
-// same placeholder: "Price for {size} was not saved."
-export type ListNoun = "menu" | "section" | "dish" | "size";
+// same placeholder: "Price for {size} was not saved."; so is another
+// allergen's row: "{other} was not saved."
+export type ListNoun = "menu" | "section" | "dish" | "size" | "other";
 
 type Counted = { one: string; other: string };
 

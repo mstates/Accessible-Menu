@@ -1,24 +1,29 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import type { AllergenLists } from "@/domain/allergens";
 import {
   PRICE_KINDS,
   type OwnerDish,
   type OwnerDishDetail,
   type PriceKind,
 } from "@/domain/dish";
+import { nameKey } from "@/domain/menu";
 import { priceInputText } from "@/domain/money";
+import { ALLERGEN_IDS, type AllergenId } from "@/domain/types";
 
 // Owner-side reads and writes on dishes, through the owner's own client so
 // row level security decides what is visible (D-75) and the table
-// constraints decide what is valid (migrations 5 and 6). The table is
-// called items; this is the only file that names it, and the only place the
-// row shape is known. Features see OwnerDish on a section's page and
-// OwnerDishDetail on the dish's own page. A delete marks the row and keeps
-// it, so Undo can bring it back; reads leave marked rows out. Owners write
-// name, description, the price choice, price_cents, note, sort, and
-// deleted_at and nothing else: nothing about allergens or photos yet. A
-// move to another section goes through move_item(), since section_id is not
-// a column owners write (migration 6). Nothing here can publish.
+// constraints and triggers decide what is valid (migrations 5 to 7). The
+// table is called items; this is the only file that names it, and the only
+// place the row shape is known. Features see OwnerDish on a section's page
+// and OwnerDishDetail on the dish's own page. A delete marks the row and
+// keeps it, so Undo can bring it back; reads leave marked rows out. Owners
+// write name, description, the price choice, price_cents, note, the two
+// allergen lists, the allergen check, sort, and deleted_at and nothing else:
+// nothing about photos yet, and never who checked a list or when, which the
+// database stamps (D-148). A move to another section goes through
+// move_item(), since section_id is not a column owners write (migration 6).
+// Nothing here can publish.
 
 const columns = "id, name, sort";
 
@@ -32,9 +37,10 @@ function toDish(row: z.infer<typeof rowSchema>): OwnerDish {
   return { id: row.id, name: row.name };
 }
 
-// The dish as its own page reads it (D-128), with the section it is in.
+// The dish as its own page reads it (D-128), with the section it is in,
+// its two allergen lists, and its check: the flag, who, and when (D-148).
 const detailColumns =
-  "id, name, description, price_kind, price_cents, note, sort, section_id";
+  "id, name, description, price_kind, price_cents, note, allergens, custom_allergens, allergens_reviewed, allergens_reviewed_by, allergens_reviewed_at, sort, section_id";
 
 const detailSchema = z.object({
   id: z.string(),
@@ -43,13 +49,22 @@ const detailSchema = z.object({
   price_kind: z.enum(PRICE_KINDS),
   price_cents: z.number().nullable(),
   note: z.string().nullable(),
+  allergens: z.array(z.enum(ALLERGEN_IDS)),
+  custom_allergens: z.array(z.string()),
+  allergens_reviewed: z.boolean(),
+  allergens_reviewed_by: z.string().nullable(),
+  allergens_reviewed_at: z.string().nullable(),
   sort: z.number(),
   section_id: z.string(),
 });
 
 type DetailRow = z.infer<typeof detailSchema>;
 
-function toDetail(row: DetailRow): OwnerDishDetail & { sectionId: string } {
+// viewer is the signed-in person, so the page can say a check is theirs.
+function toDetail(
+  row: DetailRow,
+  viewer: string | null,
+): OwnerDishDetail & { sectionId: string } {
   return {
     id: row.id,
     name: row.name,
@@ -57,6 +72,18 @@ function toDetail(row: DetailRow): OwnerDishDetail & { sectionId: string } {
     note: row.note ?? "",
     priceKind: row.price_kind,
     price: priceInputText(row.price_cents),
+    allergens: row.allergens,
+    otherAllergens: row.custom_allergens,
+    check:
+      row.allergens_reviewed && row.allergens_reviewed_at !== null
+        ? {
+            at: row.allergens_reviewed_at,
+            byYou:
+              viewer !== null &&
+              row.allergens_reviewed_by !== null &&
+              row.allergens_reviewed_by === viewer,
+          }
+        : null,
     sectionId: row.section_id,
   };
 }
@@ -75,16 +102,27 @@ export type DishWriteError =
   | { kind: "section-gone" }
   // A move named the section the dish is already in.
   | { kind: "same-section" }
+  // The database refused the row by a named rule of its own, the allergen
+  // trigger's (migration 7); the name is the rule.
+  | { kind: "refused"; rule: string }
   | { kind: "failed" };
 
 export type DishWriteResult<Value = unknown> =
   { ok: true; value: Value } | { ok: false; error: DishWriteError };
 
-function refused(code: string | undefined): DishWriteResult<never> {
-  return {
-    ok: false,
-    error: { kind: code === UNIQUE_VIOLATION ? "name-taken" : "failed" },
-  };
+// Postgres's code for an error a trigger raises by name.
+const RAISED = "P0001";
+
+function refused(
+  code: string | undefined,
+  message = "",
+): DishWriteResult<never> {
+  if (code === UNIQUE_VIOLATION)
+    return { ok: false, error: { kind: "name-taken" } };
+  if (code === RAISED && /^[a-z_]+$/.test(message)) {
+    return { ok: false, error: { kind: "refused", rule: message } };
+  }
+  return { ok: false, error: { kind: "failed" } };
 }
 
 const notFound: DishWriteResult<never> = {
@@ -132,6 +170,7 @@ export async function findOwnerDish(
   client: SupabaseClient,
   restaurantId: string,
   id: string,
+  viewer: string | null = null,
 ): Promise<(OwnerDishDetail & { sectionId: string }) | "not-found" | "failed"> {
   const { data, error } = await client
     .from("items")
@@ -143,7 +182,7 @@ export async function findOwnerDish(
   if (error) return "failed";
   if (!data) return "not-found";
   const row = detailSchema.safeParse(data);
-  return row.success ? toDetail(row.data) : "failed";
+  return row.success ? toDetail(row.data, viewer) : "failed";
 }
 
 // A new dish goes last, with a name only. The trigger takes its restaurant
@@ -263,7 +302,177 @@ async function writeDish(
   if (error) return refused(error.code);
   if (!data) return notFound;
   const row = detailSchema.safeParse(data);
-  return row.success ? { ok: true, value: toDetail(row.data) } : failed;
+  return row.success ? { ok: true, value: toDetail(row.data, null) } : failed;
+}
+
+// A Postgres array literal, for comparing an array column against the value
+// the page showed: {"milk","wheat"}. Every element is quoted, with its
+// quotes and backslashes escaped, so any name travels whole.
+function arrayLiteral(values: readonly string[]): string {
+  const quoted = values.map(
+    (value) => `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`,
+  );
+  return `{${quoted.join(",")}}`;
+}
+
+// What a write on a dish's allergens may set: one or both lists, or the
+// check (D-148). Who and when are never written here: the database stamps
+// them.
+export type AllergenPatch = {
+  allergens?: readonly AllergenId[];
+  custom_allergens?: readonly string[];
+  allergens_reviewed?: boolean;
+};
+
+// What the dish must still hold for the write to land: the lists the page
+// showed, for every write that changes or checks a list; the flag, for an
+// uncheck; the stamp's time, for the Undo of an apply. A miss comes back as
+// not found, which the caller reads as the lists having moved.
+export type AllergenExpected = {
+  lists?: AllergenLists;
+  allergens_reviewed?: boolean;
+  allergens_reviewed_at?: string;
+};
+
+// Writes a dish's allergen lists or its check, scoped to the section the
+// page read the dish in, and lands only if the dish still holds what the
+// page showed (Michael, October 8, 2026). The database clears the check on
+// any change to a list and stamps who and when on a check, in the same
+// statement, and answers with the row as it is now. A rule the trigger
+// refuses by name comes back as refused with that name.
+export async function writeOwnerDishAllergens(
+  client: SupabaseClient,
+  sectionId: string,
+  id: string,
+  viewer: string | null,
+  patch: AllergenPatch,
+  expected: AllergenExpected,
+): Promise<DishWriteResult<OwnerDishDetail>> {
+  const values: Record<string, unknown> = {};
+  if (patch.allergens !== undefined) values.allergens = [...patch.allergens];
+  if (patch.custom_allergens !== undefined) {
+    values.custom_allergens = [...patch.custom_allergens];
+  }
+  if (patch.allergens_reviewed !== undefined) {
+    values.allergens_reviewed = patch.allergens_reviewed;
+  }
+  let update = client
+    .from("items")
+    .update(values)
+    .eq("id", id)
+    .eq("section_id", sectionId)
+    .is("deleted_at", null);
+  if (expected.lists) {
+    update = update
+      .eq("allergens", arrayLiteral(expected.lists.allergens))
+      .eq("custom_allergens", arrayLiteral(expected.lists.others));
+  }
+  if (expected.allergens_reviewed !== undefined) {
+    update = update.eq("allergens_reviewed", expected.allergens_reviewed);
+  }
+  if (expected.allergens_reviewed_at !== undefined) {
+    update = update.eq("allergens_reviewed_at", expected.allergens_reviewed_at);
+  }
+  const { data, error } = await update.select(detailColumns).maybeSingle();
+  if (error) return refused(error.code, error.message);
+  if (!data) return notFound;
+  const row = detailSchema.safeParse(data);
+  return row.success ? { ok: true, value: toDetail(row.data, viewer) } : failed;
+}
+
+// A live dish elsewhere in the restaurant with the same name as this one,
+// as the same-named offer reads it (D-129): its lists and its check, and
+// the section it is in, which the caller reads against the live sections
+// and menus. Names match the way the unique index reads them, whatever the
+// case or outer spaces.
+export type SameNamedDish = {
+  id: string;
+  name: string;
+  sectionId: string;
+  allergens: AllergenId[];
+  otherAllergens: string[];
+  reviewed: boolean;
+};
+
+const sameNamedSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  section_id: z.string(),
+  allergens: z.array(z.enum(ALLERGEN_IDS)),
+  custom_allergens: z.array(z.string()),
+  allergens_reviewed: z.boolean(),
+});
+
+// The restaurant's live dishes whose name is this one, other than the dish
+// itself. The read is narrowed with a pattern first, so a long menu is not
+// read whole: the name's backslashes, percent signs, and underscores are
+// escaped, so a name holding one neither breaks the read nor hides a match
+// (Michael, at approval), and the exact match is made here. A read that
+// fails throws.
+export async function listOwnerSameNamedDishes(
+  client: SupabaseClient,
+  restaurantId: string,
+  dishId: string,
+  name: string,
+): Promise<SameNamedDish[]> {
+  const pattern = `%${name.trim().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const { data, error } = await client
+    .from("items")
+    .select(
+      "id, name, section_id, allergens, custom_allergens, allergens_reviewed",
+    )
+    .eq("restaurant_id", restaurantId)
+    .is("deleted_at", null)
+    .ilike("name", pattern);
+  if (error) throw new Error(`dishes could not be read: ${error.message}`);
+  const key = nameKey(name);
+  return z
+    .array(sameNamedSchema)
+    .parse(data)
+    .filter((row) => row.id !== dishId && nameKey(row.name) === key)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      sectionId: row.section_id,
+      allergens: row.allergens,
+      otherAllergens: row.custom_allergens,
+      reviewed: row.allergens_reviewed,
+    }));
+}
+
+// The other allergens the restaurant's live dishes already name, most used
+// first and then by name, for the other-allergen field to suggest before
+// the starter list (D-148), the way size names are suggested (D-139). A
+// read that fails throws.
+export async function listOwnerOtherAllergenNames(
+  client: SupabaseClient,
+  restaurantId: string,
+): Promise<string[]> {
+  const { data, error } = await client
+    .from("items")
+    .select("custom_allergens")
+    .eq("restaurant_id", restaurantId)
+    .is("deleted_at", null);
+  if (error) {
+    throw new Error(`other allergens could not be read: ${error.message}`);
+  }
+  const counts = new Map<string, { name: string; uses: number }>();
+  const rows = z
+    .array(z.object({ custom_allergens: z.array(z.string()) }))
+    .parse(data);
+  for (const row of rows) {
+    for (const raw of row.custom_allergens) {
+      const other = raw.trim();
+      if (other === "") continue;
+      const key = other.toLowerCase();
+      const seen = counts.get(key);
+      if (seen) seen.uses += 1;
+      else counts.set(key, { name: other, uses: 1 });
+    }
+  }
+  return [...counts.values()]
+    .sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name))
+    .map((entry) => entry.name);
 }
 
 // A dish's description or note, stored as null when blank.

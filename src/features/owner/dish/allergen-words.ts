@@ -1,0 +1,494 @@
+import type { Copy } from "@/copy";
+import { fill } from "@/copy/fill";
+import {
+  allergenSentence,
+  checkedOnDate,
+  majorAllergensOf,
+  US_MAJOR_ALLERGENS,
+  type AllergenCopy,
+  type AllergenLists,
+  type AllergenSentence,
+} from "@/domain/allergens";
+import type { AllergenCheck } from "@/domain/dish";
+import type { AllergenId } from "@/domain/types";
+import {
+  failureSentence,
+  problemText,
+  type EditingStrings,
+  type ListProblem,
+  type TextWords,
+} from "../editing/list-words";
+import type { UndoOutcome } from "../editing/undo";
+import type { AllergenUndo, UndoLists } from "./dish-words";
+
+// Every sentence the allergen group on a dish's page shows or speaks, built
+// in one place from copy (D-148), and what its Undo entries say. The nine
+// boxes, the other-allergen rows, the check, the sentence diners will read
+// with who checked it and when, and the same-named offer (D-129). The
+// sentence diners read comes from the domain builder, the one place it
+// lives (module rule 8). Pure: no React, no network.
+
+export type AllergenStrings = Copy["owner"]["dish"]["allergens"];
+
+// The nine as the boxes name them.
+export function allergenName(strings: AllergenStrings, id: AllergenId): string {
+  return isMajor(id) ? strings.names[id] : id;
+}
+
+function isMajor(id: AllergenId): id is (typeof US_MAJOR_ALLERGENS)[number] {
+  return (US_MAJOR_ALLERGENS as readonly AllergenId[]).includes(id);
+}
+
+// The rule a typed name breaks when it is one of the nine: the key of its
+// message, which names the box, or both boxes for a word that could mean
+// either (Michael, at approval).
+export function majorRuleOf(value: string): string | null {
+  const majors = majorAllergensOf(value);
+  if (majors.length === 0) return null;
+  return majors.length > 1 ? "otherMajor:both" : `otherMajor:${majors[0]}`;
+}
+
+// The words another allergen's row is committed, failed, and said in,
+// named for its row: "Other allergen 2", "celery was not saved."
+export function otherWords(
+  strings: AllergenStrings,
+  editing: EditingStrings,
+  dishGone: string,
+): TextWords<"name"> {
+  const rules: Record<string, string> = {
+    otherRequired: strings.errors.otherRequired,
+    otherLength: strings.errors.otherLength,
+    "otherMajor:both": strings.errors.otherMajorBoth,
+  };
+  for (const id of US_MAJOR_ALLERGENS) {
+    rules[`otherMajor:${id}`] = fill(strings.errors.otherMajor, {
+      allergen: strings.names[id],
+    });
+  }
+  return {
+    noun: "other",
+    strings: {
+      errors: {
+        nameTaken: strings.errors.otherTaken,
+        gone: dishGone,
+        parentGone: dishGone,
+        listChanged: strings.listsMoved,
+      },
+    },
+    editing,
+    rules,
+    fields: {
+      name: {
+        label: strings.otherLabel,
+        suffix: strings.otherLabelFor,
+        hint: strings.otherHint,
+        notSaved: strings.notSaved.other,
+      },
+    },
+  };
+}
+
+// A row as its buttons name it: its name, or its place while it has none,
+// "allergen 2".
+export function otherLabel(
+  strings: AllergenStrings,
+  name: string,
+  position: number,
+): string {
+  return name === "" ? fill(strings.unnamedOther, { position }) : name;
+}
+
+// The hidden text after a row field's label, which names its place:
+// "Other allergen 2".
+export function otherSuffix(
+  strings: AllergenStrings,
+  position: number,
+): string {
+  return fill(strings.otherLabelFor, { position });
+}
+
+// A row control's whole name, its visible label first, then its row:
+// "Remove allergen, celery" (D-112's form).
+export function otherAction(
+  strings: AllergenStrings,
+  action: string,
+  other: string,
+): string {
+  return fill(strings.otherAction, { action, other });
+}
+
+export function otherAddedSentence(
+  strings: AllergenStrings,
+  position: number,
+): string {
+  return fill(strings.otherAdded, { position });
+}
+
+export function otherRemovedSentence(
+  strings: AllergenStrings,
+  other: string,
+): string {
+  return fill(strings.otherRemoved, { other });
+}
+
+export function blankRemovedSentence(
+  strings: AllergenStrings,
+  position: number,
+): string {
+  return fill(strings.blankRemoved, { position });
+}
+
+// "The allergens of Soup of the day were not saved. We could not save
+// that. Try again in a minute."
+export function allergensNotSavedSentence(
+  strings: AllergenStrings,
+  words: TextWords,
+  dish: string,
+  problem: ListProblem,
+): string {
+  return failureSentence(
+    fill(strings.notSaved.allergens, { dish }),
+    problemText(words, problem, dish),
+  );
+}
+
+export function checkNotSavedSentence(
+  strings: AllergenStrings,
+  words: TextWords,
+  dish: string,
+  problem: ListProblem,
+): string {
+  return failureSentence(
+    fill(strings.notSaved.check, { dish }),
+    problemText(words, problem, dish),
+  );
+}
+
+// The sentence diners will read, from the one builder (D-35, module rule
+// 8), for the lists as the page shows them and whether they are checked.
+export function dinerSentence(
+  copy: AllergenCopy,
+  lists: AllergenLists,
+  checked: boolean,
+): AllergenSentence {
+  return allergenSentence(
+    {
+      allergens: [...lists.allergens],
+      customAllergens: [...lists.others],
+      allergensReviewed: checked,
+    },
+    copy,
+  );
+}
+
+// 'Diners read: "Contains milk, wheat."', as the check box is described.
+export function dinersReadText(
+  strings: AllergenStrings,
+  sentence: AllergenSentence,
+): string {
+  return fill(strings.dinersRead, { sentence: sentence.text });
+}
+
+// The state the stamp line reads: the check as the server holds it, whether
+// a check is on its way, and whether a change in this visit cleared one.
+export type StampState = {
+  check: AllergenCheck | null;
+  pending: boolean;
+  cleared: boolean;
+};
+
+// "Checked by you on October 8, 2026.", "Checked on October 8, 2026.",
+// "Checked by you." while the date is on its way, "Not checked since the
+// list changed...", or "Not checked yet."
+export function stampLine(
+  strings: AllergenStrings,
+  state: StampState,
+  timeZone: string,
+  lang: string,
+): string {
+  if (state.check) {
+    const date = checkedOnDate(state.check.at, timeZone, lang);
+    return fill(state.check.byYou ? strings.checkedByYou : strings.checkedOn, {
+      date,
+    });
+  }
+  if (state.pending) return strings.checkedByYouNow;
+  if (state.cleared) return strings.cleared;
+  return strings.notChecked;
+}
+
+// Where a same-named dish is, for its line and its button (D-129).
+export type SameNamedPlace = {
+  id: string;
+  name: string;
+  section: string;
+  menu: string;
+  lists: AllergenLists;
+  reviewed: boolean;
+  // Why the line shows: the lists differ, or the dish is not checked.
+  reason: "different" | "unchecked";
+};
+
+export function sameNamedLine(
+  strings: AllergenStrings,
+  place: SameNamedPlace,
+): string {
+  return fill(strings.sameNamed[place.reason], {
+    dish: place.name,
+    section: place.section,
+    menu: place.menu,
+  });
+}
+
+// The Apply button's whole name, its visible words first (WCAG 2.5.3):
+// "Apply this list there, Soup of the day in Mains, Dinner".
+export function applyName(
+  strings: AllergenStrings,
+  place: Pick<SameNamedPlace, "name" | "section" | "menu">,
+): string {
+  return fill(strings.sameNamed.applyTo, {
+    action: strings.sameNamed.apply,
+    dish: place.name,
+    section: place.section,
+    menu: place.menu,
+  });
+}
+
+export function appliedSentence(
+  strings: AllergenStrings,
+  place: Pick<SameNamedPlace, "name" | "section" | "menu">,
+): string {
+  return fill(strings.sameNamed.applied, {
+    dish: place.name,
+    section: place.section,
+    menu: place.menu,
+  });
+}
+
+// Why an apply did not land. The last two are what the browser makes of a
+// call that never got an answer.
+export type ApplyProblem =
+  | { kind: "signed-out" }
+  // This dish, or its section or menu, is no longer there.
+  | { kind: "gone" }
+  | { kind: "parent-gone" }
+  // This dish's lists are not the ones the page showed.
+  | { kind: "source-changed" }
+  // This dish is not checked now.
+  | { kind: "source-unchecked" }
+  // The other dish's lists are not the ones the line showed, or it was
+  // renamed since.
+  | { kind: "target-changed" }
+  // The other dish, or its section or menu, is no longer there.
+  | { kind: "target-gone" }
+  | { kind: "failed" }
+  | { kind: "unreachable" }
+  | { kind: "out-of-date" };
+
+export function notAppliedSentence(
+  strings: AllergenStrings,
+  editing: EditingStrings,
+  dishGone: string,
+  problem: ApplyProblem,
+  place: Pick<SameNamedPlace, "name" | "section" | "menu">,
+): string {
+  const where = { dish: place.name, section: place.section, menu: place.menu };
+  switch (problem.kind) {
+    case "signed-out":
+      return failureSentence(
+        strings.sameNamed.errors.failed,
+        editing.problems.signedOut,
+      );
+    case "gone":
+    case "parent-gone":
+      return failureSentence(strings.sameNamed.errors.failed, dishGone);
+    case "source-changed":
+      return strings.sameNamed.errors.sourceChanged;
+    case "source-unchecked":
+      return strings.sameNamed.errors.sourceUnchecked;
+    case "target-changed":
+      return fill(strings.sameNamed.errors.targetChanged, where);
+    case "target-gone":
+      return fill(strings.sameNamed.errors.targetGone, where);
+    case "failed":
+      return failureSentence(
+        strings.sameNamed.errors.failed,
+        editing.problems.failed,
+      );
+    case "unreachable":
+      return failureSentence(
+        strings.sameNamed.errors.failed,
+        editing.problems.unreachable,
+      );
+    case "out-of-date":
+      return failureSentence(
+        strings.sameNamed.errors.failed,
+        editing.problems.outOfDate,
+      );
+  }
+}
+
+// What one change to the other allergens was: one name added, removed, or
+// renamed, or more than one thing at once.
+export type OthersChange =
+  | { kind: "added"; other: string }
+  | { kind: "removed"; other: string }
+  | { kind: "renamed"; from: string; to: string }
+  | { kind: "changed" };
+
+export function othersChange(
+  before: readonly string[],
+  after: readonly string[],
+): OthersChange {
+  const gone = before.filter((name) => !after.includes(name));
+  const came = after.filter((name) => !before.includes(name));
+  if (gone.length === 0 && came.length === 1 && came[0] !== undefined) {
+    return { kind: "added", other: came[0] };
+  }
+  if (came.length === 0 && gone.length === 1 && gone[0] !== undefined) {
+    return { kind: "removed", other: gone[0] };
+  }
+  if (
+    gone.length === 1 &&
+    came.length === 1 &&
+    gone[0] !== undefined &&
+    came[0] !== undefined
+  ) {
+    return { kind: "renamed", from: gone[0], to: came[0] };
+  }
+  return { kind: "changed" };
+}
+
+function placeOf(entry: Extract<AllergenUndo, { kind: "apply" }>) {
+  return { dish: entry.dish, section: entry.section, menu: entry.menu };
+}
+
+// The Undo control's whole name for one of the group's changes, which is
+// also its visible text.
+export function allergenUndoLabel(
+  strings: AllergenStrings,
+  entry: AllergenUndo,
+): string {
+  switch (entry.kind) {
+    case "allergen":
+      return fill(entry.on ? strings.undo.ticked : strings.undo.unticked, {
+        allergen: strings.names[entry.allergen],
+        dish: entry.name,
+      });
+    case "others": {
+      const change = othersChange(entry.before.others, entry.after.others);
+      switch (change.kind) {
+        case "added":
+          return fill(strings.undo.otherAdded, { other: change.other });
+        case "removed":
+          return fill(strings.undo.otherRemoved, { other: change.other });
+        case "renamed":
+          return fill(strings.undo.otherRenamed, change);
+        case "changed":
+          return fill(strings.undo.othersChanged, { dish: entry.name });
+      }
+      break;
+    }
+    case "check":
+      return fill(entry.on ? strings.undo.checked : strings.undo.unchecked, {
+        dish: entry.name,
+      });
+    case "apply":
+      return fill(strings.sameNamed.undo.applied, placeOf(entry));
+  }
+}
+
+// What Undo says once it has put one of the group's changes back. A change
+// to a list that cleared a check standing at the time says so too.
+export function allergenUndoneSentence(
+  strings: AllergenStrings,
+  entry: AllergenUndo,
+  clearedCheck: boolean,
+): string {
+  const cleared = clearedCheck ? ` ${strings.clearedNow}` : "";
+  switch (entry.kind) {
+    case "allergen":
+      return (
+        fill(entry.on ? strings.undo.tickedBack : strings.undo.untickedBack, {
+          allergen: strings.names[entry.allergen],
+        }) + cleared
+      );
+    case "others": {
+      const change = othersChange(entry.before.others, entry.after.others);
+      switch (change.kind) {
+        case "added":
+          return (
+            fill(strings.undo.otherAddedBack, { other: change.other }) + cleared
+          );
+        case "removed":
+          return (
+            fill(strings.undo.otherRemovedBack, { other: change.other }) +
+            cleared
+          );
+        case "renamed":
+          return (
+            fill(strings.undo.otherRenamedBack, { from: change.from }) + cleared
+          );
+        case "changed":
+          return fill(strings.undo.othersBack, { dish: entry.name }) + cleared;
+      }
+      break;
+    }
+    case "check":
+      return fill(
+        entry.on ? strings.undo.checkedBack : strings.undo.uncheckedBack,
+        { dish: entry.name },
+      );
+    case "apply":
+      return fill(
+        entry.before.reviewed
+          ? strings.sameNamed.undo.back
+          : strings.sameNamed.undo.backUnchanged,
+        placeOf(entry),
+      );
+  }
+}
+
+// What Undo says when it could not put one of the group's changes back,
+// and what becomes of its entry: a list that moved since drops it, with
+// one sentence; an uncheck that found the check gone, or an apply whose
+// other dish changed, drops it too; anything else is an ordinary failure
+// that keeps the entry for another try.
+export function allergenNotUndone(
+  strings: AllergenStrings,
+  editing: EditingStrings,
+  words: TextWords,
+  entry: AllergenUndo,
+  problem: ListProblem | { kind: "lists-changed" },
+): { outcome: Exclude<UndoOutcome, "applied">; sentence: string } {
+  if (problem.kind === "lists-changed") {
+    if (entry.kind === "apply") {
+      return {
+        outcome: "stale",
+        sentence: fill(strings.sameNamed.undo.changed, placeOf(entry)),
+      };
+    }
+    return { outcome: "stale", sentence: strings.undo.listsChanged };
+  }
+  if (
+    problem.kind === "changed" ||
+    problem.kind === "gone" ||
+    problem.kind === "parent-gone" ||
+    problem.kind === "mismatch"
+  ) {
+    return { outcome: "stale", sentence: editing.stale };
+  }
+  const name = entry.kind === "apply" ? entry.dish : entry.name;
+  return {
+    outcome: problem.kind === "name-taken" ? "blocked" : "failed",
+    sentence: failureSentence(
+      editing.notUndone,
+      problemText(words, problem, name),
+    ),
+  };
+}
+
+// The lists an entry remembers, as a write carries them.
+export function listsOf(lists: UndoLists): AllergenLists {
+  return { allergens: lists.allergens, others: lists.others };
+}

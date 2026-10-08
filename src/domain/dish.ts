@@ -1,15 +1,16 @@
 import { cleanMenuName } from "./menu";
 import { parsePrice, type PriceRule } from "./money";
 import { cleanNote } from "./section";
+import type { AllergenId } from "./types";
 
 // The owner-side dish: the row an owner reads on a section's page, with its
 // name, and the dish as its own page reads it (D-128), with everything an
-// owner writes there in task 3b: the description, the price choice, the one
-// price, the note, and the sizes. Allergens, tags, availability, and the
-// photo join in tasks 4 to 6. The diner-side Item in types.ts is the
-// published view model and stays separate until the diner page reads real
-// data (D-78). The table is called items; everything above it says dish.
-// Pure: no React, no network.
+// owner writes there: the description, the price choice, the one price, the
+// note, and the sizes (task 3b), and its allergens with their check (task
+// 4, D-148). Tags, availability, and the photo join in tasks 5 and 6. The
+// diner-side Item in types.ts is the published view model and stays
+// separate until the diner page reads real data (D-78). The table is called
+// items; everything above it says dish. Pure: no React, no network.
 
 export type OwnerDish = { id: string; name: string };
 
@@ -18,14 +19,30 @@ export type OwnerDish = { id: string; name: string };
 export const PRICE_KINDS = ["one", "sizes", "market"] as const;
 export type PriceKind = (typeof PRICE_KINDS)[number];
 
+// Who checked a dish's allergen list and when (D-89, D-148), as the page
+// shows it: the stamp's time, and whether the person is the one signed in.
+// The stamp itself is written by the database and never by an owner.
+export type AllergenCheck = { at: string; byYou: boolean };
+
+// A dish's allergens as the owner's page reads and writes them (D-148): the
+// major allergens ticked from the fixed list, the other allergens typed,
+// and the check, which is null until a person checks the list and again
+// after any change to it.
+export type OwnerDishAllergens = {
+  allergens: AllergenId[];
+  otherAllergens: string[];
+  check: AllergenCheck | null;
+};
+
 // A dish on its own page. price is the one price as its field shows it, two
 // decimals or blank for none; the sizes are read beside it.
-export type OwnerDishDetail = OwnerDish & {
-  description: string;
-  note: string;
-  priceKind: PriceKind;
-  price: string;
-};
+export type OwnerDishDetail = OwnerDish &
+  OwnerDishAllergens & {
+    description: string;
+    note: string;
+    priceKind: PriceKind;
+    price: string;
+  };
 
 // The texts of a dish an owner writes on its page, in the page's order.
 export const DISH_TEXTS = ["description", "price", "note"] as const;

@@ -3,6 +3,10 @@ import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
 import { DAY_KEYS } from "../../src/domain/hours";
 import {
+  otherAction,
+  otherLabel,
+} from "../../src/features/owner/dish/allergen-words";
+import {
   sizeAction,
   sizeLabel,
 } from "../../src/features/owner/dish/dish-words";
@@ -46,6 +50,16 @@ export const radioMarks: readonly Mark[] = [
   {
     what: "a radio's dot",
     selector: 'label:has(input[type="radio"]) > span[aria-hidden="true"] svg',
+  },
+];
+// The check mark of a checked box: on a dish page with a checked allergen
+// or a checked list (D-148). An unchecked box draws no mark, so this is
+// named only where one is checked.
+export const checkboxMarks: readonly Mark[] = [
+  {
+    what: "a checked box's mark",
+    selector:
+      'label:has(input[type="checkbox"]) > span[aria-hidden="true"] svg',
   },
 ];
 
@@ -154,11 +168,13 @@ export async function sectionControls(
   ];
 }
 
-// A dish's page (D-128, D-139): the breadcrumb's three links, each size's
-// two buttons when the dish is priced by size, named by the size as the
-// page shows it, Add a size, Undo, the link to the next dish when there is
-// one, and the move's button; the move's Select is named by its label and
-// its value, so the sweep checks it.
+// A dish's page (D-128, D-139, D-148): the breadcrumb's three links, each
+// size's two buttons when the dish is priced by size, named by the size as
+// the page shows it, Add a size, each other allergen's two buttons, named
+// by the row as the page shows it, Add another allergen, each same-named
+// dish's Apply button, Undo, the link to the next dish when there is one,
+// and the move's button; the move's Select is named by its label and its
+// value, so the sweep checks it.
 export async function dishControls(
   page: Page,
   menu: string,
@@ -184,6 +200,29 @@ export async function dishControls(
   const bySize = await page
     .getByRole("radio", { name: words.price.sizes, exact: true })
     .isChecked();
+  const otherNames = await page
+    .locator(`main ol[aria-label="${words.allergens.othersLabel}"] > li`)
+    .evaluateAll((rows) =>
+      rows.map(
+        (row) =>
+          row.querySelector<HTMLInputElement>('input[id$="-name"]')?.value ??
+          "",
+      ),
+    );
+  const others = otherNames.flatMap((name, index) => {
+    const label = otherLabel(words.allergens, name, index + 1);
+    return [
+      button(
+        otherAction(words.allergens, words.allergens.showOtherNames, label),
+      ),
+      button(otherAction(words.allergens, words.allergens.removeOther, label)),
+    ];
+  });
+  const applies = await page
+    .locator('main button[id^="dish-apply-"]')
+    .evaluateAll((buttons) =>
+      buttons.map((each) => each.getAttribute("aria-label") ?? ""),
+    );
   const nextName = await page
     .locator('main a[href*="/dishes/"]')
     .evaluateAll((links) => links.map((link) => link.textContent ?? ""));
@@ -194,6 +233,9 @@ export async function dishControls(
     link(section),
     ...sizes,
     ...(bySize ? [button(words.price.addSize)] : []),
+    ...others,
+    button(words.allergens.addOther),
+    ...applies.map((name) => button(name)),
     button(editing.undo),
     ...nextName.map((text) => link(text)),
     button(words.move.submit),

@@ -47,9 +47,10 @@ export function menuNameProblem(value: string): MenuRule | null {
   return value.length > MENU_LIMITS.name ? "nameLength" : null;
 }
 
-// Names are compared the way the unique index compares them (migration 3):
-// case and outer spaces do not count.
-function nameKey(name: string): string {
+// Names are compared the way the unique indexes compare them (migrations 3
+// to 6): case and outer spaces do not count. The same-named offer on a
+// dish's page reads dish names across the restaurant this way (D-129).
+export function nameKey(name: string): string {
   return name.trim().toLowerCase();
 }
 

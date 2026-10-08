@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { Announcer, useAnnounce } from "@/core/a11y/announcer";
+import type { AllergenCopy } from "@/domain/allergens";
 import type { OwnerDish, OwnerDishDetail, OwnerSize } from "@/domain/dish";
 import { Button } from "@/ui/Button";
 import { ComboBox } from "@/ui/ComboBox";
@@ -12,6 +13,8 @@ import { AutosaveTextField } from "../editing/AutosaveTextField";
 import type { EditingStrings } from "../editing/list-words";
 import { SavedStatus } from "../editing/SavedStatus";
 import { restaurantDishPath } from "../paths";
+import type { SameNamedPlace } from "./allergen-words";
+import { DishAllergens } from "./DishAllergens";
 import {
   lastDishSentence,
   nextDishLabel,
@@ -37,6 +40,17 @@ type Props = {
   next: OwnerDish | null;
   // The sections the dish can move to, under their menus.
   targets: SelectGroup[];
+  // The diner-facing allergen words, for the sentence diners will read.
+  allergenCopy: AllergenCopy;
+  // The other allergens the restaurant's dishes already name, most used
+  // first.
+  otherNames: string[];
+  // The same-named dishes the allergen check names (D-129).
+  sameNamed: SameNamedPlace[];
+  // The restaurant's time zone, which a check's date is read in, and the
+  // page's language.
+  timeZone: string;
+  lang: string;
 };
 
 // How long after the page shows the dish in its new section its move is
@@ -46,10 +60,11 @@ const AFTER_THE_TITLE_MS = 100;
 
 const PRICE_HEADING_ID = "dish-price-heading";
 
-// A dish's own page (D-128, D-139): the lead, the description, the price
-// group under its heading, the note, the saved status and Undo, the link to
-// the next dish, and the move to another section (D-129). Everything on it
-// shares one queue, one status, and one Undo (D-111).
+// A dish's own page (D-128, D-139, D-148): the lead, the description, the
+// price group under its heading, the note, the allergen group under its
+// heading, the saved status and Undo, the link to the next dish, and the
+// move to another section (D-129). Everything on it shares one queue, one
+// status, and one Undo (D-111).
 export function DishPage(props: Props) {
   return (
     <Announcer>
@@ -69,6 +84,11 @@ function DishEditor({
   sizeNames,
   next,
   targets,
+  allergenCopy,
+  otherNames,
+  sameNamed,
+  timeZone,
+  lang,
 }: Props) {
   // A move changes the page's title, since the title names the section and
   // the menu, and Next's route announcer reads a changed title at once and
@@ -97,6 +117,7 @@ function DishEditor({
     code,
     dish,
     sizes,
+    sameNamed,
     sayOnceIn,
   });
 
@@ -111,6 +132,18 @@ function DishEditor({
       ),
     ];
   }, [sizeNames, strings.price.suggestions]);
+
+  // The restaurant's own other allergens first, then the starter list,
+  // each once (D-148), as the size names are suggested.
+  const otherSuggestions = useMemo(() => {
+    const seen = new Set(otherNames.map((name) => name.toLowerCase()));
+    return [
+      ...otherNames,
+      ...strings.allergens.suggestions.filter(
+        (name) => !seen.has(name.toLowerCase()),
+      ),
+    ];
+  }, [otherNames, strings.allergens.suggestions]);
 
   const description = page.own.fieldOf("description");
   const price = page.own.fieldOf("price");
@@ -252,6 +285,15 @@ function DishEditor({
           description={strings.noteHint}
         />
       </div>
+
+      <DishAllergens
+        strings={strings.allergens}
+        allergenCopy={allergenCopy}
+        group={page.allergens}
+        suggestions={otherSuggestions}
+        timeZone={timeZone}
+        lang={lang}
+      />
 
       <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
         <SavedStatus
