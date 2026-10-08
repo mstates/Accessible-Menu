@@ -13,18 +13,24 @@
 -- Dinner holding the sections Starters, Mains, and Desserts, in that order;
 -- Starters holding the dishes Soup of the day, House salad, and Garlic
 -- bread, in that order, priced one way each (Soup of the day by size with
--- Cup and Bowl, House salad at one price, Garlic bread at market price); at
--- least one menu that holds no section; and at least one section of Dinner
--- that holds no dish. Nothing here can publish (migration 3).
+-- Cup and Bowl, House salad at one price, Garlic bread at market price),
+-- with their allergens (Soup of the day checked with milk, wheat, and
+-- celery; House salad checked with none; Garlic bread not checked); a
+-- second Soup of the day in Mains, not checked, for the same-named line on
+-- the first (D-129); at least one menu that holds no section; and at least
+-- one section of Dinner that holds no dish. Nothing here can publish
+-- (migration 3).
 
 do $$
 declare
   diner uuid;
   dinner uuid;
   starters uuid;
+  mains uuid;
   soup uuid;
   salad uuid;
   bread uuid;
+  owner_uid uuid;
   wanted text;
   size_name text;
   size_price integer;
@@ -209,6 +215,76 @@ begin
   if placed > 0 then
     raise notice 'priced Garlic bread at market price';
   end if;
+
+  -- 3c. Starters' dishes with their allergens and their check (migration 7,
+  -- task 4): Soup of the day checked with milk, wheat, and celery; House
+  -- salad checked with none; Garlic bread not checked. A check needs a
+  -- person (D-148), so from here the block acts as CI Diner's owner, the
+  -- way the boundary checks act as a user: the request claims name that
+  -- user, and the database stamps the check with them. A list is written
+  -- only when it differs, and a check only when it is not there, in two
+  -- statements, since one statement that changes a list and checks it
+  -- ends unchecked. A second Soup of the day, in Mains and not checked, is
+  -- added when missing, for the same-named line on Starters' soup (D-129);
+  -- Desserts stays empty, which the gate needs.
+  select o.user_id into owner_uid
+  from public.owners o
+  where o.restaurant_id = diner
+  order by o.created_at, o.user_id
+  limit 1;
+  if owner_uid is null then
+    raise exception 'FAIL: CI Diner (56097672) has no owner to check allergens as';
+  end if;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', owner_uid, 'role', 'authenticated')::text, true);
+
+  update public.items i
+  set allergens = '{milk,wheat}', custom_allergens = '{celery}'
+  where i.id = soup
+    and (i.allergens is distinct from '{milk,wheat}'::public.allergen[]
+      or i.custom_allergens is distinct from '{celery}'::text[]);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'listed milk, wheat, and celery for Soup of the day';
+  end if;
+  update public.items i
+  set allergens_reviewed = true
+  where i.id = soup and not i.allergens_reviewed;
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'checked the allergens of Soup of the day';
+  end if;
+
+  update public.items i
+  set allergens = '{}', custom_allergens = '{}'
+  where i.id = salad
+    and (cardinality(i.allergens) > 0 or cardinality(i.custom_allergens) > 0);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'cleared the allergen lists of House salad';
+  end if;
+  update public.items i
+  set allergens_reviewed = true
+  where i.id = salad and not i.allergens_reviewed;
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'checked the allergens of House salad';
+  end if;
+
+  select s.id into mains from public.sections s
+  where s.menu_id = dinner
+    and s.deleted_at is null
+    and lower(btrim(s.name)) = 'mains';
+  if not exists (
+    select 1 from public.items i
+    where i.section_id = mains
+      and i.deleted_at is null
+      and lower(btrim(i.name)) = 'soup of the day'
+  ) then
+    insert into public.items (section_id, name, sort)
+    values (mains, 'Soup of the day', 1);
+    raise notice 'added the dish Soup of the day to Mains';
+  end if;
 end $$;
 
 -- 4. What CI Diner holds now, in the order its screens show it. The first
@@ -235,6 +311,7 @@ live_sections as (
 ),
 live_items as (
   select i.id, i.section_id, i.name, i.price_kind, i.price_cents,
+    i.allergens, i.custom_allergens, i.allergens_reviewed,
     row_number() over (
       partition by i.section_id order by i.sort, i.created_at, i.id
     ) as place
@@ -259,6 +336,11 @@ starters as (
   select ls.id from live_sections ls
   join dinner on ls.menu_id = dinner.id
   where lower(btrim(ls.name)) = 'starters'
+),
+mains as (
+  select ls.id from live_sections ls
+  join dinner on ls.menu_id = dinner.id
+  where lower(btrim(ls.name)) = 'mains'
 ),
 verdict as (
   select
@@ -299,7 +381,26 @@ verdict as (
       and (select li.price_kind = 'market'
        from live_items li join starters on li.section_id = starters.id
        where lower(btrim(li.name)) = 'garlic bread'),
-      false) as prices_ok
+      false) as prices_ok,
+    coalesce(
+      (select li.allergens_reviewed
+         and li.allergens = '{milk,wheat}'::public.allergen[]
+         and li.custom_allergens = '{celery}'::text[]
+       from live_items li join starters on li.section_id = starters.id
+       where lower(btrim(li.name)) = 'soup of the day')
+      and (select li.allergens_reviewed
+         and cardinality(li.allergens) = 0
+         and cardinality(li.custom_allergens) = 0
+       from live_items li join starters on li.section_id = starters.id
+       where lower(btrim(li.name)) = 'house salad')
+      and (select not li.allergens_reviewed
+       from live_items li join starters on li.section_id = starters.id
+       where lower(btrim(li.name)) = 'garlic bread')
+      and exists (
+        select 1 from live_items li join mains on li.section_id = mains.id
+        where lower(btrim(li.name)) = 'soup of the day'
+          and not li.allergens_reviewed),
+      false) as allergens_ok
 )
 select item, status
 from (
@@ -319,6 +420,8 @@ from (
         'not ready: every section of Dinner holds dishes, and the gate needs one that holds none. Delete the extra dishes below on their section''s page.'
       when not v.prices_ok then
         'not ready: Soup of the day is not priced by size with Cup and Bowl, House salad at one price, and Garlic bread at market price'
+      when not v.allergens_ok then
+        'not ready: Soup of the day is not checked with milk, wheat, and celery, House salad checked with none, Garlic bread not checked, or Mains has no unchecked Soup of the day'
       else 'ready for the owner gate'
     end as status
   from verdict v
@@ -348,13 +451,22 @@ from (
   select lm.place, ls.place, li.place, 0,
     'dish ' || li.place || ' of ' || ls.name || ', ' || lm.name || ': '
       || li.name || ', ' || li.price_kind
-      || coalesce(', $' || round(li.price_cents::numeric / 100, 2)::text, ''),
+      || coalesce(', $' || round(li.price_cents::numeric / 100, 2)::text, '')
+      || ', allergens '
+      || coalesce(nullif(array_to_string(li.allergens, ' '), ''), 'none')
+      || coalesce(' and ' || nullif(array_to_string(li.custom_allergens, ' '), ''), '')
+      || case when li.allergens_reviewed then ', checked' else ', not checked' end,
     case
       when lower(btrim(lm.name)) = 'dinner'
         and lower(btrim(ls.name)) = 'starters'
         and li.place <= 3
         and lower(btrim(li.name))
           in ('soup of the day', 'house salad', 'garlic bread')
+        then 'needed'
+      when lower(btrim(lm.name)) = 'dinner'
+        and lower(btrim(ls.name)) = 'mains'
+        and li.place <= 1
+        and lower(btrim(li.name)) = 'soup of the day'
         then 'needed'
       else 'extra, left as it is'
     end

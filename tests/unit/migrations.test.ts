@@ -19,9 +19,12 @@ const views = [
   ...sql.matchAll(/create (?:or replace )?view public\.(\w+)/g),
 ].map((match) => match[1] ?? "");
 
-// Columns that must never reach a diner page (D-26, Spec 8).
+// Columns that must never reach a diner page (D-26, Spec 8), who checked a
+// dish's allergens and when among them (D-148).
 const privateColumns = [
   "allergen_suggestions",
+  "allergens_reviewed_by",
+  "allergens_reviewed_at",
   "import_confidence",
   "external_ids",
   "stripe_customer_id",
@@ -982,5 +985,160 @@ describe("the dish page's migration (D-85, D-129, D-139, task 3b)", () => {
     expect(dish).not.toMatch(/grant [^;]*public\.menus\b/);
     expect(columnsOf("items", "update")).not.toContain("section_id");
     expect(columnsOf("item_sizes", "update")).not.toContain("item_id");
+  });
+});
+
+describe("the allergens migration (D-85, D-148, task 4)", () => {
+  const file = "20261008000001_allergens.sql";
+  const text = readFileSync(join(dir, file), "utf8");
+  // Never written by an owner: the stamp the database writes, and what
+  // later tasks build.
+  const neverWritten = [
+    "id",
+    "section_id",
+    "restaurant_id",
+    "allergens_reviewed_by",
+    "allergens_reviewed_at",
+    "allergen_suggestions",
+    "dietary_tags",
+    "photo_url",
+    "photo_alt",
+    "available",
+    "special_schedule",
+    "import_confidence",
+    "external_ids",
+    "created_at",
+    "updated_at",
+  ];
+
+  function columnsOf(privilege: string): string[] {
+    const matches = [
+      ...text.matchAll(
+        new RegExp(
+          `grant ${privilege} \\(([^)]*)\\) on public\\.items to authenticated;`,
+          "g",
+        ),
+      ),
+    ];
+    expect(matches, `no ${privilege} column list on items`).toHaveLength(1);
+    return (matches[0]?.[1] ?? "").split(",").map((column) => column.trim());
+  }
+
+  function bodyOf(name: string): string {
+    const from = text.indexOf(`create function public.${name}`);
+    expect(from, `${name} is not in ${file}`).toBeGreaterThan(-1);
+    return text.slice(from, text.indexOf("\n$$;", from));
+  }
+
+  it("adds who and when, with no foreign key, and keeps the three in step on every row", () => {
+    expect(text).toMatch(
+      /update public\.items set allergens_reviewed = false where allergens_reviewed;/,
+    );
+    expect(text).toMatch(/add column allergens_reviewed_by uuid,/);
+    expect(text).toMatch(/add column allergens_reviewed_at timestamptz,/);
+    expect(text).not.toMatch(/allergens_reviewed_by uuid references/);
+    expect(text).toMatch(
+      /items_allergen_check_whole check \(\s+\(allergens_reviewed\s+and allergens_reviewed_by is not null\s+and allergens_reviewed_at is not null\)\s+or \(not allergens_reviewed\s+and allergens_reviewed_by is null\s+and allergens_reviewed_at is null\)\s+\)/,
+    );
+  });
+
+  it("keeps the list to the nine the US offers, each once, and ten other allergens at most, and stops rather than rewrite an allergen", () => {
+    const stop = text.indexOf("raise exception 'migration 7:");
+    const offered = text.indexOf("add constraint items_allergens_offered");
+    expect(stop).toBeGreaterThan(-1);
+    expect(offered).toBeGreaterThan(stop);
+    expect(text).toMatch(
+      /items_allergens_offered check \(\s+allergens <@ '\{milk,eggs,fish,shellfish,tree-nuts,peanuts,wheat,soy,sesame\}'::public\.allergen\[\]\s+\)/,
+    );
+    expect(text).toMatch(
+      /items_other_allergens_count check \(\s+cardinality\(custom_allergens\) <= 10\s+\)/,
+    );
+    expect(text, "a migration never rewrites an allergen (D-7)").not.toMatch(
+      /update public\.items\s+set (allergens|custom_allergens) =/,
+    );
+  });
+
+  it("holds the lists' rules in a trigger that is revoked by name", () => {
+    const body = bodyOf("check_item_allergen_lists");
+    expect(body).toMatch(/returns trigger/);
+    expect(body).toMatch(/set search_path = ''/);
+    for (const name of [
+      "allergens_repeated",
+      "other_allergen_text",
+      "other_allergen_major",
+      "other_allergen_repeated",
+    ]) {
+      expect(body).toContain(
+        `raise exception '${name}' using errcode = 'P0001'`,
+      );
+    }
+    expect(text).toMatch(
+      /revoke all on function public\.check_item_allergen_lists\(\)\s+from public, anon, authenticated;/,
+    );
+    expect(text).toMatch(
+      /create trigger items_allergen_lists\s+before insert or update of allergens, custom_allergens on public\.items/,
+    );
+  });
+
+  it("stamps and clears the check in a trigger that is revoked by name, needs a person, and refuses a dish born checked", () => {
+    const body = bodyOf("set_item_allergen_check");
+    expect(body).toMatch(/returns trigger/);
+    expect(body).toMatch(/set search_path = ''/);
+    expect(body).toMatch(/person uuid := auth\.uid\(\);/);
+    expect(body).toContain(
+      "raise exception 'allergen_check_on_insert' using errcode = 'P0001'",
+    );
+    expect(body).toContain(
+      "raise exception 'allergen_check_needs_person' using errcode = 'P0001'",
+    );
+    // The stamp is always the trigger's: it starts from the old row's and
+    // only the two branches below write it.
+    expect(body).toMatch(
+      /new\.allergens_reviewed_by := old\.allergens_reviewed_by;\s+new\.allergens_reviewed_at := old\.allergens_reviewed_at;/,
+    );
+    expect(body).toMatch(
+      /if new\.allergens is distinct from old\.allergens\s+or new\.custom_allergens is distinct from old\.custom_allergens then\s+new\.allergens_reviewed := false;/,
+    );
+    expect(body).toMatch(
+      /if new\.allergens_reviewed and not old\.allergens_reviewed then[\s\S]*?new\.allergens_reviewed_by := person;\s+new\.allergens_reviewed_at := now\(\);/,
+    );
+    expect(text).toMatch(
+      /revoke all on function public\.set_item_allergen_check\(\)\s+from public, anon, authenticated;/,
+    );
+    expect(text).toMatch(
+      /create trigger items_allergen_check\s+before insert or update on public\.items/,
+    );
+  });
+
+  it("opens the two lists and the check to owners, and never who or when", () => {
+    expect(text).toMatch(/revoke update on public\.items from authenticated;/);
+    expect(text).not.toMatch(/grant insert [^;]*public\.items/);
+    expect(columnsOf("update")).toEqual([
+      "name",
+      "description",
+      "price_kind",
+      "price_cents",
+      "note",
+      "allergens",
+      "custom_allergens",
+      "allergens_reviewed",
+      "sort",
+      "deleted_at",
+    ]);
+    for (const column of neverWritten) {
+      expect(columnsOf("update")).not.toContain(column);
+    }
+  });
+
+  it("touches no view, adds no callable function, and grants anon nothing", () => {
+    expect(text).not.toMatch(/create (or replace )?view/);
+    expect(text).not.toMatch(/drop view/);
+    expect(text).not.toMatch(/to anon/);
+    const callable = [
+      ...text.matchAll(
+        /create (?:or replace )?function public\.(\w+)\s*\([\s\S]*?\)\s*returns\s+(\S+)/gi,
+      ),
+    ].filter((match) => (match[2] ?? "").toLowerCase() !== "trigger");
+    expect(callable).toEqual([]);
   });
 });

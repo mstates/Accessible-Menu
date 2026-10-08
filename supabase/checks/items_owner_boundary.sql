@@ -1,7 +1,8 @@
 -- Owner boundary check for items, the dishes of a section. Run in the
 -- Supabase SQL editor after every migration that touches items, the
--- functions that count and delete what a menu or a section holds, or the
--- function that moves a dish. Everything rolls back. Replace the uid below with your own auth.users id.
+-- functions that count and delete what a menu or a section holds, the
+-- function that moves a dish, or the allergen check (migration 7).
+-- Everything rolls back. Replace the uid below with your own auth.users id.
 -- A run that ends without an error passed every check.
 begin;
 
@@ -88,11 +89,11 @@ begin
     and att.attnum > 0 and not att.attisdropped
     and has_column_privilege('authenticated', 'public.items', att.attname,
       'update');
-  expected := 'deleted_at, description, name, note, price_cents, price_kind, sort';
+  expected := 'allergens, allergens_reviewed, custom_allergens, deleted_at, description, name, note, price_cents, price_kind, sort';
   if held is distinct from expected then
     raise exception 'FAIL: authenticated updates %, expected %', held, expected;
   end if;
-  raise notice 'ok: authenticated writes only the listed columns of items';
+  raise notice 'ok: authenticated writes only the listed columns of items, and never who checked the allergens or when';
 
   -- A dish's restaurant is its section's restaurant, for every row.
   select count(*) into off
@@ -163,6 +164,7 @@ select set_config('request.jwt.claims',
 -- As this user, a member of A and B and not of C: the table.
 do $$
 declare
+  uid uuid := current_setting('boundary.uid')::uuid;
   a uuid := current_setting('boundary.a')::uuid;
   b_restaurant uuid := current_setting('boundary.b')::uuid;
   a_section uuid := current_setting('boundary.a_section')::uuid;
@@ -190,6 +192,11 @@ declare
   untouched boolean;
   places_before tid[];
   places_after tid[];
+  reviewed boolean;
+  by_whom uuid;
+  at_when timestamptz;
+  touched integer;
+  wanted_word text;
 begin
   insert into public.items (section_id, name, sort)
   values (a_section, 'Boundary check one', 9001) returning id into mine;
@@ -346,20 +353,237 @@ begin
   where id = mine;
   raise notice 'ok: each price choice takes, and the texts and the price clear to null';
 
-  -- Nothing this task does not build is writable after insert either.
+  -- The allergens and their check (migration 7, task 4, D-148). The two
+  -- lists land and leave the dish unchecked; the stamp is never an owner's
+  -- to write; a check is stamped with this user and now by the database;
+  -- a change to anything but the lists leaves it; any change to a list
+  -- clears it; the same lists written again do not.
+  update public.items
+  set allergens = '{milk,wheat}', custom_allergens = '{celery}'
+  where id = mine;
+  select i.allergens_reviewed, i.allergens_reviewed_by, i.allergens_reviewed_at
+    into reviewed, by_whom, at_when
+  from public.items i where i.id = mine;
+  if reviewed or by_whom is not null or at_when is not null then
+    raise exception 'FAIL: listing allergens checked the dish';
+  end if;
+  raise notice 'ok: an owner writes the two allergen lists, and the dish stays unchecked';
+
   begin
-    update public.items set allergens = '{peanuts}' where id = mine;
-    raise exception 'FAIL: an owner wrote allergens';
+    update public.items set allergens_reviewed_by = uid where id = mine;
+    raise exception 'FAIL: an owner wrote who checked the allergens';
   exception when insufficient_privilege then
-    raise notice 'ok: allergens is not writable';
+    raise notice 'ok: allergens_reviewed_by is not writable';
   end;
 
   begin
-    update public.items set allergens_reviewed = true where id = mine;
-    raise exception 'FAIL: an owner marked a dish as reviewed';
+    update public.items set allergens_reviewed_at = now() where id = mine;
+    raise exception 'FAIL: an owner wrote when the allergens were checked';
   exception when insufficient_privilege then
-    raise notice 'ok: allergens_reviewed is not writable';
+    raise notice 'ok: allergens_reviewed_at is not writable';
   end;
+
+  update public.items set allergens_reviewed = true where id = mine;
+  select i.allergens_reviewed, i.allergens_reviewed_by, i.allergens_reviewed_at
+    into reviewed, by_whom, at_when
+  from public.items i where i.id = mine;
+  if not reviewed or by_whom is distinct from uid or at_when is distinct from now() then
+    raise exception 'FAIL: a check was not stamped with this user and now';
+  end if;
+  raise notice 'ok: a check is stamped with the person and the time by the database';
+
+  update public.items
+  set name = 'Boundary check one, renamed', description = 'New words',
+      price_kind = 'one', price_cents = 100, note = 'A note'
+  where id = mine;
+  select i.allergens_reviewed, i.allergens_reviewed_by into reviewed, by_whom
+  from public.items i where i.id = mine;
+  if not reviewed or by_whom is distinct from uid then
+    raise exception 'FAIL: a change to the name, description, price, or note cleared the check';
+  end if;
+  update public.items
+  set name = 'Boundary check one', description = null, note = null,
+      price_cents = null
+  where id = mine;
+  raise notice 'ok: a change to the name, description, price, or note leaves the check as it is';
+
+  update public.items set allergens = '{milk,wheat,sesame}' where id = mine;
+  select i.allergens_reviewed, i.allergens_reviewed_by, i.allergens_reviewed_at
+    into reviewed, by_whom, at_when
+  from public.items i where i.id = mine;
+  if reviewed or by_whom is not null or at_when is not null then
+    raise exception 'FAIL: a major allergen ticked did not clear the check';
+  end if;
+  raise notice 'ok: a major allergen ticked clears the check and its stamp';
+
+  update public.items set allergens_reviewed = true where id = mine;
+  update public.items set allergens = '{milk,wheat}' where id = mine;
+  select i.allergens_reviewed into reviewed from public.items i where i.id = mine;
+  if reviewed then
+    raise exception 'FAIL: a major allergen unticked did not clear the check';
+  end if;
+  raise notice 'ok: a major allergen unticked clears the check';
+
+  update public.items set allergens_reviewed = true where id = mine;
+  update public.items set custom_allergens = '{celery,mustard}' where id = mine;
+  select i.allergens_reviewed into reviewed from public.items i where i.id = mine;
+  if reviewed then
+    raise exception 'FAIL: another allergen added did not clear the check';
+  end if;
+  update public.items set allergens_reviewed = true where id = mine;
+  update public.items set custom_allergens = '{celery,lupin}' where id = mine;
+  select i.allergens_reviewed into reviewed from public.items i where i.id = mine;
+  if reviewed then
+    raise exception 'FAIL: another allergen renamed did not clear the check';
+  end if;
+  update public.items set allergens_reviewed = true where id = mine;
+  update public.items set custom_allergens = '{celery}' where id = mine;
+  select i.allergens_reviewed into reviewed from public.items i where i.id = mine;
+  if reviewed then
+    raise exception 'FAIL: another allergen removed did not clear the check';
+  end if;
+  raise notice 'ok: another allergen added, renamed, or removed clears the check';
+
+  update public.items set allergens_reviewed = true where id = mine;
+  update public.items
+  set allergens = '{milk,wheat}', custom_allergens = '{celery}'
+  where id = mine;
+  select i.allergens_reviewed, i.allergens_reviewed_by into reviewed, by_whom
+  from public.items i where i.id = mine;
+  if not reviewed or by_whom is distinct from uid then
+    raise exception 'FAIL: the same lists written again cleared the check';
+  end if;
+  raise notice 'ok: the same lists written again leave the check';
+
+  update public.items set allergens_reviewed = false where id = mine;
+  select i.allergens_reviewed, i.allergens_reviewed_by, i.allergens_reviewed_at
+    into reviewed, by_whom, at_when
+  from public.items i where i.id = mine;
+  if reviewed or by_whom is not null or at_when is not null then
+    raise exception 'FAIL: an uncheck left the stamp';
+  end if;
+  raise notice 'ok: an uncheck clears the stamp';
+
+  -- A list with nothing in it can be checked: checked, none of the major
+  -- allergens (D-35, D-148).
+  update public.items set allergens_reviewed = true where id = two;
+  select i.allergens_reviewed, i.allergens_reviewed_by into reviewed, by_whom
+  from public.items i where i.id = two;
+  if not reviewed or by_whom is distinct from uid then
+    raise exception 'FAIL: a dish with nothing listed could not be checked';
+  end if;
+  raise notice 'ok: a list with nothing in it can be checked';
+
+  -- One statement that changes a list and checks it ends unchecked, which
+  -- is why the apply sends two (D-129).
+  update public.items set allergens_reviewed = false where id = two;
+  update public.items set allergens = '{eggs}', allergens_reviewed = true
+  where id = two;
+  select i.allergens_reviewed, i.allergens_reviewed_by into reviewed, by_whom
+  from public.items i where i.id = two;
+  if reviewed or by_whom is not null then
+    raise exception 'FAIL: one statement changed a list and checked it';
+  end if;
+  raise notice 'ok: one statement that changes a list and checks it ends unchecked';
+
+  -- The app's rule: every statement that checks names the lists the page
+  -- showed, and lands on no row when the dish holds others (Michael,
+  -- October 8, 2026).
+  update public.items set allergens_reviewed = true
+  where id = two
+    and allergens = '{}'::public.allergen[]
+    and custom_allergens = '{}'::text[];
+  get diagnostics touched = row_count;
+  select i.allergens_reviewed into reviewed from public.items i where i.id = two;
+  if touched <> 0 or reviewed then
+    raise exception 'FAIL: a check that named lists the dish no longer holds landed';
+  end if;
+  raise notice 'ok: a check that names lists the dish no longer holds lands on no row';
+  update public.items set allergens = '{}' where id = two;
+
+  -- The nine the US offers, each once (D-94, Q-4).
+  begin
+    update public.items set allergens = '{celery}' where id = mine;
+    raise exception 'FAIL: an allergen outside the nine was ticked';
+  exception when check_violation then
+    raise notice 'ok: only the nine the US offers can be ticked; celery is typed as another allergen';
+  end;
+
+  begin
+    update public.items set allergens = '{milk,milk}' where id = mine;
+    raise exception 'FAIL: a repeated major allergen was accepted';
+  exception when raise_exception then
+    if sqlerrm <> 'allergens_repeated' then raise; end if;
+    raise notice 'ok: a major allergen appears once';
+  end;
+
+  -- Another allergen: one line of something to read, forty characters at
+  -- most, no outer space, once whatever the case, never one of the nine,
+  -- and ten at most.
+  begin
+    update public.items set custom_allergens = array[''] where id = mine;
+    raise exception 'FAIL: a blank other allergen was accepted';
+  exception when raise_exception then
+    if sqlerrm <> 'other_allergen_text' then raise; end if;
+    raise notice 'ok: another allergen cannot be blank';
+  end;
+
+  begin
+    update public.items set custom_allergens = array['a' || chr(9) || 'b']
+    where id = mine;
+    raise exception 'FAIL: another allergen with a tab was accepted';
+  exception when raise_exception then
+    if sqlerrm <> 'other_allergen_text' then raise; end if;
+    raise notice 'ok: another allergen is one line';
+  end;
+
+  begin
+    update public.items set custom_allergens = array[' celery'] where id = mine;
+    raise exception 'FAIL: another allergen with an outer space was accepted';
+  exception when raise_exception then
+    if sqlerrm <> 'other_allergen_text' then raise; end if;
+    raise notice 'ok: another allergen has no outer space; the app trims first';
+  end;
+
+  begin
+    update public.items set custom_allergens = array[repeat('x', 41)]
+    where id = mine;
+    raise exception 'FAIL: a 41 character other allergen was accepted';
+  exception when raise_exception then
+    if sqlerrm <> 'other_allergen_text' then raise; end if;
+    raise notice 'ok: another allergen is 40 characters at most';
+  end;
+
+  foreach wanted_word in array array['Milk', 'DAIRY', 'tree nuts', 'nuts'] loop
+    begin
+      update public.items set custom_allergens = array[wanted_word] where id = mine;
+      raise exception 'FAIL: % was accepted as another allergen', wanted_word;
+    exception when raise_exception then
+      if sqlerrm <> 'other_allergen_major' then raise; end if;
+    end;
+  end loop;
+  raise notice 'ok: a word that means one of the nine is refused as another allergen; its box is the place';
+
+  begin
+    update public.items set custom_allergens = array['celery', 'Celery']
+    where id = mine;
+    raise exception 'FAIL: another allergen was accepted twice';
+  exception when raise_exception then
+    if sqlerrm <> 'other_allergen_repeated' then raise; end if;
+    raise notice 'ok: another allergen appears once, whatever the case';
+  end;
+
+  begin
+    update public.items
+    set custom_allergens = array['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7',
+      'a8', 'a9', 'a10', 'a11']
+    where id = mine;
+    raise exception 'FAIL: eleven other allergens were accepted';
+  exception when check_violation then
+    raise notice 'ok: a dish lists ten other allergens at most';
+  end;
+
+  update public.items set custom_allergens = '{}', allergens = '{}' where id = mine;
 
   begin
     update public.items set available = false where id = mine;
@@ -937,8 +1161,11 @@ begin
 end;
 $$;
 
--- As the table owner again: the stranger moved and marked nothing.
+-- As the table owner again: the stranger moved and marked nothing; and
+-- with no person signed in, a check is refused and a dish is never born
+-- checked (migration 7).
 reset role;
+select set_config('request.jwt.claims', '', true);
 
 do $$
 declare
@@ -948,6 +1175,23 @@ declare
   in_place boolean;
   live boolean;
 begin
+  begin
+    update public.items set allergens_reviewed = true where id = ids[1];
+    raise exception 'FAIL: a check was stamped with nobody signed in';
+  exception when raise_exception then
+    if sqlerrm <> 'allergen_check_needs_person' then raise; end if;
+    raise notice 'ok: a check needs a signed-in person; a server key or the SQL editor with no user cannot check a dish';
+  end;
+
+  begin
+    insert into public.items (section_id, name, sort, allergens_reviewed)
+    values (a_section, 'Boundary check born checked', 9100, true);
+    raise exception 'FAIL: a dish was born checked';
+  exception when raise_exception then
+    if sqlerrm <> 'allergen_check_on_insert' then raise; end if;
+    raise notice 'ok: a dish is never born checked';
+  end;
+
   select bool_and(i.sort = t.ord and i.section_id = a_section) into in_place
   from unnest(ids) with ordinality as t (id, ord)
   join public.items i on i.id = t.id;

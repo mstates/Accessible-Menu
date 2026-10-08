@@ -70,12 +70,38 @@ function seed(withDishes = true) {
     created_at: stamp(),
   }));
   const starters = sections[0];
+  const mains = sections[1];
   // Priced one way each, as CI Diner's data file prices them (D-139): the
-  // soup by size, the salad at one price, the bread at market price.
+  // soup by size, the salad at one price, the bread at market price. With
+  // their allergens, as the file lists them (D-148): the soup checked with
+  // milk, wheat, and celery, the salad checked with none, the bread not
+  // checked; and a second Soup of the day in Mains, not checked, for the
+  // same-named line on the first (D-129).
   const priced = [
-    { name: "Soup of the day", price_kind: "sizes", price_cents: null },
-    { name: "House salad", price_kind: "one", price_cents: 900 },
-    { name: "Garlic bread", price_kind: "market", price_cents: null },
+    {
+      name: "Soup of the day",
+      price_kind: "sizes",
+      price_cents: null,
+      allergens: ["milk", "wheat"],
+      custom_allergens: ["celery"],
+      checked: true,
+    },
+    {
+      name: "House salad",
+      price_kind: "one",
+      price_cents: 900,
+      allergens: [],
+      custom_allergens: [],
+      checked: true,
+    },
+    {
+      name: "Garlic bread",
+      price_kind: "market",
+      price_cents: null,
+      allergens: [],
+      custom_allergens: [],
+      checked: false,
+    },
   ];
   items = (withDishes ? priced : []).map((dish, index) => ({
     id: randomUUID(),
@@ -86,10 +112,35 @@ function seed(withDishes = true) {
     price_kind: dish.price_kind,
     price_cents: dish.price_cents,
     note: null,
+    allergens: dish.allergens,
+    custom_allergens: dish.custom_allergens,
+    allergens_reviewed: dish.checked,
+    allergens_reviewed_by: dish.checked ? user.id : null,
+    allergens_reviewed_at: dish.checked ? stamp() : null,
     sort: index + 1,
     deleted_at: null,
     created_at: stamp(),
   }));
+  if (withDishes) {
+    items.push({
+      id: randomUUID(),
+      section_id: mains.id,
+      restaurant_id: restaurant.id,
+      name: "Soup of the day",
+      description: null,
+      price_kind: "one",
+      price_cents: null,
+      note: null,
+      allergens: [],
+      custom_allergens: [],
+      allergens_reviewed: false,
+      allergens_reviewed_by: null,
+      allergens_reviewed_at: null,
+      sort: 1,
+      deleted_at: null,
+      created_at: stamp(),
+    });
+  }
   const soup = items[0];
   sizes = (
     withDishes
@@ -235,8 +286,105 @@ const badEnum = (value) => [
   },
 ];
 
-// Migration five's rules for one item row, and migration six's for its
-// texts and price, as it would be after a write.
+const named = (message) => [
+  400,
+  { code: "P0001", message, details: null, hint: null },
+];
+
+const US_NINE = [
+  "milk",
+  "eggs",
+  "fish",
+  "shellfish",
+  "tree-nuts",
+  "peanuts",
+  "wheat",
+  "soy",
+  "sesame",
+];
+const MAJOR_WORDS = [
+  "milk",
+  "dairy",
+  "egg",
+  "eggs",
+  "fish",
+  "shellfish",
+  "crustaceans",
+  "tree nut",
+  "tree nuts",
+  "tree-nuts",
+  "nuts",
+  "peanut",
+  "peanuts",
+  "wheat",
+  "soy",
+  "soya",
+  "soybean",
+  "soybeans",
+  "sesame",
+];
+
+// Migration seven's rules for a dish's two allergen lists: the nine the US
+// offers, each once; another allergen one line of 40 characters at most,
+// with no outer space, once whatever the case, never one of the nine, and
+// ten at most.
+function allergenListsProblem(row) {
+  const { allergens, custom_allergens: others } = row;
+  if (!Array.isArray(allergens) || !Array.isArray(others)) {
+    return check("items", "items_allergens_offered");
+  }
+  if (allergens.some((id) => !US_NINE.includes(id))) {
+    return check("items", "items_allergens_offered");
+  }
+  if (new Set(allergens).size !== allergens.length) {
+    return named("allergens_repeated");
+  }
+  if (others.length > 10) return check("items", "items_other_allergens_count");
+  const seen = new Set();
+  for (const other of others) {
+    if (
+      typeof other !== "string" ||
+      !/\S/.test(other) ||
+      /\p{Cc}/u.test(other) ||
+      other !== other.trim() ||
+      other.length > 40
+    ) {
+      return named("other_allergen_text");
+    }
+    if (MAJOR_WORDS.includes(other.toLowerCase())) {
+      return named("other_allergen_major");
+    }
+    if (seen.has(other.toLowerCase())) return named("other_allergen_repeated");
+    seen.add(other.toLowerCase());
+  }
+  return null;
+}
+
+// Migration seven's trigger: any change to a list clears the check and its
+// stamp; a check that begins is stamped with the person and now; an
+// uncheck clears the stamp. The stamp is never what the caller wrote.
+function withAllergenCheck(row, next) {
+  const out = { ...next };
+  out.allergens_reviewed_by = row.allergens_reviewed_by;
+  out.allergens_reviewed_at = row.allergens_reviewed_at;
+  const listChanged =
+    JSON.stringify(next.allergens) !== JSON.stringify(row.allergens) ||
+    JSON.stringify(next.custom_allergens) !==
+      JSON.stringify(row.custom_allergens);
+  if (listChanged) out.allergens_reviewed = false;
+  if (out.allergens_reviewed && !row.allergens_reviewed) {
+    out.allergens_reviewed_by = user.id;
+    out.allergens_reviewed_at = stamp();
+  } else if (!out.allergens_reviewed) {
+    out.allergens_reviewed_by = null;
+    out.allergens_reviewed_at = null;
+  }
+  return out;
+}
+
+// Migration five's rules for one item row, migration six's for its texts
+// and price, and migration seven's for its allergen lists, as it would be
+// after a write.
 function itemProblem(row) {
   const { name, description, note, price_cents: price, price_kind: kind } = row;
   if (
@@ -272,6 +420,8 @@ function itemProblem(row) {
     return check("items", "items_price_cents_range");
   }
   if (!PRICE_KINDS.includes(kind)) return badEnum(kind);
+  const lists = allergenListsProblem(row);
+  if (lists) return lists;
   if (row.deleted_at === null) {
     const taken = items.some(
       (i) =>
@@ -325,6 +475,69 @@ const liveSectionsOf = (menuId) =>
 const liveItemsOf = (sectionId) =>
   items.filter((i) => i.section_id === sectionId && i.deleted_at === null);
 
+// A Postgres array literal as the app sends one to compare an array column
+// against the lists the page showed: {"milk","wheat"}, each element quoted,
+// with its quotes and backslashes escaped.
+function parseArrayLiteral(text) {
+  if (!text.startsWith("{") || !text.endsWith("}")) return null;
+  const inner = text.slice(1, -1);
+  if (inner === "") return [];
+  const out = [];
+  let current = "";
+  let quoted = false;
+  let started = false;
+  for (let index = 0; index < inner.length; index += 1) {
+    const char = inner[index];
+    if (quoted) {
+      if (char === "\\") {
+        current += inner[index + 1] ?? "";
+        index += 1;
+      } else if (char === '"') {
+        quoted = false;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+    if (char === '"') {
+      quoted = true;
+      started = true;
+    } else if (char === ",") {
+      out.push(current);
+      current = "";
+      started = false;
+    } else {
+      current += char;
+      started = true;
+    }
+  }
+  if (started || out.length > 0) out.push(current);
+  return out;
+}
+
+// PostgREST's like pattern as a regular expression: * and % match anything,
+// _ one character, and a backslash keeps the next character literal.
+function likeToRegExp(pattern) {
+  let source = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === "\\") {
+      source += (pattern[index + 1] ?? "").replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&",
+      );
+      index += 1;
+    } else if (char === "%" || char === "*") {
+      source += ".*";
+    } else if (char === "_") {
+      source += ".";
+    } else {
+      source += char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+  }
+  return new RegExp(`^${source}$`, "is");
+}
+
 function matches(row, params) {
   for (const [key, raw] of params) {
     if (
@@ -339,7 +552,15 @@ function matches(row, params) {
     } else if (raw === "not.is.null") {
       if (value === null) return false;
     } else if (raw.startsWith("eq.")) {
-      if (String(value) !== raw.slice(3)) return false;
+      const wanted = raw.slice(3);
+      if (Array.isArray(value)) {
+        const literal = parseArrayLiteral(wanted);
+        if (literal === null) throw new Error(`bad array literal: ${wanted}`);
+        if (JSON.stringify(literal) !== JSON.stringify(value)) return false;
+      } else if (String(value) !== wanted) return false;
+    } else if (raw.startsWith("ilike.")) {
+      if (typeof value !== "string" || !likeToRegExp(raw.slice(6)).test(value))
+        return false;
     } else {
       throw new Error(`filter not supported: ${key}=${raw}`);
     }
@@ -487,12 +708,35 @@ const server = http.createServer(async (req, res) => {
         price_kind: "one",
         price_cents: null,
         note: null,
+        allergens: [],
+        custom_allergens: [],
+        allergens_reviewed: false,
+        allergens_reviewed_by: null,
+        allergens_reviewed_at: null,
         sort: 99,
         deleted_at: null,
         created_at: stamp(),
       };
       items.push(row);
       return send(res, 200, row);
+    }
+    // A dish's allergen lists changed somewhere else: another tab, another
+    // person. The trigger's rules apply, so a check standing on the dish
+    // clears (D-148).
+    if (path === "/__test/set-allergens") {
+      const dish = items.find((i) => i.id === params.get("id"));
+      if (!dish) return send(res, 404, { message: "no such dish" });
+      const split = (text) => (text ? text.split(",").filter(Boolean) : []);
+      const next = withAllergenCheck(dish, {
+        ...dish,
+        allergens: split(params.get("allergens")),
+        custom_allergens: split(params.get("others")),
+        allergens_reviewed: params.get("checked") === "1",
+      });
+      const problem = itemProblem(next);
+      if (problem) return send(res, ...problem);
+      Object.assign(dish, next);
+      return send(res, 200, dish);
     }
     // A menu deleted somewhere else, by a plain mark.
     if (path === "/__test/delete-menu") {
@@ -813,6 +1057,11 @@ const server = http.createServer(async (req, res) => {
           price_kind: "one",
           price_cents: null,
           note: null,
+          allergens: [],
+          custom_allergens: [],
+          allergens_reviewed: false,
+          allergens_reviewed_by: null,
+          allergens_reviewed_at: null,
           sort: payload.sort ?? 0,
           deleted_at: null,
           created_at: stamp(),
@@ -829,6 +1078,9 @@ const server = http.createServer(async (req, res) => {
           "price_kind",
           "price_cents",
           "note",
+          "allergens",
+          "custom_allergens",
+          "allergens_reviewed",
           "sort",
           "deleted_at",
         ];
@@ -837,11 +1089,14 @@ const server = http.createServer(async (req, res) => {
         );
         if (extra.length) return denied(res, `column ${extra[0]}`);
         const targets = items.filter((row) => matches(row, params));
+        const nexts = new Map();
         for (const row of targets) {
-          const problem = itemProblem({ ...row, ...payload });
+          const next = withAllergenCheck(row, { ...row, ...payload });
+          const problem = itemProblem(next);
           if (problem) return send(res, ...problem);
+          nexts.set(row, next);
         }
-        for (const row of targets) Object.assign(row, payload);
+        for (const row of targets) Object.assign(row, nexts.get(row));
         return respondRows(req, res, targets, params);
       }
       if (req.method === "DELETE") return denied(res, "table items");
