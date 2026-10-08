@@ -10,10 +10,13 @@ import {
   cleanOtherAllergen,
   confirmationLine,
   EU_ALLERGENS,
+  hasOtherAllergenComma,
   MAJOR_ALLERGEN_WORDS,
   majorAllergensOf,
+  OTHER_ALLERGEN_COMMA_CHARS,
   OTHER_ALLERGEN_LIMITS,
   otherAllergenProblem,
+  rankOtherAllergenNames,
   restaurantAllergenNote,
   sameAllergenLists,
   sameListsAsStored,
@@ -220,21 +223,81 @@ describe("the owner's lists (D-148)", () => {
     expect(checkedOnDate("not a date", "America/New_York", "en")).toBe("");
   });
 
-  it("offers the nine the migration allows, and refuses the words the migration refuses", () => {
-    const offered = sql.match(
-      /items_allergens_offered check \(\s*allergens <@ '\{([^}]+)\}'::public\.allergen\[\]/,
+  it("refuses a comma in any of its three forms, before the length rule, and never strips one (D-151)", () => {
+    expect(OTHER_ALLERGEN_COMMA_CHARS).toBe(",\uFF0C\u3001");
+    for (const comma of OTHER_ALLERGEN_COMMA_CHARS) {
+      const name = `nuts${comma} except almonds`;
+      expect(hasOtherAllergenComma(name)).toBe(true);
+      expect(otherAllergenProblem(name, [], null)).toBe("otherComma");
+      expect(cleanOtherAllergen(name)).toBe(name);
+    }
+    expect(hasOtherAllergenComma("celery seed")).toBe(false);
+    expect(otherAllergenProblem(`${"x".repeat(41)},`, [], null)).toBe(
+      "otherComma",
     );
-    expect(offered).not.toBeNull();
-    expect((offered?.[1] ?? "").split(",")).toEqual([...US_MAJOR_ALLERGENS]);
-    const refused = sql.match(/raise exception 'other_allergen_major'[\s\S]*$/);
-    const words = sql.match(
-      /if lower\(other\) = any \(array\[([\s\S]*?)\]\) then\s+raise exception 'other_allergen_major'/,
+  });
+
+  it("ranks the other allergens a restaurant already names, most used first and then by name, each once whatever its case", () => {
+    expect(
+      rankOtherAllergenNames([
+        "Sulfites",
+        "mustard",
+        "Celery",
+        "celery ",
+        "",
+        "mustard",
+        "  ",
+      ]),
+    ).toEqual(["Celery", "mustard", "Sulfites"]);
+  });
+
+  it("offers the nine in every migration that lists them, and refuses the words every copy of the rule refuses, the live one in allergen_lists_problem", () => {
+    // Every constraint that holds a list within the nine the US offers
+    // (migration seven on items, migration eight on a section's line) names
+    // the same nine.
+    const offered = [
+      ...sql.matchAll(
+        /_allergens_offered check \(\s*\w+ <@ '\{([^}]+)\}'::public\.allergen\[\]/g,
+      ),
+    ].map((found) => (found[1] ?? "").split(","));
+    expect(offered.length).toBeGreaterThanOrEqual(2);
+    for (const list of offered) expect(list).toEqual([...US_MAJOR_ALLERGENS]);
+
+    // The words that mean one of the nine. Migration seven's trigger raised
+    // other_allergen_major with its own list; migration eight's rule
+    // function returns it with the list every lists trigger reads now.
+    // Every copy in the migrations folder equals the editor's, not only the
+    // first, and the live one is in allergen_lists_problem.
+    const copies = [
+      ...sql.matchAll(
+        /if lower\(other\) = any \(array\[([\s\S]*?)\]\) then\s+(?:raise exception|return) 'other_allergen_major'/g,
+      ),
+    ].map((found) =>
+      [...(found[1] ?? "").matchAll(/'([^']+)'/g)].map((word) => word[1]),
     );
-    expect(refused).not.toBeNull();
-    expect(words).not.toBeNull();
-    const inSql = [...(words?.[1] ?? "").matchAll(/'([^']+)'/g)].map(
-      (found) => found[1],
+    expect(copies.length).toBeGreaterThanOrEqual(2);
+    for (const words of copies) {
+      expect(words).toEqual(Object.keys(MAJOR_ALLERGEN_WORDS));
+    }
+    const from = sql.indexOf("create function public.allergen_lists_problem");
+    expect(from).toBeGreaterThan(-1);
+    const live = sql.slice(from, sql.indexOf("\n$$;", from));
+    expect(live).toMatch(/return 'other_allergen_major'/);
+    expect(live).toMatch(/return 'other_allergen_text'/);
+    expect(live).toMatch(/return 'other_allergen_repeated'/);
+    expect(live).toMatch(/return 'allergens_repeated'/);
+    const liveWords = live.match(
+      /if lower\(other\) = any \(array\[([\s\S]*?)\]\) then\s+return 'other_allergen_major'/,
     );
-    expect(inSql).toEqual(Object.keys(MAJOR_ALLERGEN_WORDS));
+    expect(
+      [...(liveWords?.[1] ?? "").matchAll(/'([^']+)'/g)].map((word) => word[1]),
+    ).toEqual(Object.keys(MAJOR_ALLERGEN_WORDS));
+
+    // The commas the rule refuses are the editor's three (D-151, Q-65), as
+    // the migration file holds them.
+    const commas = live.match(
+      /other ~ '\[([^\]]+)\]' then\s+return 'other_allergen_comma'/,
+    );
+    expect(commas?.[1]).toBe(OTHER_ALLERGEN_COMMA_CHARS);
   });
 });

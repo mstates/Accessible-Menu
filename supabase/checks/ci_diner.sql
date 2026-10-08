@@ -17,9 +17,11 @@
 -- with their allergens (Soup of the day checked with milk, wheat, and
 -- celery; House salad checked with none; Garlic bread not checked); a
 -- second Soup of the day in Mains, not checked, for the same-named line on
--- the first (D-129); at least one menu that holds no section; and at least
--- one section of Dinner that holds no dish. Nothing here can publish
--- (migration 3).
+-- the first (D-129); Starters' line shown with every dish, "Add a buttered
+-- roll to any dish for 2 dollars.", checked with milk and wheat, and
+-- Desserts with no line (migration 8, task 4b); at least one menu that
+-- holds no section; and at least one section of Dinner that holds no dish.
+-- Nothing here can publish (migration 3).
 
 do $$
 declare
@@ -285,6 +287,35 @@ begin
     values (mains, 'Soup of the day', 1);
     raise notice 'added the dish Soup of the day to Mains';
   end if;
+
+  -- 3d. Starters' line shown with every dish, with its own allergens and
+  -- its check (migration 8, task 4b, D-152): "Add a buttered roll to any
+  -- dish for 2 dollars." with milk and wheat, checked as CI Diner's owner,
+  -- in two statements, since one statement that changes the words or a
+  -- list and checks it ends unchecked; each written only when it differs.
+  -- The line names no dish in Starters, since the gate matches names by
+  -- substring. Desserts keeps no line, so the gate reads a page without
+  -- the group too.
+  update public.sections s
+  set every_item = 'Add a buttered roll to any dish for 2 dollars.',
+      every_item_allergens = '{milk,wheat}',
+      every_item_custom_allergens = '{}'
+  where s.id = starters
+    and (s.every_item is distinct from
+        'Add a buttered roll to any dish for 2 dollars.'
+      or s.every_item_allergens is distinct from '{milk,wheat}'::public.allergen[]
+      or s.every_item_custom_allergens is distinct from '{}'::text[]);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'gave Starters its line shown with every dish, with milk and wheat';
+  end if;
+  update public.sections s
+  set every_item_allergens_reviewed = true
+  where s.id = starters and not s.every_item_allergens_reviewed;
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'checked the allergens of Starters'' line';
+  end if;
 end $$;
 
 -- 4. What CI Diner holds now, in the order its screens show it. The first
@@ -301,7 +332,8 @@ live_menus as (
   where m.deleted_at is null
 ),
 live_sections as (
-  select s.id, s.menu_id, s.name,
+  select s.id, s.menu_id, s.name, s.every_item, s.every_item_allergens,
+    s.every_item_custom_allergens, s.every_item_allergens_reviewed,
     row_number() over (
       partition by s.menu_id order by s.sort, s.created_at, s.id
     ) as place
@@ -400,7 +432,19 @@ verdict as (
         select 1 from live_items li join mains on li.section_id = mains.id
         where lower(btrim(li.name)) = 'soup of the day'
           and not li.allergens_reviewed),
-      false) as allergens_ok
+      false) as allergens_ok,
+    coalesce(
+      (select ls.every_item = 'Add a buttered roll to any dish for 2 dollars.'
+         and ls.every_item_allergens = '{milk,wheat}'::public.allergen[]
+         and ls.every_item_custom_allergens = '{}'::text[]
+         and ls.every_item_allergens_reviewed
+       from live_sections ls join starters on ls.id = starters.id)
+      and not exists (
+        select 1 from live_sections ls
+        join dinner on ls.menu_id = dinner.id
+        where lower(btrim(ls.name)) = 'desserts'
+          and ls.every_item is not null),
+      false) as line_ok
 )
 select item, status
 from (
@@ -422,6 +466,8 @@ from (
         'not ready: Soup of the day is not priced by size with Cup and Bowl, House salad at one price, and Garlic bread at market price'
       when not v.allergens_ok then
         'not ready: Soup of the day is not checked with milk, wheat, and celery, House salad checked with none, Garlic bread not checked, or Mains has no unchecked Soup of the day'
+      when not v.line_ok then
+        'not ready: Starters'' line shown with every dish is not "Add a buttered roll to any dish for 2 dollars." checked with milk and wheat, or Desserts has a line'
       else 'ready for the owner gate'
     end as status
   from verdict v
@@ -437,7 +483,12 @@ from (
   from live_menus lm
   union all
   select lm.place, ls.place, 0, 0,
-    'section ' || ls.place || ' of ' || lm.name || ': ' || ls.name,
+    'section ' || ls.place || ' of ' || lm.name || ': ' || ls.name
+      || coalesce(', line: ' || ls.every_item || ', allergens '
+        || coalesce(nullif(array_to_string(ls.every_item_allergens, ' '), ''), 'none')
+        || coalesce(' and ' || nullif(array_to_string(ls.every_item_custom_allergens, ' '), ''), '')
+        || case when ls.every_item_allergens_reviewed then ', checked' else ', not checked' end,
+        ''),
     case
       when lower(btrim(lm.name)) = 'dinner'
         and ls.place <= 3

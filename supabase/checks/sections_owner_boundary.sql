@@ -1,7 +1,8 @@
 -- Owner boundary check for sections. Run in the Supabase SQL editor after
--- every migration that touches sections, or move_section(). Everything
--- rolls back. Replace the uid below with your own auth.users id. A run that
--- ends without an error passed every check.
+-- every migration that touches sections, move_section(), or the line's
+-- allergen check (migration 8). Everything rolls back. Replace the uid
+-- below with your own auth.users id. A run that ends without an error
+-- passed every check.
 begin;
 
 -- The one line to change. The script makes this user a member of two
@@ -64,11 +65,11 @@ begin
     and att.attnum > 0 and not att.attisdropped
     and has_column_privilege('authenticated', 'public.sections', att.attname,
       'update');
-  expected := 'deleted_at, every_item, name, note, sort';
+  expected := 'deleted_at, every_item, every_item_allergens, every_item_allergens_reviewed, every_item_custom_allergens, name, note, sort';
   if held is distinct from expected then
     raise exception 'FAIL: authenticated updates %, expected %', held, expected;
   end if;
-  raise notice 'ok: authenticated writes only the listed columns of sections';
+  raise notice 'ok: authenticated writes only the listed columns of sections, and never who checked the line''s allergens or when';
 
   -- A section's restaurant is its menu's restaurant, for every row.
   select count(*) into off
@@ -126,6 +127,7 @@ select set_config('request.jwt.claims',
 -- As this user, a member of A and B and not of C.
 do $$
 declare
+  uid uuid := current_setting('boundary.uid')::uuid;
   a uuid := current_setting('boundary.a')::uuid;
   b_restaurant uuid := current_setting('boundary.b')::uuid;
   a_menu uuid := current_setting('boundary.a_menu')::uuid;
@@ -153,6 +155,14 @@ declare
   untouched boolean;
   places_before tid[];
   places_after tid[];
+  reviewed boolean;
+  by_whom uuid;
+  at_when timestamptz;
+  touched integer;
+  wanted_word text;
+  held_words text;
+  held_majors public.allergen[];
+  held_others text[];
 begin
   insert into public.sections (menu_id, name, sort)
   values (a_menu, 'Boundary check one', 9001) returning id into mine;
@@ -322,6 +332,289 @@ begin
   update public.sections set every_item = repeat('x', 120) where id = mine;
   update public.sections set every_item = null where id = mine;
   raise notice 'ok: an every-dish line takes 120 characters and null';
+
+  -- The line's own allergens and their check (migration 8, D-152, D-153),
+  -- in a dish's shape: the two lists, the check stamped and cleared by the
+  -- database, and a line with no words holding nothing.
+  begin
+    update public.sections set every_item_allergens = '{milk}' where id = mine;
+    raise exception 'FAIL: a list was written to a line with no words';
+  exception when raise_exception then
+    if sqlerrm <> 'line_blank_holds_nothing' then raise; end if;
+    raise notice 'ok: a line with no words takes no list';
+  end;
+
+  begin
+    update public.sections set every_item_allergens_reviewed = true
+    where id = mine;
+    raise exception 'FAIL: a line with no words was checked';
+  exception when raise_exception then
+    if sqlerrm <> 'line_blank_holds_nothing' then raise; end if;
+    raise notice 'ok: a line with no words takes no check';
+  end;
+
+  update public.sections
+    set every_item = 'Add spaghetti to any dish for 3 dollars.' where id = mine;
+  update public.sections
+    set every_item_allergens = '{milk,wheat}',
+        every_item_custom_allergens = '{celery}'
+    where id = mine;
+  select s.every_item_allergens_reviewed, s.every_item_allergens_reviewed_by
+    into reviewed, by_whom
+  from public.sections s where s.id = mine;
+  if reviewed or by_whom is not null then
+    raise exception 'FAIL: a line''s lists landed checked';
+  end if;
+  raise notice 'ok: a line with words takes its two lists, unchecked';
+
+  begin
+    update public.sections set every_item_allergens_reviewed_by = uid
+    where id = mine;
+    raise exception 'FAIL: an owner wrote who checked the line''s allergens';
+  exception when insufficient_privilege then
+    raise notice 'ok: every_item_allergens_reviewed_by is not writable';
+  end;
+
+  begin
+    update public.sections set every_item_allergens_reviewed_at = now()
+    where id = mine;
+    raise exception 'FAIL: an owner wrote when the line''s allergens were checked';
+  exception when insufficient_privilege then
+    raise notice 'ok: every_item_allergens_reviewed_at is not writable';
+  end;
+
+  update public.sections set every_item_allergens_reviewed = true
+  where id = mine;
+  select s.every_item_allergens_reviewed, s.every_item_allergens_reviewed_by,
+         s.every_item_allergens_reviewed_at
+    into reviewed, by_whom, at_when
+  from public.sections s where s.id = mine;
+  if not reviewed or by_whom is distinct from uid
+     or at_when is distinct from now() then
+    raise exception 'FAIL: a line''s check was not stamped with this user and now';
+  end if;
+  raise notice 'ok: a line''s check is stamped with the person and the time by the database';
+
+  -- A change to the section's other fields leaves the check.
+  update public.sections
+    set name = 'Boundary check one renamed', note = 'A note', sort = 9011
+    where id = mine;
+  select s.every_item_allergens_reviewed into reviewed
+  from public.sections s where s.id = mine;
+  if not reviewed then
+    raise exception 'FAIL: a change to the name, note, or sort cleared the line''s check';
+  end if;
+  update public.sections
+    set name = 'Boundary check one', note = null, sort = 9001 where id = mine;
+  raise notice 'ok: a change to the section''s name, note, or sort leaves the line''s check';
+
+  -- A change to the line's words clears it (D-152); the same words again
+  -- leave it.
+  update public.sections
+    set every_item = 'Add shrimp to any dish for 5 dollars.' where id = mine;
+  select s.every_item_allergens_reviewed, s.every_item_allergens_reviewed_by,
+         s.every_item_allergens_reviewed_at
+    into reviewed, by_whom, at_when
+  from public.sections s where s.id = mine;
+  if reviewed or by_whom is not null or at_when is not null then
+    raise exception 'FAIL: a change to the line''s words left its check';
+  end if;
+  raise notice 'ok: a change to the line''s words clears its check and its stamp';
+
+  update public.sections set every_item_allergens_reviewed = true
+  where id = mine;
+  update public.sections
+    set every_item = 'Add shrimp to any dish for 5 dollars.' where id = mine;
+  select s.every_item_allergens_reviewed into reviewed
+  from public.sections s where s.id = mine;
+  if not reviewed then
+    raise exception 'FAIL: writing the same words again cleared the check';
+  end if;
+  raise notice 'ok: the same words written again leave the check';
+
+  -- A change to either list clears it.
+  update public.sections set every_item_allergens = '{milk,wheat,sesame}'
+  where id = mine;
+  select s.every_item_allergens_reviewed into reviewed
+  from public.sections s where s.id = mine;
+  if reviewed then
+    raise exception 'FAIL: a tick on the line left its check';
+  end if;
+  update public.sections set every_item_allergens_reviewed = true
+  where id = mine;
+  update public.sections set every_item_custom_allergens = '{celery,mustard}'
+  where id = mine;
+  select s.every_item_allergens_reviewed, s.every_item_allergens_reviewed_by
+    into reviewed, by_whom
+  from public.sections s where s.id = mine;
+  if reviewed or by_whom is not null then
+    raise exception 'FAIL: another allergen added to the line left its check';
+  end if;
+  raise notice 'ok: a change to either of the line''s lists clears its check';
+
+  update public.sections
+    set every_item_custom_allergens = '{celery}',
+        every_item_allergens_reviewed = true
+    where id = mine;
+  select s.every_item_allergens_reviewed into reviewed
+  from public.sections s where s.id = mine;
+  if reviewed then
+    raise exception 'FAIL: one statement changed a line''s list and checked it';
+  end if;
+  raise notice 'ok: one statement that changes a line''s list and checks it ends unchecked';
+
+  update public.sections set every_item_allergens_reviewed = true
+  where id = mine;
+  update public.sections set every_item_allergens_reviewed = false
+  where id = mine;
+  select s.every_item_allergens_reviewed_by, s.every_item_allergens_reviewed_at
+    into by_whom, at_when
+  from public.sections s where s.id = mine;
+  if by_whom is not null or at_when is not null then
+    raise exception 'FAIL: an uncheck left the line''s stamp';
+  end if;
+  raise notice 'ok: an uncheck clears the line''s stamp';
+
+  -- The app's rule (D-153): every statement that changes or checks the
+  -- line's lists names the words and the lists the page showed, and lands
+  -- on no row when the section holds others.
+  update public.sections set every_item_allergens_reviewed = true
+  where id = mine
+    and every_item = 'Add spaghetti to any dish for 3 dollars.'
+    and every_item_allergens = '{milk,wheat,sesame}'::public.allergen[]
+    and every_item_custom_allergens = '{celery}'::text[];
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a check that named words the line no longer holds landed';
+  end if;
+  update public.sections set every_item_allergens_reviewed = true
+  where id = mine
+    and every_item = 'Add shrimp to any dish for 5 dollars.'
+    and every_item_allergens = '{milk,wheat}'::public.allergen[]
+    and every_item_custom_allergens = '{celery}'::text[];
+  get diagnostics touched = row_count;
+  select s.every_item_allergens_reviewed into reviewed
+  from public.sections s where s.id = mine;
+  if touched <> 0 or reviewed then
+    raise exception 'FAIL: a check that named lists the line no longer holds landed';
+  end if;
+  raise notice 'ok: a check that names words or lists the line no longer holds lands on no row';
+
+  -- Clearing the line clears its lists and its check in the same statement.
+  update public.sections set every_item_allergens_reviewed = true
+  where id = mine;
+  update public.sections set every_item = null where id = mine;
+  select s.every_item_allergens, s.every_item_custom_allergens,
+         s.every_item_allergens_reviewed, s.every_item_allergens_reviewed_by
+    into held_majors, held_others, reviewed, by_whom
+  from public.sections s where s.id = mine;
+  if cardinality(held_majors) <> 0 or cardinality(held_others) <> 0
+     or reviewed or by_whom is not null then
+    raise exception 'FAIL: clearing the line left its lists or its check';
+  end if;
+  raise notice 'ok: clearing the line clears its lists and its check with it';
+
+  -- Undo of the clear: the words and the lists back in one statement, only
+  -- while the line is still blank and holds nothing, and unchecked.
+  update public.sections
+    set every_item = 'Add shrimp to any dish for 5 dollars.',
+        every_item_allergens = '{milk,wheat,sesame}',
+        every_item_custom_allergens = '{celery}'
+  where id = mine
+    and every_item is null
+    and every_item_allergens = '{}'::public.allergen[]
+    and every_item_custom_allergens = '{}'::text[];
+  get diagnostics touched = row_count;
+  select s.every_item, s.every_item_allergens, s.every_item_custom_allergens,
+         s.every_item_allergens_reviewed
+    into held_words, held_majors, held_others, reviewed
+  from public.sections s where s.id = mine;
+  if touched <> 1
+     or held_words is distinct from 'Add shrimp to any dish for 5 dollars.'
+     or held_majors is distinct from '{milk,wheat,sesame}'::public.allergen[]
+     or held_others is distinct from '{celery}'::text[]
+     or reviewed then
+    raise exception 'FAIL: the words and the lists did not come back unchecked';
+  end if;
+  raise notice 'ok: the words and the lists come back in one statement, unchecked';
+
+  -- The lists' rules, by name (migration 8's one rule function): the nine
+  -- the US offers, each once; another allergen one line of forty
+  -- characters at most, no outer space, no comma in any of its three forms,
+  -- never one of the nine, once whatever the case, and ten at most.
+  begin
+    update public.sections set every_item_allergens = '{celery}' where id = mine;
+    raise exception 'FAIL: an allergen outside the nine was ticked on the line';
+  exception when check_violation then
+    raise notice 'ok: only the nine the US offers can be ticked on the line';
+  end;
+
+  begin
+    update public.sections set every_item_allergens = '{milk,milk}'
+    where id = mine;
+    raise exception 'FAIL: a repeated major allergen was accepted on the line';
+  exception when raise_exception then
+    if sqlerrm <> 'allergens_repeated' then raise; end if;
+    raise notice 'ok: a major allergen appears once on the line';
+  end;
+
+  foreach wanted_word in array
+    array['', 'a' || chr(9) || 'b', ' celery', repeat('x', 41)] loop
+    begin
+      update public.sections set every_item_custom_allergens = array[wanted_word]
+      where id = mine;
+      raise exception 'FAIL: % was accepted as another allergen on the line', wanted_word;
+    exception when raise_exception then
+      if sqlerrm <> 'other_allergen_text' then raise; end if;
+    end;
+  end loop;
+  raise notice 'ok: another allergen on the line is one line of 40 characters at most with no outer space';
+
+  foreach wanted_word in array array['nuts, except almonds',
+    'nuts' || chr(65292) || ' except almonds',
+    'nuts' || chr(12289) || ' except almonds'] loop
+    begin
+      update public.sections set every_item_custom_allergens = array[wanted_word]
+      where id = mine;
+      raise exception 'FAIL: % was accepted as another allergen on the line', wanted_word;
+    exception when raise_exception then
+      if sqlerrm <> 'other_allergen_comma' then raise; end if;
+    end;
+  end loop;
+  raise notice 'ok: another allergen on the line holds no comma, plain, fullwidth, or ideographic (D-151)';
+
+  foreach wanted_word in array array['Milk', 'DAIRY', 'tree nuts', 'nuts'] loop
+    begin
+      update public.sections set every_item_custom_allergens = array[wanted_word]
+      where id = mine;
+      raise exception 'FAIL: % was accepted as another allergen on the line', wanted_word;
+    exception when raise_exception then
+      if sqlerrm <> 'other_allergen_major' then raise; end if;
+    end;
+  end loop;
+  raise notice 'ok: a word that means one of the nine is refused as another allergen on the line';
+
+  begin
+    update public.sections
+    set every_item_custom_allergens = array['celery', 'Celery'] where id = mine;
+    raise exception 'FAIL: another allergen was accepted twice on the line';
+  exception when raise_exception then
+    if sqlerrm <> 'other_allergen_repeated' then raise; end if;
+    raise notice 'ok: another allergen appears once on the line, whatever the case';
+  end;
+
+  begin
+    update public.sections
+    set every_item_custom_allergens = array['a1', 'a2', 'a3', 'a4', 'a5', 'a6',
+      'a7', 'a8', 'a9', 'a10', 'a11']
+    where id = mine;
+    raise exception 'FAIL: eleven other allergens were accepted on the line';
+  exception when check_violation then
+    raise notice 'ok: a line lists ten other allergens at most';
+  end;
+
+  -- As it was: no line, so what follows runs on the row it ran on before.
+  update public.sections set every_item = null where id = mine;
 
   -- Names differ within a menu, whatever the case or the outer spaces.
   begin
@@ -618,8 +911,11 @@ end;
 $$;
 
 -- As the table owner again: the stranger moved nothing, in the list or
--- out of the menu.
+-- out of the menu; and with no person signed in, a line's check is refused,
+-- a section is never born checked, and never born with a list on a line it
+-- does not have (migration 8).
 reset role;
+select set_config('request.jwt.claims', '', true);
 
 do $$
 declare
@@ -627,6 +923,36 @@ declare
   ids uuid[] := string_to_array(current_setting('boundary.order'), ',')::uuid[];
   in_place boolean;
 begin
+  update public.sections set every_item = 'Boundary check line'
+  where id = ids[1];
+  begin
+    update public.sections set every_item_allergens_reviewed = true
+    where id = ids[1];
+    raise exception 'FAIL: a line''s check was stamped with nobody signed in';
+  exception when raise_exception then
+    if sqlerrm <> 'allergen_check_needs_person' then raise; end if;
+    raise notice 'ok: a line''s check needs a signed-in person; a server key or the SQL editor with no user cannot check a line';
+  end;
+  update public.sections set every_item = null where id = ids[1];
+
+  begin
+    insert into public.sections (menu_id, name, sort, every_item_allergens_reviewed)
+    values (a_menu, 'Boundary check born checked', 9100, true);
+    raise exception 'FAIL: a section''s line was born checked';
+  exception when raise_exception then
+    if sqlerrm <> 'allergen_check_on_insert' then raise; end if;
+    raise notice 'ok: a section''s line is never born checked';
+  end;
+
+  begin
+    insert into public.sections (menu_id, name, sort, every_item_allergens)
+    values (a_menu, 'Boundary check born listed', 9101, '{milk}');
+    raise exception 'FAIL: a section was born with a list on no line';
+  exception when raise_exception then
+    if sqlerrm <> 'line_blank_holds_nothing' then raise; end if;
+    raise notice 'ok: a section is never born with a list on a line it does not have';
+  end;
+
   select bool_and(s.sort = t.ord and s.menu_id = a_menu) into in_place
   from unnest(ids) with ordinality as t (id, ord)
   join public.sections s on s.id = t.id;

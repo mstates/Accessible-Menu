@@ -133,7 +133,35 @@ export function confirmationLine(
 // message.
 export const OTHER_ALLERGEN_LIMITS = { length: 40, count: 10 } as const;
 
-export type OtherAllergenRule = "otherLength" | "otherTaken" | "otherMajor";
+export type OtherAllergenRule =
+  "otherComma" | "otherLength" | "otherTaken" | "otherMajor";
+
+// The commas that read as separators, since the diner sentence joins
+// allergens with one (D-35): the plain comma, the fullwidth comma, and the
+// ideographic comma (D-151, Q-65). A name holding one reads as two
+// allergens by ear, so it is refused and never rewritten (D-7). The
+// migration refuses the same three, and tests/unit keeps the two equal.
+export const OTHER_ALLERGEN_COMMA_CHARS = ",\uFF0C\u3001";
+const OTHER_ALLERGEN_COMMA = new RegExp(`[${OTHER_ALLERGEN_COMMA_CHARS}]`, "u");
+
+export function hasOtherAllergenComma(name: string): boolean {
+  return OTHER_ALLERGEN_COMMA.test(name);
+}
+
+// Who checked a list and when (D-89, D-148), as a page shows it: the
+// stamp's time, and whether the person is the one signed in. The stamp
+// itself is written by the database and never by an owner.
+export type AllergenCheck = { at: string; byYou: boolean };
+
+// A list's owner-side state, a dish's (D-148) or a section's line's
+// (D-152): the major allergens ticked from the fixed list, the other
+// allergens typed, and the check, which is null until a person checks the
+// list and again after any change to it.
+export type OwnerAllergens = {
+  allergens: AllergenId[];
+  otherAllergens: string[];
+  check: AllergenCheck | null;
+};
 
 // The words that mean one of the nine, each pointing at its box, so a name
 // typed as another allergen is sent to the box instead. "nuts" alone could
@@ -188,6 +216,7 @@ export function otherAllergenProblem(
   others: readonly string[],
   index: number | null,
 ): OtherAllergenRule | null {
+  if (hasOtherAllergenComma(value)) return "otherComma";
   if (value.length > OTHER_ALLERGEN_LIMITS.length) return "otherLength";
   if (majorAllergensOf(value).length > 0) return "otherMajor";
   const key = otherAllergenKey(value);
@@ -239,6 +268,25 @@ export function sameListsAsStored(a: AllergenLists, b: AllergenLists): boolean {
     a.others.length === b.others.length &&
     a.others.every((name, index) => b.others[index] === name)
   );
+}
+
+// The other allergens a restaurant's dishes and lines already name, most
+// used first and then by name, each once whatever its case, for the field
+// to suggest before the starter list (D-149), the way size names are
+// suggested (D-139). raw holds every name as stored, repeats included.
+export function rankOtherAllergenNames(raw: readonly string[]): string[] {
+  const counts = new Map<string, { name: string; uses: number }>();
+  for (const value of raw) {
+    const other = value.trim();
+    if (other === "") continue;
+    const key = other.toLowerCase();
+    const seen = counts.get(key);
+    if (seen) seen.uses += 1;
+    else counts.set(key, { name: other, uses: 1 });
+  }
+  return [...counts.values()]
+    .sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name))
+    .map((entry) => entry.name);
 }
 
 // The date a check was made, as the stamp line shows it, in the

@@ -33,7 +33,7 @@ describe("CI Diner's data file (D-126)", () => {
     expect(code).not.toMatch(/\b(create|alter|grant|revoke)\b/i);
   });
 
-  it("writes only through inserts, sort updates, the three dishes' prices, and two dishes' allergens", () => {
+  it("writes only through inserts, sort updates, the three dishes' prices, two dishes' allergens, and Starters' line", () => {
     const updates = code.match(/\bupdate\s+public\.\w+\s+\w+\s+set\s+\w+/gi);
     expect(updates).toEqual([
       "update public.menus m\n  set sort",
@@ -46,6 +46,8 @@ describe("CI Diner's data file (D-126)", () => {
       "update public.items i\n  set allergens_reviewed",
       "update public.items i\n  set allergens",
       "update public.items i\n  set allergens_reviewed",
+      "update public.sections s\n  set every_item",
+      "update public.sections s\n  set every_item_allergens_reviewed",
     ]);
   });
 
@@ -96,5 +98,36 @@ describe("CI Diner's data file (D-126)", () => {
     expect(text).not.toMatch(
       /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/,
     );
+  });
+
+  // Starters' line shown with every dish (migration 8, task 4b): its words
+  // and its two lists in one statement, then its check in its own, by id,
+  // as CI Diner's owner, and never the stamps. The line names no dish in
+  // Starters, since the gate matches names by substring.
+  it("gives Starters its line and checks it by id, the check in its own statement, naming no dish", () => {
+    const lines = [
+      ...code.matchAll(/update public\.sections s\n  set every_item =[^;]*;/g),
+    ].map((match) => match[0]);
+    const checks = [
+      ...code.matchAll(
+        /update public\.sections s\n  set every_item_allergens_reviewed = true[^;]*;/g,
+      ),
+    ].map((match) => match[0]);
+    expect(lines).toHaveLength(1);
+    expect(checks).toHaveLength(1);
+    for (const statement of [...lines, ...checks]) {
+      expect(statement).toMatch(/where s\.id = starters/);
+      expect(statement).not.toMatch(
+        /\b(name|sort|note|deleted_at|every_item_allergens_reviewed_by|every_item_allergens_reviewed_at)\s*=/,
+      );
+    }
+    for (const statement of lines) {
+      expect(statement).not.toMatch(/every_item_allergens_reviewed\s*=/);
+    }
+    const words = text.match(/set every_item = '([^']+)'/);
+    expect(words?.[1]).toBe("Add a buttered roll to any dish for 2 dollars.");
+    for (const dish of ["soup of the day", "house salad", "garlic bread"]) {
+      expect((words?.[1] ?? "").toLowerCase()).not.toContain(dish);
+    }
   });
 });

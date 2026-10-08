@@ -1,7 +1,8 @@
 -- Owner boundary check for items, the dishes of a section. Run in the
 -- Supabase SQL editor after every migration that touches items, the
 -- functions that count and delete what a menu or a section holds, the
--- function that moves a dish, or the allergen check (migration 7).
+-- function that moves a dish, the allergen check (migration 7), or the
+-- lists rule (migration 8).
 -- Everything rolls back. Replace the uid below with your own auth.users id.
 -- A run that ends without an error passed every check.
 begin;
@@ -518,8 +519,8 @@ begin
   end;
 
   -- Another allergen: one line of something to read, forty characters at
-  -- most, no outer space, once whatever the case, never one of the nine,
-  -- and ten at most.
+  -- most, no outer space, no comma (migration 8, D-151), once whatever the
+  -- case, never one of the nine, and ten at most.
   begin
     update public.items set custom_allergens = array[''] where id = mine;
     raise exception 'FAIL: a blank other allergen was accepted';
@@ -553,6 +554,20 @@ begin
     if sqlerrm <> 'other_allergen_text' then raise; end if;
     raise notice 'ok: another allergen is 40 characters at most';
   end;
+
+  -- A comma reads as two allergens to a diner, so none is held, in any of
+  -- its three forms: plain, fullwidth, ideographic (D-151, Q-65).
+  foreach wanted_word in array array['nuts, except almonds',
+    'nuts' || chr(65292) || ' except almonds',
+    'nuts' || chr(12289) || ' except almonds'] loop
+    begin
+      update public.items set custom_allergens = array[wanted_word] where id = mine;
+      raise exception 'FAIL: % was accepted as another allergen', wanted_word;
+    exception when raise_exception then
+      if sqlerrm <> 'other_allergen_comma' then raise; end if;
+    end;
+  end loop;
+  raise notice 'ok: another allergen holds no comma, plain, fullwidth, or ideographic; each allergen has its own row';
 
   foreach wanted_word in array array['Milk', 'DAIRY', 'tree nuts', 'nuts'] loop
     begin

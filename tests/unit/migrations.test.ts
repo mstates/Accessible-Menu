@@ -25,6 +25,8 @@ const privateColumns = [
   "allergen_suggestions",
   "allergens_reviewed_by",
   "allergens_reviewed_at",
+  "every_item_allergens_reviewed_by",
+  "every_item_allergens_reviewed_at",
   "import_confidence",
   "external_ids",
   "stripe_customer_id",
@@ -1140,5 +1142,204 @@ describe("the allergens migration (D-85, D-148, task 4)", () => {
       ),
     ].filter((match) => (match[2] ?? "").toLowerCase() !== "trigger");
     expect(callable).toEqual([]);
+  });
+});
+
+describe("the line's allergens migration (D-85, D-151 to D-153, task 4b)", () => {
+  const file = "20261008000002_line_allergens.sql";
+  const text = readFileSync(join(dir, file), "utf8");
+  // Never written by an owner: the links, the stamp the database writes,
+  // and the timestamps.
+  const neverWritten = [
+    "id",
+    "menu_id",
+    "restaurant_id",
+    "every_item_allergens_reviewed_by",
+    "every_item_allergens_reviewed_at",
+    "created_at",
+    "updated_at",
+  ];
+
+  function columnsOf(privilege: string): string[] {
+    const matches = [
+      ...text.matchAll(
+        new RegExp(
+          `grant ${privilege} \\(([^)]*)\\) on public\\.sections to authenticated;`,
+          "g",
+        ),
+      ),
+    ];
+    expect(matches, `no ${privilege} column list on sections`).toHaveLength(1);
+    return (matches[0]?.[1] ?? "").split(",").map((column) => column.trim());
+  }
+
+  function bodyOf(name: string): string {
+    const from = text.indexOf(`function public.${name}`);
+    expect(from, `${name} is not in ${file}`).toBeGreaterThan(-1);
+    return text.slice(from, text.indexOf("\n$$;", from));
+  }
+
+  it("stops rather than rewrite an allergen with a comma, before anything else", () => {
+    const stop = text.indexOf("raise exception 'migration 8:");
+    const rule = text.indexOf("create function public.allergen_lists_problem");
+    expect(stop).toBeGreaterThan(-1);
+    expect(rule).toBeGreaterThan(stop);
+    expect(text, "a migration never rewrites an allergen (D-7)").not.toMatch(
+      /update public\.(items|sections)\s+set/,
+    );
+  });
+
+  it("gives the line the five columns in a dish's shape with no foreign key, and holds the check whole, the nine, the count, and a blank line holding nothing", () => {
+    expect(text).toMatch(
+      /add column every_item_allergens public\.allergen\[\] not null default '\{\}',/,
+    );
+    expect(text).toMatch(
+      /add column every_item_custom_allergens text\[\] not null default '\{\}',/,
+    );
+    expect(text).toMatch(
+      /add column every_item_allergens_reviewed boolean not null default false,/,
+    );
+    expect(text).toMatch(/add column every_item_allergens_reviewed_by uuid,/);
+    expect(text).toMatch(
+      /add column every_item_allergens_reviewed_at timestamptz,/,
+    );
+    expect(text).not.toMatch(/reviewed_by uuid references/);
+    expect(text).toMatch(
+      /sections_line_check_whole check \(\s+\(every_item_allergens_reviewed\s+and every_item_allergens_reviewed_by is not null\s+and every_item_allergens_reviewed_at is not null\)\s+or \(not every_item_allergens_reviewed\s+and every_item_allergens_reviewed_by is null\s+and every_item_allergens_reviewed_at is null\)\s+\)/,
+    );
+    expect(text).toMatch(
+      /sections_line_allergens_offered check \(\s+every_item_allergens <@ '\{milk,eggs,fish,shellfish,tree-nuts,peanuts,wheat,soy,sesame\}'::public\.allergen\[\]\s+\)/,
+    );
+    expect(text).toMatch(
+      /sections_line_other_allergens_count check \(\s+cardinality\(every_item_custom_allergens\) <= 10\s+\)/,
+    );
+    expect(text).toMatch(
+      /sections_line_blank_holds_nothing check \(\s+every_item is not null\s+or \(every_item_allergens = '\{\}'\s+and every_item_custom_allergens = '\{\}'\s+and not every_item_allergens_reviewed\)\s+\)/,
+    );
+  });
+
+  it("holds the lists' rule once, in a function that returns the refusal's name, reads no table, and is revoked by name with no grant", () => {
+    const body = bodyOf("allergen_lists_problem");
+    expect(body).toMatch(/returns text/);
+    expect(body).toMatch(/immutable set search_path = ''/);
+    expect(body).not.toMatch(/security definer/);
+    expect(body).not.toMatch(/\bfrom public\./);
+    for (const name of [
+      "allergens_repeated",
+      "other_allergen_text",
+      "other_allergen_comma",
+      "other_allergen_major",
+      "other_allergen_repeated",
+    ]) {
+      expect(body).toContain(`return '${name}'`);
+    }
+    expect(text).toMatch(
+      /revoke all on function public\.allergen_lists_problem\(public\.allergen\[\], text\[\]\)\s+from public, anon, authenticated;/,
+    );
+    expect(text).not.toMatch(/grant [^;]*allergen_lists_problem/);
+  });
+
+  it("makes both lists triggers call it as their owner, revoked by name, on the right columns", () => {
+    for (const [name, lists] of [
+      ["check_item_allergen_lists", "new.allergens, new.custom_allergens"],
+      [
+        "check_section_line_allergen_lists",
+        "new.every_item_allergens, new.every_item_custom_allergens",
+      ],
+    ] as const) {
+      const body = bodyOf(name);
+      expect(body).toMatch(/returns trigger/);
+      expect(body).toMatch(/security definer set search_path = ''/);
+      expect(body.replace(/\s+/g, " ").replace(/\( /g, "(")).toContain(
+        `public.allergen_lists_problem(${lists})`,
+      );
+      expect(body).toContain(
+        "raise exception '%', problem using errcode = 'P0001'",
+      );
+      expect(text).toMatch(
+        new RegExp(
+          `revoke all on function public\\.${name}\\(\\)\\s+from public, anon, authenticated;`,
+        ),
+      );
+    }
+    expect(text).toMatch(
+      /create or replace function public\.check_item_allergen_lists\(\)/,
+    );
+    expect(text, "the items trigger stays").not.toMatch(
+      /create trigger items_allergen_lists/,
+    );
+    expect(text).toMatch(
+      /create trigger sections_line_allergen_lists\s+before insert or update of every_item_allergens, every_item_custom_allergens\s+on public\.sections/,
+    );
+  });
+
+  it("stamps and clears the line's check in a trigger that is revoked by name: a change to the words or a list clears it, a cleared line holds nothing, a blank line takes nothing, and a check needs a person", () => {
+    const body = bodyOf("set_section_line_allergen_check");
+    expect(body).toMatch(/returns trigger/);
+    expect(body).toMatch(/set search_path = ''/);
+    expect(body).not.toMatch(/security definer/);
+    expect(body).toMatch(/person uuid := auth\.uid\(\);/);
+    for (const name of [
+      "allergen_check_on_insert",
+      "line_blank_holds_nothing",
+      "allergen_check_needs_person",
+    ]) {
+      expect(body).toContain(
+        `raise exception '${name}' using errcode = 'P0001'`,
+      );
+    }
+    expect(body).toMatch(
+      /new\.every_item_allergens_reviewed_by := old\.every_item_allergens_reviewed_by;\s+new\.every_item_allergens_reviewed_at := old\.every_item_allergens_reviewed_at;/,
+    );
+    expect(body).toMatch(
+      /if new\.every_item is null then\s+if old\.every_item is not null then\s+new\.every_item_allergens := '\{\}';\s+new\.every_item_custom_allergens := '\{\}';\s+new\.every_item_allergens_reviewed := false;/,
+    );
+    expect(body).toMatch(
+      /if new\.every_item is distinct from old\.every_item\s+or new\.every_item_allergens is distinct from old\.every_item_allergens\s+or new\.every_item_custom_allergens\s+is distinct from old\.every_item_custom_allergens then\s+new\.every_item_allergens_reviewed := false;/,
+    );
+    expect(body).toMatch(
+      /if new\.every_item_allergens_reviewed\s+and not old\.every_item_allergens_reviewed then[\s\S]*?new\.every_item_allergens_reviewed_by := person;\s+new\.every_item_allergens_reviewed_at := now\(\);/,
+    );
+    expect(text).toMatch(
+      /revoke all on function public\.set_section_line_allergen_check\(\)\s+from public, anon, authenticated;/,
+    );
+    expect(text).toMatch(
+      /create trigger sections_line_allergen_check\s+before insert or update on public\.sections/,
+    );
+  });
+
+  it("opens the line's two lists and its check to owners, and never who or when", () => {
+    expect(text).toMatch(
+      /revoke update on public\.sections from authenticated;/,
+    );
+    expect(text).not.toMatch(/grant insert [^;]*public\.sections/);
+    expect(columnsOf("update")).toEqual([
+      "name",
+      "note",
+      "every_item",
+      "sort",
+      "deleted_at",
+      "every_item_allergens",
+      "every_item_custom_allergens",
+      "every_item_allergens_reviewed",
+    ]);
+    for (const column of neverWritten) {
+      expect(columnsOf("update")).not.toContain(column);
+    }
+  });
+
+  it("touches no view, grants anon nothing, and adds one function that nobody can call", () => {
+    expect(text).not.toMatch(/create (or replace )?view/);
+    expect(text).not.toMatch(/drop view/);
+    expect(text).not.toMatch(/to anon/);
+    expect(text).not.toMatch(/grant execute/);
+    const callable = [
+      ...text.matchAll(
+        /create (?:or replace )?function public\.(\w+)\s*\([\s\S]*?\)\s*returns\s+(\S+)/gi,
+      ),
+    ]
+      .filter((match) => (match[2] ?? "").toLowerCase() !== "trigger")
+      .map((match) => match[1]);
+    expect(callable).toEqual(["allergen_lists_problem"]);
   });
 });
