@@ -10,6 +10,7 @@ import {
   TextArea,
   type TextFieldProps,
 } from "react-aria-components";
+import { fieldDescription } from "./field-description";
 
 type Props = TextFieldProps & {
   label: string;
@@ -69,6 +70,7 @@ export function TextField({
   return (
     <AriaTextField
       {...props}
+      {...fieldDescription(description)}
       {...(name ? { "aria-label": held ?? name } : {})}
       onFocusChange={(focused) => {
         setHeld(focused ? name : null);

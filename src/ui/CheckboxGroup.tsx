@@ -10,6 +10,7 @@ import {
   type CheckboxGroupProps,
   type CheckboxProps,
 } from "react-aria-components";
+import { fieldDescription } from "./field-description";
 
 type GroupProps = Omit<CheckboxGroupProps, "children"> & {
   label: string;
@@ -28,7 +29,11 @@ export function CheckboxGroup({
   ...props
 }: GroupProps) {
   return (
-    <AriaCheckboxGroup {...props} className="flex flex-col gap-2">
+    <AriaCheckboxGroup
+      {...props}
+      {...fieldDescription(description)}
+      className="flex flex-col gap-2"
+    >
       <Label className="font-semibold">{label}</Label>
       {description ? (
         <Text slot="description" className="text-sm text-foreground-muted">

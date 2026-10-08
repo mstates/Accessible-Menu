@@ -14,6 +14,7 @@ import {
   Text,
   type SelectProps as AriaSelectProps,
 } from "react-aria-components";
+import { fieldDescription } from "./field-description";
 
 export type SelectItem = { id: string; label: string };
 
@@ -49,7 +50,11 @@ export function Select({
   ...props
 }: Props) {
   return (
-    <AriaSelect {...props} className="flex flex-col gap-1">
+    <AriaSelect
+      {...props}
+      {...fieldDescription(description)}
+      className="flex flex-col gap-1"
+    >
       <Label className="font-semibold">
         {label}
         {props.isRequired ? <span aria-hidden="true"> *</span> : null}

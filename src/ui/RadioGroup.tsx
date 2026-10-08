@@ -10,6 +10,7 @@ import {
   type RadioGroupProps,
   type RadioProps,
 } from "react-aria-components";
+import { fieldDescription } from "./field-description";
 
 type GroupProps = Omit<RadioGroupProps, "children"> & {
   // The group's visible label, or none when a heading names the group
@@ -22,7 +23,9 @@ type GroupProps = Omit<RadioGroupProps, "children"> & {
 
 // A labelled group of radio buttons, one choice among a few (D-139).
 // Group semantics, the arrow keys, and the error wiring come from React
-// Aria.
+// Aria. A description may come and go with the choice, as market price's
+// sentence does, and React Aria ties it to the group and each radio while
+// it shows (D-147).
 export function RadioGroup({
   label,
   description,
@@ -31,7 +34,11 @@ export function RadioGroup({
   ...props
 }: GroupProps) {
   return (
-    <AriaRadioGroup {...props} className="flex flex-col gap-2">
+    <AriaRadioGroup
+      {...props}
+      {...fieldDescription(description)}
+      className="flex flex-col gap-2"
+    >
       {label ? <Label className="font-semibold">{label}</Label> : null}
       {description ? (
         <Text slot="description" className="text-sm text-foreground-muted">

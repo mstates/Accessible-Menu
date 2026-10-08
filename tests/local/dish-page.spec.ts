@@ -3,6 +3,7 @@ import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
 import { pageTitle } from "../../src/copy/title";
 import { restaurantDishPath } from "../../src/features/owner/paths";
+import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
 import { restaurantName } from "../a11y/pages";
@@ -232,6 +233,53 @@ test("switching the price choice saves and says Saved. once, a size is added bla
   ).toBeFocused();
   await choose(page, strings.price.one);
   await expect.poll(() => said(page, saved)).toBe(2);
+});
+
+// D-147, with the saves landing, the way the preview pass found it: the
+// market price sentence describes the group and its radios after a switch
+// to it, and nothing points at its id after a switch away, from a page
+// loaded at either.
+test("a switch to Market price that lands ties its sentence to the group and its radios, and a switch away that lands leaves nothing pointing at a missing id", async ({
+  page,
+}) => {
+  const choices = [
+    strings.price.one,
+    strings.price.sizes,
+    strings.price.market,
+  ];
+  async function expectDescribed() {
+    await expect(
+      page.locator("main").getByText(strings.price.marketHint, { exact: true }),
+    ).toHaveCount(1);
+    await expect(
+      page.getByRole("radiogroup", {
+        name: strings.price.heading,
+        exact: true,
+      }),
+    ).toHaveAccessibleDescription(strings.price.marketHint);
+    for (const label of choices) {
+      await expect(radio(page, label)).toHaveAccessibleDescription(
+        strings.price.marketHint,
+      );
+    }
+    await expectNoMissingIds(page);
+  }
+
+  await openDish(page, "one");
+  await choose(page, strings.price.market);
+  await expect.poll(() => said(page, saved)).toBe(1);
+  await expectDescribed();
+  await choose(page, strings.price.one);
+  await expect.poll(() => said(page, saved)).toBe(2);
+  await expectNoMissingIds(page);
+
+  await openDish(page, "market");
+  await choose(page, strings.price.one);
+  await expect.poll(() => said(page, saved)).toBe(1);
+  await expectNoMissingIds(page);
+  await choose(page, strings.price.market);
+  await expect.poll(() => said(page, saved)).toBe(2);
+  await expectDescribed();
 });
 
 test("a size named from the suggestions commits once and keeps its field's name in Chrome while focused, a taken name is refused unsent, and a removed size comes back in its place", async ({

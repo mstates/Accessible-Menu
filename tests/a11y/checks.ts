@@ -210,6 +210,44 @@ export async function expectNoAxeViolations(
   expect(results.violations, summary).toEqual([]);
 }
 
+// Every id the page points at by an attribute is on the page: the labels,
+// descriptions, and errors React Aria ties by id, and a label's for. axe
+// lists a description pointing at a missing id only as needing review, not
+// as a violation, so a field that kept a gone description's id passed the
+// gate (D-147).
+export async function expectNoMissingIds(page: Page) {
+  const missing = await page.evaluate(() => {
+    const attributes = [
+      "aria-describedby",
+      "aria-labelledby",
+      "aria-errormessage",
+      "aria-controls",
+      "aria-owns",
+      "aria-details",
+      "aria-flowto",
+      "aria-activedescendant",
+      "for",
+    ];
+    const found: string[] = [];
+    for (const attribute of attributes) {
+      for (const element of document.querySelectorAll(`[${attribute}]`)) {
+        if (element.tagName.toLowerCase().startsWith("vercel-")) continue;
+        const ids = (element.getAttribute(attribute) ?? "")
+          .split(/\s+/)
+          .filter(Boolean);
+        for (const id of ids) {
+          if (document.getElementById(id)) continue;
+          const role = element.getAttribute("role") ?? element.tagName;
+          const words = (element.closest("label")?.textContent ?? "").trim();
+          found.push(`${role.toLowerCase()} "${words}" ${attribute}="${id}"`);
+        }
+      }
+    }
+    return found;
+  });
+  expect(missing, "every id an attribute points at is on the page").toEqual([]);
+}
+
 // The walk starts from the empty element at the top of the body, where focus
 // sits after a page change (D-97), so a page that moved focus to a message
 // on arrival is still walked from the skip link. In forced colors a

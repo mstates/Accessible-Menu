@@ -11,6 +11,7 @@ import {
   Popover,
   Text,
 } from "react-aria-components";
+import { fieldDescription } from "./field-description";
 
 type Props = {
   id: string;
@@ -81,6 +82,7 @@ export function ComboBox({
       onBlur={onCommit}
       validationBehavior="aria"
       isInvalid={isInvalid}
+      {...fieldDescription(description)}
       className="flex flex-col gap-1"
     >
       <label htmlFor={id} className="font-semibold">

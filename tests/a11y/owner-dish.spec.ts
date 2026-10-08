@@ -11,6 +11,7 @@ import {
 import {
   expectNoAxeViolations,
   expectNoHorizontalScroll,
+  expectNoMissingIds,
   open,
   pageChecks,
 } from "./checks";
@@ -440,6 +441,80 @@ test("choosing another price choice sends one write, which is answered in the br
     writes.answered.length,
     "the choice was sent and answered in the browser",
   ).toBeGreaterThan(0);
+  await expectNoAxeViolations(page);
+});
+
+function marketSentence(page: Page) {
+  return page
+    .locator("main")
+    .getByText(strings.price.marketHint, { exact: true });
+}
+
+// D-147: the market price sentence describes the group and each radio
+// whenever it shows, and nothing keeps pointing at it once it is gone, in
+// both directions. The choice shows at once while its save waits, so the
+// write is held to look at it there; once released, the guard answers it,
+// the save fails, and the choice goes back, a second switch.
+test("after a switch to Market price the group and its radios are described by its sentence, and once the choice goes back nothing points at a missing id", async ({
+  page,
+}) => {
+  const writes = expectWrites(page, { hold: true });
+  const { dishes } = ownerFixture();
+  await openDish(page, "one");
+  await page.getByText(strings.price.market, { exact: true }).click();
+  await expect(radio(page, strings.price.market)).toBeChecked();
+  await expect(marketSentence(page)).toHaveCount(1);
+  await expect(priceGroup(page)).toHaveAccessibleDescription(
+    strings.price.marketHint,
+  );
+  for (const label of [
+    strings.price.one,
+    strings.price.sizes,
+    strings.price.market,
+  ]) {
+    await expect(radio(page, label)).toHaveAccessibleDescription(
+      strings.price.marketHint,
+    );
+  }
+  await expectNoMissingIds(page);
+
+  writes.release();
+  const failure = `${fill(strings.notSaved.priceKind, {
+    dish: dishes.one.name,
+  })} ${editing.problems.outOfDate}`;
+  await expect(savedStatus(page)).toHaveText(failure);
+  await expect(radio(page, strings.price.one)).toBeChecked();
+  await expect(marketSentence(page)).toHaveCount(0);
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+test("on a page loaded at Market price, a switch away leaves nothing pointing at a missing id, and the sentence describes the group again once the choice comes back", async ({
+  page,
+}) => {
+  const writes = expectWrites(page, { hold: true });
+  const { dishes } = ownerFixture();
+  await openDish(page, "market");
+  await page.getByText(strings.price.one, { exact: true }).click();
+  await expect(radio(page, strings.price.one)).toBeChecked();
+  await expect(marketSentence(page)).toHaveCount(0);
+  await expect(priceGroup(page)).toHaveAccessibleDescription("");
+  await expectNoMissingIds(page);
+
+  writes.release();
+  const failure = `${fill(strings.notSaved.priceKind, {
+    dish: dishes.market.name,
+  })} ${editing.problems.outOfDate}`;
+  await expect(savedStatus(page)).toHaveText(failure);
+  await expect(radio(page, strings.price.market)).toBeChecked();
+  await expect(marketSentence(page)).toHaveCount(1);
+  await expect(
+    priceGroup(page),
+    "the sentence, then the problem",
+  ).toHaveAccessibleDescription(
+    `${strings.price.marketHint} ${editing.problems.outOfDate}`,
+  );
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
 
