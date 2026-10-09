@@ -14,6 +14,11 @@
 //                                    same stand-in, freshly seeded
 //   npm run local -- --no-build      serve the build already in .next-local,
 //                                    which this script built
+//   npm run local -- --grep "<title>"
+//                                    only the tests in tests/local whose
+//                                    title matches: every argument this
+//                                    script does not use itself goes to
+//                                    their Playwright run
 //
 // The build goes to .next-local, so .next, where next dev, npm run build,
 // and the gate's build go, never holds a build against the stand-in.
@@ -25,6 +30,10 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 const args = process.argv.slice(2);
 const build = !args.includes("--no-build");
 const ownerGate = args.includes("--owner-gate");
+// The rest is for the local specs' Playwright run, --grep among them.
+const playwrightArgs = args.filter(
+  (arg) => arg !== "--no-build" && arg !== "--owner-gate",
+);
 
 const STANDIN_PORT = 54400;
 const APP_PORT = 3200;
@@ -143,6 +152,7 @@ try {
     "test",
     "-c",
     "tests/local/playwright.config.ts",
+    ...playwrightArgs,
   ]);
   failed ||= local !== 0;
 
