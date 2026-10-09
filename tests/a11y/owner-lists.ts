@@ -7,6 +7,7 @@ import {
   expectFocusResetThenSkipLink,
   expectNoAxeViolations,
   expectNoHorizontalScroll,
+  expectNoMissingIds,
   open,
 } from "./checks";
 import { expectWrites } from "./write-guard";
@@ -178,6 +179,7 @@ export async function expectBurstKeepsEveryName(
     writes.answered.length,
     "one add is on its way; the other two wait their turn",
   ).toBe(1);
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 
   writes.release();
@@ -209,6 +211,7 @@ export async function expectBurstKeepsEveryName(
       message: "each failure is said once, in the order the names were entered",
     })
     .toEqual(BURST.map(failure));
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
   await expectNoHorizontalScroll(page);
 
@@ -538,6 +541,7 @@ export function listRowChecks(list: ListUnderTest): void {
       writes.answered.length,
       "the save was sent and answered in the browser",
     ).toBeGreaterThan(0);
+    await expectNoMissingIds(page);
     await expectNoAxeViolations(page);
     await expectNoHorizontalScroll(page);
   });
@@ -751,6 +755,7 @@ export function listRowChecks(list: ListUnderTest): void {
           ),
           "the log stays heard behind the dialog",
         ).toBe(true);
+        await expectNoMissingIds(page);
         await expectNoAxeViolations(page);
         await expectNoHorizontalScroll(page);
 

@@ -14,6 +14,7 @@ import {
 import {
   expectNoAxeViolations,
   expectNoHorizontalScroll,
+  expectNoMissingIds,
   expectRootAtLargest,
   open,
   setLargestText,
@@ -253,6 +254,7 @@ test(
     await expectDialogFits(dialog);
     await confirm.scrollIntoViewIfNeeded();
     await expect(confirm, "both answers can be reached").toBeInViewport();
+    await expectNoMissingIds(page);
     await expectNoAxeViolations(page);
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);

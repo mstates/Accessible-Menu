@@ -600,6 +600,7 @@ test("the move lists every other menu and not the section's own, and choosing on
   await expect(options, "the other menus, in the order Menus shows").toHaveText(
     others,
   );
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
   await page.keyboard.press("Enter");
   await expect(options).toHaveCount(0);
@@ -627,6 +628,7 @@ test("Move section with no menu chosen says to choose one, and sends nothing", a
   ).toHaveCount(2);
   await expect(button, "focus stays on the button").toBeFocused();
   await expect(savedStatus(page)).toHaveText(editing.saved);
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
 
@@ -664,6 +666,7 @@ test("a move the server cannot take is said once, keeps focus on its button, and
     writes.answered.length,
     "the move was sent and answered in the browser",
   ).toBeGreaterThan(0);
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
   await expectNoHorizontalScroll(page);
 });

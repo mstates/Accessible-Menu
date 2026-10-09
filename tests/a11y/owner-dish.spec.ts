@@ -614,6 +614,7 @@ test("Add another allergen adds a blank row with focus in its field and sends no
     }),
   ).toHaveCount(1);
   await expect(savedStatus(page)).toHaveText(editing.saved);
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
 
@@ -724,6 +725,7 @@ test("the sizes read in price order, each with a name field that suggests names,
   ).toBeFocused();
   await expect(savedStatus(page)).toHaveText(editing.saved);
   await expect(log(page)).toHaveText("");
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
 
@@ -788,6 +790,7 @@ test("choosing another price choice sends one write, which is answered in the br
     writes.answered.length,
     "the choice was sent and answered in the browser",
   ).toBeGreaterThan(0);
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
 
@@ -883,6 +886,7 @@ test("Add a size sends one write, which is answered in the browser, is said once
   await expect(button, "focus stays on the button").toBeFocused();
   await expect(sizeRows(page), "no row was added").toHaveCount(before);
   expect(writes.answered.length).toBeGreaterThan(0);
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
   await expectNoHorizontalScroll(page);
 });
@@ -931,6 +935,7 @@ test("the move lists every other section under its menu and not the dish's own, 
     page.getByRole("group", { name: withSections.name, exact: true }),
     "the sections sit under their menu's name",
   ).toHaveCount(1);
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
   await page.keyboard.press("Enter");
   await expect(options).toHaveCount(0);
@@ -955,6 +960,7 @@ test("Move dish with no section chosen says to choose one, and sends nothing", a
   ).toHaveCount(2);
   await expect(button, "focus stays on the button").toBeFocused();
   await expect(savedStatus(page)).toHaveText(editing.saved);
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
 
@@ -990,6 +996,7 @@ test("a move the server cannot take is said once, keeps focus on its button, and
     writes.answered.length,
     "the move was sent and answered in the browser",
   ).toBeGreaterThan(0);
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
   await expectNoHorizontalScroll(page);
 });

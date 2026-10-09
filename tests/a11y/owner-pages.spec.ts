@@ -18,6 +18,7 @@ import {
   expectKeyboardWalk,
   expectNoAxeViolations,
   expectNoHorizontalScroll,
+  expectNoMissingIds,
   expectRootAtLargest,
   open,
   pageChecks,
@@ -292,6 +293,7 @@ test("Open 24 hours hides a day's times with focus kept, a second press brings b
   ]) {
     await expect(gone).toHaveCount(0);
   }
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 
   await page.keyboard.press("Space");
@@ -568,6 +570,7 @@ test("a pending link says Loading after a second, then the arriving page is anno
     "nothing is said before the link has been pending for a second",
   ).toBeGreaterThanOrEqual(1000);
   await expect(link, "focus stays on the pending link").toBeFocused();
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
   await expectNoHorizontalScroll(page);
 
@@ -631,6 +634,7 @@ test("a save the server cannot take lands on the focused error page, and its pen
   ).toEqual(writes.answered);
   await expect(page).toHaveTitle(pageTitle(en, en.owner.error.title));
   await expect(statusRegion(page)).toHaveText("");
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
   await expectKeyboardWalk(page);
   await expectNoNamelessMessages(page);
@@ -690,6 +694,7 @@ test("answered at once, a late pending message is taken out as well", async ({
   });
   await expect(messagesNaming(page, id)).toHaveCount(0);
   await expectNoNamelessMessages(page);
+  await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
   expect(
     writes.attempted,

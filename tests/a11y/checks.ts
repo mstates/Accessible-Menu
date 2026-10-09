@@ -214,9 +214,21 @@ export async function expectNoAxeViolations(
 // descriptions, and errors React Aria ties by id, and a label's for. axe
 // lists a description pointing at a missing id only as needing review, not
 // as a violation, so a field that kept a gone description's id passed the
-// gate (D-147).
+// gate (D-147). pageChecks runs it on every page it visits, and every axe
+// call in tests/a11y has it beside it (Q-59). It polls: React Aria drops a
+// field's unused description and error ids only in a layout effect, so a
+// page that hydrates late points at them for a moment, while an id that
+// stays missing fails once the expect timeout runs out.
 export async function expectNoMissingIds(page: Page) {
-  const missing = await page.evaluate(() => {
+  await expect
+    .poll(() => missingIds(page), {
+      message: "every id an attribute points at is on the page",
+    })
+    .toEqual([]);
+}
+
+function missingIds(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
     const attributes = [
       "aria-describedby",
       "aria-labelledby",
@@ -245,7 +257,6 @@ export async function expectNoMissingIds(page: Page) {
     }
     return found;
   });
-  expect(missing, "every id an attribute points at is on the page").toEqual([]);
 }
 
 // The walk starts from the empty element at the top of the body, where focus
@@ -676,7 +687,7 @@ export function pageChecks(
     options.controls ? options.controls(page) : Promise.resolve([]);
 
   test(
-    "arrives whole: the title, axe, the keyboard walk, every control shown, reflow, and the largest text",
+    "arrives whole: the title, axe, every id it points at, the keyboard walk, every control shown, reflow, and the largest text",
     { tag: "@arrival" },
     async ({ page }) => {
       const path = at();
@@ -686,6 +697,16 @@ export function pageChecks(
           () => expectTitleInServedHead(page, path),
         ],
         ["axe reports zero violations", () => expectNoAxeViolations(page)],
+        [
+          "every id an attribute points at is on the page",
+          async () => {
+            // Until the page hydrates, React Aria's server HTML points each
+            // field at error and description ids it has not dropped yet, so
+            // the ids are read once the page has settled.
+            await page.waitForLoadState("networkidle");
+            await expectNoMissingIds(page);
+          },
+        ],
         [
           "keyboard reaches every control, focus is visible, nothing traps",
           async () => {
@@ -775,6 +796,10 @@ export function pageChecks(
         [
           "axe reports zero violations, contrast aside",
           () => expectNoAxeViolations(page, { skip: ["color-contrast"] }),
+        ],
+        [
+          "every id an attribute points at is on the page",
+          () => expectNoMissingIds(page),
         ],
       ]);
     },
