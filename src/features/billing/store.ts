@@ -24,7 +24,8 @@ export function createBillingStore(): BillingStore {
       .update(row(patch))
       .eq(column, value)
       .select("id");
-    if (error) throw new Error(`restaurants update failed: ${error.message}`);
+    // The cause is in the log line the client's fetch wrote (Q-64).
+    if (error) throw new Error("restaurants update failed");
     return data.length;
   }
   return {

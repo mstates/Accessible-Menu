@@ -9,6 +9,7 @@ import type {
   SectionText,
 } from "@/domain/section";
 import { ALLERGEN_IDS, type AllergenId } from "@/domain/types";
+import { shaped } from "./log";
 
 // Owner-side reads and writes on a menu's sections, through the owner's own
 // client so row level security decides what is visible (D-75) and the table
@@ -156,8 +157,10 @@ export async function listOwnerSections(
     .order("sort")
     .order("created_at")
     .order("id");
-  if (error) throw new Error(`sections could not be read: ${error.message}`);
-  return z.array(rowSchema).parse(data).map(toSection);
+  if (error) throw new Error("sections could not be read");
+  const rows = shaped(z.array(rowSchema), data, "sections");
+  if (!rows) throw new Error("sections could not be read");
+  return rows.map(toSection);
 }
 
 // Every section of the restaurant that is not deleted, with the menu it is
@@ -184,11 +187,14 @@ export async function listOwnerSectionNames(
     .order("sort")
     .order("created_at")
     .order("id");
-  if (error) throw new Error(`sections could not be read: ${error.message}`);
-  return z
-    .array(namedSchema)
-    .parse(data)
-    .map((row) => ({ id: row.id, name: row.name, menuId: row.menu_id }));
+  if (error) throw new Error("sections could not be read");
+  const rows = shaped(z.array(namedSchema), data, "sections");
+  if (!rows) throw new Error("sections could not be read");
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    menuId: row.menu_id,
+  }));
 }
 
 // What a delete would take, as the database counts it: one row for each
@@ -219,8 +225,9 @@ export async function listSectionDishes(
     { p_restaurant: restaurantId },
     { count: "exact" },
   );
-  if (error) throw new Error(`dishes could not be counted: ${error.message}`);
-  const rows = z.array(countSchema).parse(data);
+  if (error) throw new Error("dishes could not be counted");
+  const rows = shaped(z.array(countSchema), data, "rpc/section_dish_counts");
+  if (!rows) throw new Error("dishes could not be counted");
   if (count !== rows.length) {
     throw new Error("dishes could not be counted: the read was cut short");
   }
@@ -271,10 +278,12 @@ export async function findOwnerSection(
     .maybeSingle();
   if (error) return "failed";
   if (!data) return "not-found";
-  const row = rowSchema.extend({ menu_id: z.string() }).safeParse(data);
-  return row.success
-    ? { ...toSection(row.data), menuId: row.data.menu_id }
-    : "failed";
+  const row = shaped(
+    rowSchema.extend({ menu_id: z.string() }),
+    data,
+    "sections",
+  );
+  return row ? { ...toSection(row), menuId: row.menu_id } : "failed";
 }
 
 // One section of the restaurant that is not deleted, as its own page reads
@@ -296,8 +305,8 @@ export async function findOwnerSectionPage(
     .maybeSingle();
   if (error) return "failed";
   if (!data) return "not-found";
-  const row = pageSchema.safeParse(data);
-  return row.success ? toSectionPage(row.data, viewer) : "failed";
+  const row = shaped(pageSchema, data, "sections");
+  return row ? toSectionPage(row, viewer) : "failed";
 }
 
 // A Postgres array literal, for comparing an array column against the value
@@ -384,10 +393,8 @@ export async function writeOwnerSectionLine(
   const { data, error } = await update.select(pageColumns).maybeSingle();
   if (error) return refused(error.code, error.message);
   if (!data) return notFound;
-  const row = pageSchema.safeParse(data);
-  return row.success
-    ? { ok: true, value: toSectionPage(row.data, viewer) }
-    : failed;
+  const row = shaped(pageSchema, data, "sections");
+  return row ? { ok: true, value: toSectionPage(row, viewer) } : failed;
 }
 
 // The other allergens the restaurant's live sections' lines name, as
@@ -402,13 +409,14 @@ export async function listOwnerLineOtherAllergenNames(
     .select("every_item_custom_allergens")
     .eq("restaurant_id", restaurantId)
     .is("deleted_at", null);
-  if (error) {
-    throw new Error(`other allergens could not be read: ${error.message}`);
-  }
-  return z
-    .array(z.object({ every_item_custom_allergens: z.array(z.string()) }))
-    .parse(data)
-    .flatMap((row) => row.every_item_custom_allergens);
+  if (error) throw new Error("other allergens could not be read");
+  const rows = shaped(
+    z.array(z.object({ every_item_custom_allergens: z.array(z.string()) })),
+    data,
+    "sections",
+  );
+  if (!rows) throw new Error("other allergens could not be read");
+  return rows.flatMap((row) => row.every_item_custom_allergens);
 }
 
 // A new section goes last, with a name only. The trigger takes its
@@ -430,8 +438,12 @@ export async function addOwnerSection(
     .order("sort", { ascending: false })
     .limit(1);
   if (last.error || last.count === null) return failed;
-  const highest = z.array(z.object({ sort: z.number() })).safeParse(last.data);
-  const top = highest.success ? highest.data[0] : undefined;
+  const highest = shaped(
+    z.array(z.object({ sort: z.number() })),
+    last.data,
+    "sections",
+  );
+  const top = highest?.[0];
   const sort = (top ? top.sort : 0) + 1;
 
   const { data, error } = await client
@@ -440,12 +452,9 @@ export async function addOwnerSection(
     .select(columns)
     .single();
   if (error) return error.message === NO_MENU ? notFound : refused(error.code);
-  const row = rowSchema.safeParse(data);
-  return row.success
-    ? {
-        ok: true,
-        value: { section: toSection(row.data), total: last.count + 1 },
-      }
+  const row = shaped(rowSchema, data, "sections");
+  return row
+    ? { ok: true, value: { section: toSection(row), total: last.count + 1 } }
     : failed;
 }
 
@@ -476,8 +485,8 @@ export async function setOwnerSectionText(
   const { data, error } = await update.select(columns).maybeSingle();
   if (error) return refused(error.code);
   if (!data) return notFound;
-  const row = rowSchema.safeParse(data);
-  return row.success ? { ok: true, value: toSection(row.data) } : failed;
+  const row = shaped(rowSchema, data, "sections");
+  return row ? { ok: true, value: toSection(row) } : failed;
 }
 
 // Marks a section deleted, through delete_with_contents(): the database
@@ -522,8 +531,8 @@ export async function restoreOwnerSection(
     .maybeSingle();
   if (error) return refused(error.code);
   if (!data) return notFound;
-  const row = rowSchema.safeParse(data);
-  return row.success ? { ok: true, value: toSection(row.data) } : failed;
+  const row = shaped(rowSchema, data, "sections");
+  return row ? { ok: true, value: toSection(row) } : failed;
 }
 
 // Moves a section to another menu of its restaurant, last, with its dishes

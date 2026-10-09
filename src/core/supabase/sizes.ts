@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { OwnerSize } from "@/domain/dish";
 import { priceInputText } from "@/domain/money";
+import { shaped } from "./log";
 
 // Owner-side reads and writes on a dish's sizes (D-139), through the
 // owner's own client so row level security decides what is visible (D-75)
@@ -76,8 +77,9 @@ export async function listOwnerSizes(
     .order("price_cents", { ascending: true, nullsFirst: false })
     .order("created_at")
     .order("id");
-  if (error) throw new Error(`sizes could not be read: ${error.message}`);
-  const rows = z.array(rowSchema).parse(data);
+  if (error) throw new Error("sizes could not be read");
+  const rows = shaped(z.array(rowSchema), data, "item_sizes");
+  if (!rows) throw new Error("sizes could not be read");
   if (count !== rows.length) {
     throw new Error("sizes could not be read: the read was cut short");
   }
@@ -97,9 +99,15 @@ export async function listOwnerSizeNames(
     .eq("restaurant_id", restaurantId)
     .is("deleted_at", null)
     .not("name", "is", null);
-  if (error) throw new Error(`size names could not be read: ${error.message}`);
+  if (error) throw new Error("size names could not be read");
+  const rows = shaped(
+    z.array(z.object({ name: z.string() })),
+    data,
+    "item_sizes",
+  );
+  if (!rows) throw new Error("size names could not be read");
   const counts = new Map<string, { name: string; uses: number }>();
-  for (const row of z.array(z.object({ name: z.string() })).parse(data)) {
+  for (const row of rows) {
     const name = row.name.trim();
     const key = name.toLowerCase();
     const seen = counts.get(key);
@@ -131,9 +139,9 @@ export async function addOwnerSize(
     .select(columns)
     .single();
   if (error) return error.message === NO_DISH ? notFound : refused(error.code);
-  const row = rowSchema.safeParse(data);
-  return row.success
-    ? { ok: true, value: { size: toSize(row.data), total: live.count + 1 } }
+  const row = shaped(rowSchema, data, "item_sizes");
+  return row
+    ? { ok: true, value: { size: toSize(row), total: live.count + 1 } }
     : failed;
 }
 
@@ -163,8 +171,8 @@ async function writeSize(
   const { data, error } = await update.select(columns).maybeSingle();
   if (error) return refused(error.code);
   if (!data) return notFound;
-  const row = rowSchema.safeParse(data);
-  return row.success ? { ok: true, value: toSize(row.data) } : failed;
+  const row = shaped(rowSchema, data, "item_sizes");
+  return row ? { ok: true, value: toSize(row) } : failed;
 }
 
 export function setOwnerSizeName(
@@ -213,8 +221,8 @@ export async function setOwnerSizeDeleted(
   const { data, error } = await update.select(columns).maybeSingle();
   if (error) return refused(error.code);
   if (data) {
-    const row = rowSchema.safeParse(data);
-    return row.success ? { ok: true, value: toSize(row.data) } : failed;
+    const row = shaped(rowSchema, data, "item_sizes");
+    return row ? { ok: true, value: toSize(row) } : failed;
   }
   if (!(deleted && onlyIfBlank)) return notFound;
   // Nothing matched: the size is gone, or it holds something now.

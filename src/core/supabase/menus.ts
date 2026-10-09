@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { Held, ListedMenu, OwnerMenu } from "@/domain/menu";
+import { shaped } from "./log";
 import { listSectionDishes } from "./sections";
 
 // Owner-side reads and writes on menus, through the owner's own client so
@@ -77,9 +78,9 @@ export async function listOwnerMenus(
       .order("id"),
     listSectionDishes(client, restaurantId),
   ]);
-  if (menus.error) {
-    throw new Error(`menus could not be read: ${menus.error.message}`);
-  }
+  if (menus.error) throw new Error("menus could not be read");
+  const rows = shaped(z.array(rowSchema), menus.data, "menus");
+  if (!rows) throw new Error("menus could not be read");
   const held = new Map<string, Held>();
   for (const { menuId, dishes } of counts) {
     const soFar = held.get(menuId) ?? { sections: 0, dishes: 0 };
@@ -88,13 +89,10 @@ export async function listOwnerMenus(
       dishes: soFar.dishes + dishes,
     });
   }
-  return z
-    .array(rowSchema)
-    .parse(menus.data)
-    .map((row) => ({
-      ...toMenu(row),
-      ...(held.get(row.id) ?? { sections: 0, dishes: 0 }),
-    }));
+  return rows.map((row) => ({
+    ...toMenu(row),
+    ...(held.get(row.id) ?? { sections: 0, dishes: 0 }),
+  }));
 }
 
 // The restaurant's menus that are not deleted, in the owner's order, with
@@ -112,8 +110,10 @@ export async function listOwnerMenuNames(
     .order("sort")
     .order("created_at")
     .order("id");
-  if (error) throw new Error(`menus could not be read: ${error.message}`);
-  return z.array(rowSchema).parse(data).map(toMenu);
+  if (error) throw new Error("menus could not be read");
+  const rows = shaped(z.array(rowSchema), data, "menus");
+  if (!rows) throw new Error("menus could not be read");
+  return rows.map(toMenu);
 }
 
 // One menu of the restaurant that is not deleted, for its own page and for
@@ -135,8 +135,8 @@ export async function findOwnerMenu(
     .maybeSingle();
   if (error) return "failed";
   if (!data) return "not-found";
-  const row = rowSchema.safeParse(data);
-  return row.success ? toMenu(row.data) : "failed";
+  const row = shaped(rowSchema, data, "menus");
+  return row ? toMenu(row) : "failed";
 }
 
 // A new menu goes last. Two tabs adding at once can draw the same sort; the
@@ -156,8 +156,12 @@ export async function addOwnerMenu(
     .order("sort", { ascending: false })
     .limit(1);
   if (last.error || last.count === null) return failed;
-  const highest = z.array(z.object({ sort: z.number() })).safeParse(last.data);
-  const top = highest.success ? highest.data[0] : undefined;
+  const highest = shaped(
+    z.array(z.object({ sort: z.number() })),
+    last.data,
+    "menus",
+  );
+  const top = highest?.[0];
   const sort = (top ? top.sort : 0) + 1;
 
   const { data, error } = await client
@@ -166,9 +170,9 @@ export async function addOwnerMenu(
     .select(columns)
     .single();
   if (error) return refused(error.code);
-  const row = rowSchema.safeParse(data);
-  return row.success
-    ? { ok: true, value: { menu: toMenu(row.data), total: last.count + 1 } }
+  const row = shaped(rowSchema, data, "menus");
+  return row
+    ? { ok: true, value: { menu: toMenu(row), total: last.count + 1 } }
     : failed;
 }
 
@@ -193,8 +197,8 @@ export async function renameOwnerMenu(
   const { data, error } = await update.select(columns).maybeSingle();
   if (error) return refused(error.code);
   if (!data) return notFound;
-  const row = rowSchema.safeParse(data);
-  return row.success ? { ok: true, value: toMenu(row.data) } : failed;
+  const row = shaped(rowSchema, data, "menus");
+  return row ? { ok: true, value: toMenu(row) } : failed;
 }
 
 // Marks a menu deleted, through delete_with_contents(): the database counts
@@ -239,8 +243,8 @@ export async function restoreOwnerMenu(
     .maybeSingle();
   if (error) return refused(error.code);
   if (!data) return notFound;
-  const row = rowSchema.safeParse(data);
-  return row.success ? { ok: true, value: toMenu(row.data) } : failed;
+  const row = shaped(rowSchema, data, "menus");
+  return row ? { ok: true, value: toMenu(row) } : failed;
 }
 
 // set_menu_order() takes the whole list or nothing: a list that is not

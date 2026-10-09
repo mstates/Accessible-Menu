@@ -10,6 +10,7 @@ import {
 import { nameKey } from "@/domain/menu";
 import { priceInputText } from "@/domain/money";
 import { ALLERGEN_IDS, type AllergenId } from "@/domain/types";
+import { shaped } from "./log";
 
 // Owner-side reads and writes on dishes, through the owner's own client so
 // row level security decides what is visible (D-75) and the table
@@ -151,8 +152,9 @@ export async function listOwnerDishes(
     .order("sort")
     .order("created_at")
     .order("id");
-  if (error) throw new Error(`dishes could not be read: ${error.message}`);
-  const rows = z.array(rowSchema).parse(data);
+  if (error) throw new Error("dishes could not be read");
+  const rows = shaped(z.array(rowSchema), data, "items");
+  if (!rows) throw new Error("dishes could not be read");
   if (count !== rows.length) {
     throw new Error("dishes could not be read: the read was cut short");
   }
@@ -181,8 +183,8 @@ export async function findOwnerDish(
     .maybeSingle();
   if (error) return "failed";
   if (!data) return "not-found";
-  const row = detailSchema.safeParse(data);
-  return row.success ? toDetail(row.data, viewer) : "failed";
+  const row = shaped(detailSchema, data, "items");
+  return row ? toDetail(row, viewer) : "failed";
 }
 
 // A new dish goes last, with a name only. The trigger takes its restaurant
@@ -203,8 +205,12 @@ export async function addOwnerDish(
     .order("sort", { ascending: false })
     .limit(1);
   if (last.error || last.count === null) return failed;
-  const highest = z.array(z.object({ sort: z.number() })).safeParse(last.data);
-  const top = highest.success ? highest.data[0] : undefined;
+  const highest = shaped(
+    z.array(z.object({ sort: z.number() })),
+    last.data,
+    "items",
+  );
+  const top = highest?.[0];
   const sort = (top ? top.sort : 0) + 1;
 
   const { data, error } = await client
@@ -215,9 +221,9 @@ export async function addOwnerDish(
   if (error) {
     return error.message === NO_SECTION ? notFound : refused(error.code);
   }
-  const row = rowSchema.safeParse(data);
-  return row.success
-    ? { ok: true, value: { dish: toDish(row.data), total: last.count + 1 } }
+  const row = shaped(rowSchema, data, "items");
+  return row
+    ? { ok: true, value: { dish: toDish(row), total: last.count + 1 } }
     : failed;
 }
 
@@ -242,8 +248,8 @@ export async function renameOwnerDish(
   const { data, error } = await update.select(columns).maybeSingle();
   if (error) return refused(error.code);
   if (!data) return notFound;
-  const row = rowSchema.safeParse(data);
-  return row.success ? { ok: true, value: toDish(row.data) } : failed;
+  const row = shaped(rowSchema, data, "items");
+  return row ? { ok: true, value: toDish(row) } : failed;
 }
 
 // Marks a dish deleted, or brings it back. A dish holds nothing, so its
@@ -269,8 +275,8 @@ export async function setOwnerDishDeleted(
     .maybeSingle();
   if (error) return refused(error.code);
   if (!data) return notFound;
-  const row = rowSchema.safeParse(data);
-  return row.success ? { ok: true, value: toDish(row.data) } : failed;
+  const row = shaped(rowSchema, data, "items");
+  return row ? { ok: true, value: toDish(row) } : failed;
 }
 
 // Writes one column of a dish on its own page. The write is scoped to the
@@ -301,8 +307,8 @@ async function writeDish(
   const { data, error } = await update.select(detailColumns).maybeSingle();
   if (error) return refused(error.code);
   if (!data) return notFound;
-  const row = detailSchema.safeParse(data);
-  return row.success ? { ok: true, value: toDetail(row.data, null) } : failed;
+  const row = shaped(detailSchema, data, "items");
+  return row ? { ok: true, value: toDetail(row, null) } : failed;
 }
 
 // A Postgres array literal, for comparing an array column against the value
@@ -376,8 +382,8 @@ export async function writeOwnerDishAllergens(
   const { data, error } = await update.select(detailColumns).maybeSingle();
   if (error) return refused(error.code, error.message);
   if (!data) return notFound;
-  const row = detailSchema.safeParse(data);
-  return row.success ? { ok: true, value: toDetail(row.data, viewer) } : failed;
+  const row = shaped(detailSchema, data, "items");
+  return row ? { ok: true, value: toDetail(row, viewer) } : failed;
 }
 
 // A live dish elsewhere in the restaurant with the same name as this one,
@@ -424,11 +430,11 @@ export async function listOwnerSameNamedDishes(
     .eq("restaurant_id", restaurantId)
     .is("deleted_at", null)
     .ilike("name", pattern);
-  if (error) throw new Error(`dishes could not be read: ${error.message}`);
+  if (error) throw new Error("dishes could not be read");
+  const rows = shaped(z.array(sameNamedSchema), data, "items");
+  if (!rows) throw new Error("dishes could not be read");
   const key = nameKey(name);
-  return z
-    .array(sameNamedSchema)
-    .parse(data)
+  return rows
     .filter((row) => row.id !== dishId && nameKey(row.name) === key)
     .map((row) => ({
       id: row.id,
@@ -454,13 +460,14 @@ export async function listOwnerOtherAllergenNames(
     .select("custom_allergens")
     .eq("restaurant_id", restaurantId)
     .is("deleted_at", null);
-  if (error) {
-    throw new Error(`other allergens could not be read: ${error.message}`);
-  }
-  return z
-    .array(z.object({ custom_allergens: z.array(z.string()) }))
-    .parse(data)
-    .flatMap((row) => row.custom_allergens);
+  if (error) throw new Error("other allergens could not be read");
+  const rows = shaped(
+    z.array(z.object({ custom_allergens: z.array(z.string()) })),
+    data,
+    "items",
+  );
+  if (!rows) throw new Error("other allergens could not be read");
+  return rows.flatMap((row) => row.custom_allergens);
 }
 
 // A dish's description or note, stored as null when blank.

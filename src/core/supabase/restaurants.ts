@@ -4,6 +4,7 @@ import { RESTAURANT_STATUSES } from "@/domain/billing";
 import { parseHours } from "@/domain/hours";
 import type { RestaurantDetails, RestaurantInput } from "@/domain/restaurant";
 import { PREP_NOTE_IDS } from "@/domain/types";
+import { shaped } from "./log";
 
 // Owner-side reads and writes on restaurants, through the owner's own client
 // so row level security decides what is visible (D-75) and the table
@@ -55,8 +56,8 @@ function toDetails(row: Row): RestaurantDetails {
 }
 
 function readRow(data: unknown): RestaurantDetails | null {
-  const parsed = rowSchema.safeParse(data);
-  return parsed.success ? toDetails(parsed.data) : null;
+  const row = shaped(rowSchema, data, "restaurants");
+  return row ? toDetails(row) : null;
 }
 
 // Every optional field goes over as an explicit null. JSON.stringify drops
@@ -124,8 +125,9 @@ export async function findOwnerRestaurantId(
     .eq("code", code)
     .maybeSingle();
   if (error) return "failed";
-  const row = z.object({ id: z.string() }).safeParse(data);
-  return row.success ? row.data : "not-found";
+  if (!data) return "not-found";
+  const row = shaped(z.object({ id: z.string() }), data, "restaurants");
+  return row ?? "not-found";
 }
 
 // Under row level security a code the caller does not own matches zero rows
