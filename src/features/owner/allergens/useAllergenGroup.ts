@@ -275,19 +275,21 @@ export function useAllergenGroup<Entry>({
 
   // A write landed: the lists, the check, and the words it answered with
   // are what the next write carries. A check cleared by the change is
-  // said, after the "Saved." the field's landing said.
-  function landed(next: GroupState, before: Confirmed): UndoLists {
+  // said, after the "Saved." the field's landing said. The check's own
+  // write is no such change: a deliberate uncheck says "Saved." alone, and
+  // the stamp reads as a reload shows it (Q-66).
+  function landed(next: GroupState, before: Confirmed, own = false): UndoLists {
     const lists = listsOf(next);
     confirmed.current = {
       words: next.words === undefined ? confirmed.current.words : next.words,
       lists,
       check: next.check,
     };
-    if (before.check && !next.check) {
+    if (next.check || own) setCleared(false);
+    else if (before.check) {
       setCleared(true);
       announce(copy.clearedNow);
     }
-    if (next.check) setCleared(false);
     return lists;
   }
 
@@ -409,7 +411,7 @@ export function useAllergenGroup<Entry>({
           return;
         }
         editing.landedField(key, null);
-        landed(result.value, before);
+        landed(result.value, before, true);
         record(
           target.entries.make(
             {
@@ -760,7 +762,7 @@ export function useAllergenGroup<Entry>({
           target.writes.check(!change.on, change.lists, carried),
         );
         if (!result.ok) return notReversed(change, result.problem);
-        landedQuiet(result.value, before);
+        landedQuiet(result.value, before, true);
         return {
           ok: true,
           sentence: allergenUndoneSentence(copy, change, false, subject.noun),
@@ -786,14 +788,16 @@ export function useAllergenGroup<Entry>({
   }
 
   // After an Undo: the lists and the check as the server now holds them,
-  // with the Undo's own sentence carrying what there is to say.
-  function landedQuiet(next: GroupState, before: Confirmed) {
+  // with the Undo's own sentence carrying what there is to say. An Undo of
+  // the check is the check's own write, so the stamp reads as a reload
+  // shows it (Q-66).
+  function landedQuiet(next: GroupState, before: Confirmed, own = false) {
     confirmed.current = {
       words: next.words === undefined ? confirmed.current.words : next.words,
       lists: listsOf(next),
       check: next.check,
     };
-    if (next.check) setCleared(false);
+    if (next.check || own) setCleared(false);
     else if (before.check) setCleared(true);
   }
 

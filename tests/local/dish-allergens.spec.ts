@@ -294,6 +294,82 @@ test("the check says Saved. once, reads checked by you with the date in the rest
   expect((await row(dishes.market.id)).allergens_reviewed_at).toBeNull();
 });
 
+test("a deliberate uncheck says Saved. alone and an Undo of a check says its own sentence alone, each leaving Not checked yet. as a reload shows it, while a tick that clears a check still says so", async ({
+  page,
+}) => {
+  const { dishes } = ownerFixture();
+  const none = { allergens: [], others: [] };
+  await openDish(page, "market");
+  await expect(checkBox(page)).not.toBeChecked();
+
+  // A deliberate uncheck says "Saved." alone, and the stamp reads as a
+  // reload shows it (Q-66).
+  await press(page, allergens.checkLabel);
+  await expect.poll(() => said(page, saved)).toBe(1);
+  await expect(checkBox(page)).toBeChecked();
+  await press(page, allergens.checkLabel);
+  await expect.poll(() => said(page, saved)).toBe(2);
+  expect(
+    await said(page, allergens.clearedNow),
+    "an uncheck says Saved. alone",
+  ).toBe(0);
+  await expect(checkBox(page)).not.toBeChecked();
+  await expect(sentenceLine(page)).toHaveText(
+    `${reads(none, false)} ${allergens.notChecked}`,
+  );
+  await reload(page);
+  await expect(sentenceLine(page)).toHaveText(
+    `${reads(none, false)} ${allergens.notChecked}`,
+  );
+
+  // An Undo of a check says its own sentence alone, with the same stamp.
+  await press(page, allergens.checkLabel);
+  await expect.poll(() => said(page, saved)).toBe(1);
+  await undoButton(
+    page,
+    fill(allergens.undo.checked, { dish: dishes.market.name }),
+  ).click();
+  await expect
+    .poll(() =>
+      said(
+        page,
+        fill(allergens.undo.checkedBack, { dish: dishes.market.name }),
+      ),
+    )
+    .toBe(1);
+  expect(
+    await said(page, allergens.clearedNow),
+    "an Undo of a check says its own sentence alone",
+  ).toBe(0);
+  await expect(checkBox(page)).not.toBeChecked();
+  await expect(sentenceLine(page)).toHaveText(
+    `${reads(none, false)} ${allergens.notChecked}`,
+  );
+  await reload(page);
+  await expect(sentenceLine(page)).toHaveText(
+    `${reads(none, false)} ${allergens.notChecked}`,
+  );
+
+  // A tick that clears a check still says so, and the stamp says why.
+  await press(page, allergens.checkLabel);
+  await expect.poll(() => said(page, saved)).toBe(1);
+  await press(page, allergens.names.milk);
+  await expect.poll(() => said(page, saved)).toBe(2);
+  await expect.poll(() => said(page, allergens.clearedNow)).toBe(1);
+  await expect(checkBox(page)).not.toBeChecked();
+  await expect(sentenceLine(page)).toHaveText(
+    `${reads({ allergens: ["milk"], others: [] }, false)} ${allergens.cleared}`,
+  );
+  await expectNoMissingIds(page);
+
+  // As it was: no allergens, not checked.
+  await press(page, allergens.names.milk);
+  await expect.poll(() => said(page, saved)).toBe(3);
+  const back = await row(dishes.market.id);
+  expect(back.allergens).toEqual([]);
+  expect(back.allergens_reviewed).toBe(false);
+});
+
 test("another allergen is added in the page only, a name that means one of the nine or runs long or holds a comma or repeats is refused unsent, a name that lands clears the check, and a rename and a remove are undone", async ({
   page,
 }) => {
