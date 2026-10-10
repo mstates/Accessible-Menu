@@ -19,9 +19,12 @@
 -- second Soup of the day in Mains, not checked, for the same-named line on
 -- the first (D-129); Starters' line shown with every dish, "Add a buttered
 -- roll to any dish for 2 dollars.", checked with milk and wheat, and
--- Desserts with no line (migration 8, task 4b); at least one menu that
--- holds no section; and at least one section of Dinner that holds no dish.
--- Nothing here can publish (migration 3).
+-- Desserts with no line (migration 8, task 4b); House salad tagged
+-- vegetarian and made without gluten ingredients, Garlic bread off the menu
+-- for now, and Soup of the day a special every day from 4 to 9 pm
+-- (migration 9, task 5); at least one menu that holds no section; and at
+-- least one section of Dinner that holds no dish. Nothing here can publish
+-- (migration 3).
 
 do $$
 declare
@@ -316,6 +319,39 @@ begin
   if placed > 0 then
     raise notice 'checked the allergens of Starters'' line';
   end if;
+
+  -- 3e. Starters' dishes with their tags, availability, and schedule
+  -- (migration 9, task 5, D-159, D-160): House salad tagged vegetarian and
+  -- made without gluten ingredients; Garlic bread off the menu for now with
+  -- no sold-out mark, so its availability line reads the same on any day;
+  -- Soup of the day a special every day from 4 to 9 pm, so its sentence
+  -- reads the same on any day and its next-shows line is today or
+  -- tomorrow. Each written only when it differs.
+  update public.items i
+  set dietary_tags = '{vegetarian,made-without-gluten}'
+  where i.id = salad
+    and i.dietary_tags is distinct from
+      '{vegetarian,made-without-gluten}'::public.dietary_tag[];
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'tagged House salad vegetarian and made without gluten ingredients';
+  end if;
+  update public.items i
+  set available = false, sold_out_at = null
+  where i.id = bread and (i.available or i.sold_out_at is not null);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'took Garlic bread off the menu for now';
+  end if;
+  update public.items i
+  set special_schedule = '{"hours":{"open":"16:00","close":"21:00"}}'::jsonb
+  where i.id = soup
+    and i.special_schedule is distinct from
+      '{"hours":{"open":"16:00","close":"21:00"}}'::jsonb;
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'made Soup of the day a special, every day from 4 to 9 pm';
+  end if;
 end $$;
 
 -- 4. What CI Diner holds now, in the order its screens show it. The first
@@ -344,6 +380,7 @@ live_sections as (
 live_items as (
   select i.id, i.section_id, i.name, i.price_kind, i.price_cents,
     i.allergens, i.custom_allergens, i.allergens_reviewed,
+    i.dietary_tags, i.available, i.sold_out_at, i.special_schedule,
     row_number() over (
       partition by i.section_id order by i.sort, i.created_at, i.id
     ) as place
@@ -444,7 +481,20 @@ verdict as (
         join dinner on ls.menu_id = dinner.id
         where lower(btrim(ls.name)) = 'desserts'
           and ls.every_item is not null),
-      false) as line_ok
+      false) as line_ok,
+    coalesce(
+      (select li.dietary_tags
+         = '{vegetarian,made-without-gluten}'::public.dietary_tag[]
+       from live_items li join starters on li.section_id = starters.id
+       where lower(btrim(li.name)) = 'house salad')
+      and (select not li.available and li.sold_out_at is null
+       from live_items li join starters on li.section_id = starters.id
+       where lower(btrim(li.name)) = 'garlic bread')
+      and (select li.special_schedule
+         = '{"hours":{"open":"16:00","close":"21:00"}}'::jsonb
+       from live_items li join starters on li.section_id = starters.id
+       where lower(btrim(li.name)) = 'soup of the day'),
+      false) as showing_ok
 )
 select item, status
 from (
@@ -468,6 +518,8 @@ from (
         'not ready: Soup of the day is not checked with milk, wheat, and celery, House salad checked with none, Garlic bread not checked, or Mains has no unchecked Soup of the day'
       when not v.line_ok then
         'not ready: Starters'' line shown with every dish is not "Add a buttered roll to any dish for 2 dollars." checked with milk and wheat, or Desserts has a line'
+      when not v.showing_ok then
+        'not ready: House salad is not tagged vegetarian and made without gluten ingredients, Garlic bread is not off the menu for now, or Soup of the day is not a special every day from 4 to 9 pm'
       else 'ready for the owner gate'
     end as status
   from verdict v
@@ -506,7 +558,13 @@ from (
       || ', allergens '
       || coalesce(nullif(array_to_string(li.allergens, ' '), ''), 'none')
       || coalesce(' and ' || nullif(array_to_string(li.custom_allergens, ' '), ''), '')
-      || case when li.allergens_reviewed then ', checked' else ', not checked' end,
+      || case when li.allergens_reviewed then ', checked' else ', not checked' end
+      || coalesce(', tags ' || nullif(array_to_string(li.dietary_tags, ' '), ''), '')
+      || case
+        when not li.available then ', off the menu for now'
+        when li.sold_out_at is not null then ', sold out at ' || li.sold_out_at::text
+        else '' end
+      || coalesce(', special ' || li.special_schedule::text, ''),
     case
       when lower(btrim(lm.name)) = 'dinner'
         and lower(btrim(ls.name)) = 'starters'

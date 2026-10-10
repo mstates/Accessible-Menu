@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { parseTime, TIME_PATTERN } from "./time";
+import type { Day } from "./timezones";
 
 // Opening hours (D-92). One object keyed by day, each day a list of up to two
 // time ranges in the restaurant's time zone (D-21). An empty list means
@@ -246,4 +247,28 @@ const silent: HoursMessages = {
 export function parseHours(value: unknown): Hours | null {
   const result = hoursSchema(silent).safeParse(value);
   return result.success ? result.data : null;
+}
+
+// The day of the week a calendar day falls on. getUTCDay counts from
+// Sunday; DAY_KEYS from Monday.
+export function dayKeyOf(day: Day): DayKey {
+  const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
+  return DAY_KEYS[(weekday + 6) % 7] ?? "mon";
+}
+
+// When a day's service ends, for a sold-out mark (D-160): the latest close
+// among its ranges, as the day it falls on (this one or the next) and the
+// time. A range past midnight closes the next day; a day open around the
+// clock ends at the next midnight whatever time it stores; a closed day
+// has no end.
+export type DayEnd = { daysOn: 0 | 1; time: string };
+
+export function dayEnd(ranges: readonly TimeRange[]): DayEnd | null {
+  if (ranges.length === 0) return null;
+  if (isOpenAllDay(ranges)) return { daysOn: 1, time: "00:00" };
+  const end = Math.max(...ranges.map((range) => span(range)[1]));
+  const onDay = end % MINUTES_IN_DAY;
+  const hh = String(Math.floor(onDay / 60)).padStart(2, "0");
+  const mm = String(onDay % 60).padStart(2, "0");
+  return { daysOn: end >= MINUTES_IN_DAY ? 1 : 0, time: `${hh}:${mm}` };
 }

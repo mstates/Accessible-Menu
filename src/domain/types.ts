@@ -29,9 +29,15 @@ export const PREP_NOTE_IDS = [
 ] as const;
 export type PrepNoteId = (typeof PREP_NOTE_IDS)[number];
 
-// Vocabulary from D-66. The gluten tag reads "Made without gluten
-// ingredients" and never "Gluten-free".
-export type DietaryTagId = "vegan" | "vegetarian" | "made-without-gluten";
+// Vocabulary from D-66, in the order the enum and every list keep. The
+// gluten tag reads "Made without gluten ingredients" and never
+// "Gluten-free".
+export const DIETARY_TAG_IDS = [
+  "vegan",
+  "vegetarian",
+  "made-without-gluten",
+] as const;
+export type DietaryTagId = (typeof DIETARY_TAG_IDS)[number];
 
 export type Price =
   | { kind: "exact"; cents: number }

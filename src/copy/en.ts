@@ -724,6 +724,140 @@ export const en = {
             "{dish} cannot go back while {section} has another dish called {dish}.",
         },
       },
+      // The dish's dietary tags (task 5, D-66): three boxes with a hint
+      // each, and the sentence diners read under them from
+      // domain/dietary.ts. The box names are the diner words
+      // (en.dietary.names), so the box and the line are one source.
+      tags: {
+        heading: "Dietary tags",
+        hints: {
+          vegan: "No meat, fish, dairy, eggs, or honey.",
+          vegetarian: "No meat or fish. Tick Vegan instead for a vegan dish.",
+          "made-without-gluten":
+            "Ingredients only. A dedicated fryer or a shared kitchen is said in your restaurant's allergen note.",
+        },
+        dinersRead: "Diners read: {sentence}",
+        notSaved: "The dietary tags of {dish} were not saved.",
+        tagsMoved:
+          "The dietary tags changed since this page showed them, so nothing was saved. Look at the tags as they are now.",
+        undo: {
+          ticked: "Undo: ticked {tag} for {dish}",
+          unticked: "Undo: unticked {tag} for {dish}",
+          tickedBack: "Undone. {tag} is unticked again.",
+          untickedBack: "Undone. {tag} is ticked again.",
+          tagsChanged:
+            "The dietary tags were changed again since, so nothing was undone.",
+        },
+      },
+      // Availability (task 5, D-160): three radios like Price's, a hint on
+      // the two that change what diners see, and the group's line saying
+      // what the choice means now, from the server's clock.
+      availability: {
+        heading: "Availability",
+        available: "Available",
+        soldOut: "Sold out today",
+        off: "Off the menu for now",
+        soldOutHint:
+          "Diners read Sold out today. It comes back on its own at the end of your day.",
+        offHint:
+          "Diners do not see this dish until you choose Available again.",
+        hidden: "Hidden from diners until you choose Available.",
+        endsToday: "Available again on its own at {time} today.",
+        endsTomorrow: "Available again on its own at {time} tomorrow.",
+        endsOn: "Available again on its own on {date}, at {time}.",
+        endsMidnight: "Available again on its own at midnight tonight.",
+        notSaved: "The availability of {dish} was not saved.",
+        undo: {
+          markedSoldOut: "Undo: marked {dish} sold out today",
+          markedOff: "Undo: took {dish} off the menu",
+          markedAvailable: "Undo: made {dish} available",
+          availableBack: "Undone. {dish} is available again.",
+          soldOutBack: "Undone. {dish} is sold out today again.",
+          offBack: "Undone. {dish} is off the menu again.",
+          soldOutEnded:
+            "That sold-out mark ended on its own, so there is nothing to undo.",
+        },
+      },
+      // The schedule (task 5, D-159): five optional parts under one
+      // heading, days, hours, and Today only first, the sentence diners
+      // read under them from domain/schedule.ts, and when the special
+      // next shows. Day names are the hours grid's (restaurants.days) and
+      // month names come from Intl.
+      schedule: {
+        heading: "Schedule",
+        lead: "Set a schedule to make this dish a special. Diners see it only on the days you choose, from the start of the day until its hours end. Leave everything blank for a dish that is always on the menu.",
+        daysLabel: "Days",
+        hoursLabel: "Hours",
+        starts: "Starts",
+        ends: "Ends",
+        hoursHint:
+          "For example, 11 am, 5:30 pm, or 17:30. Leave both blank for all day.",
+        todayOnly: "Today only",
+        todayOnlySet: "Set to today only, {date}.",
+        firstDay: "First day",
+        lastDay: "Last day",
+        dateHint: "For example, October 31 or 10/31/2026.",
+        weeksLabel: "Weeks of the month",
+        weeksLead:
+          "Which of the month's Fridays, for a special on the first Friday of each month. Needs a day above.",
+        weeks: {
+          first: "First",
+          second: "Second",
+          third: "Third",
+          fourth: "Fourth",
+          last: "Last",
+        },
+        monthsLabel: "Months of the year",
+        monthsLead:
+          "For a special that comes back each year, like a soup from September to April.",
+        dinersRead: "Diners read: {sentence}",
+        none: "No schedule. Diners see this dish whenever it is available.",
+        showsNow: "Shows now, until {time}.",
+        showsNowOn: "Shows now, until {time} {day}.",
+        showsNowAllDay: "Shows now, all day.",
+        nextShows: "Next shows {date}.",
+        never: "No day ahead fits this schedule, so diners do not see it.",
+        weeksCleared:
+          "The weeks of the month were cleared with it, since they need a day.",
+        scheduleMoved:
+          "The schedule changed since this page showed it, so nothing was saved. Look at the schedule as it is now.",
+        notSaved: {
+          days: "The days for {dish} were not saved.",
+          hours: "The hours for {dish} were not saved.",
+          today: "Today only for {dish} was not saved.",
+          from: "The first day for {dish} was not saved.",
+          until: "The last day for {dish} was not saved.",
+          weeks: "The weeks of the month for {dish} were not saved.",
+          months: "The months for {dish} were not saved.",
+        },
+        errors: {
+          timeAmPmStarts: "Add am or pm to the time it starts.",
+          timeAmPmEnds: "Add am or pm to the time it ends.",
+          timeFormat: "Type a time like 11 am, 5:30 pm, or 17:30.",
+          timePairStarts:
+            "Add the time it starts, or leave both blank for all day.",
+          timePairEnds:
+            "Add the time it ends, or leave both blank for all day.",
+          sameTime:
+            "The special starts and ends at the same time. Leave both blank for all day.",
+          dateFormat: "Type a date like October 31 or 10/31/2026.",
+          dateOrder: "The last day is before the first day.",
+          weeksNeedDay:
+            "Choose a day of the week first, since weeks say which of the month's Mondays.",
+          scheduleShape: "That schedule could not be read. Reload the page.",
+        },
+        undo: {
+          ticked: "Undo: ticked {box} for {dish}",
+          unticked: "Undo: unticked {box} for {dish}",
+          hours: "Undo: changed the hours for {dish}",
+          today: "Undo: set Today only for {dish}",
+          from: "Undo: changed the first day for {dish}",
+          until: "Undo: changed the last day for {dish}",
+          back: "Undone. The schedule for {dish} is as it was.",
+          scheduleChanged:
+            "The schedule was changed again since, so nothing was undone.",
+        },
+      },
       // The dish's allergens and their check (task 4, D-148): the nine
       // major allergens as boxes with a hint each, other allergens as typed
       // rows, one box that checks the list, and the sentence diners read
@@ -947,6 +1081,46 @@ export const en = {
       vegetarian: "Vegetarian",
       "made-without-gluten": "Made without gluten ingredients",
     },
+  },
+  // The words a special's schedule is read in (D-159), built into one
+  // sentence by domain/schedule.ts for the dish page, the diner page, read
+  // aloud, and translations. Phrases start lowercase; the sentence
+  // capitalizes its first letter. Day names need their plural as a word.
+  // Month names, dates, and the list joiner come from Intl. The singular
+  // day names are the hours grid's (owner.restaurants.days), handed in
+  // beside these.
+  schedule: {
+    days: {
+      mon: "Mondays",
+      tue: "Tuesdays",
+      wed: "Wednesdays",
+      thu: "Thursdays",
+      fri: "Fridays",
+      sat: "Saturdays",
+      sun: "Sundays",
+    },
+    week: {
+      first: "first",
+      second: "second",
+      third: "third",
+      fourth: "fourth",
+      last: "last",
+    },
+    everyDay: "every day",
+    weeksOfEachMonth: "the {weeks} {day} of each month",
+    weeksInMonth: "the {weeks} {day} in {month}",
+    monthRun: "{first} to {last}",
+    hours: "{open} to {close}",
+    between: "{from} to {until}",
+    from: "from {date}",
+    until: "until {date}",
+    todayOnly: "today only",
+    dayOnly: "{date} only",
+  },
+  // What diners read with a dish sold out today (D-160). A dish off the
+  // menu is hidden, so it has no words.
+  availability: {
+    soldOut: "Sold out today.",
   },
   money: {
     dollar: { one: "dollar", other: "dollars" },

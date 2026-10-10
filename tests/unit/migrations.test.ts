@@ -2,6 +2,9 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { DAY_KEYS } from "../../src/domain/hours";
+import { MONTH_KEYS, WEEK_KEYS } from "../../src/domain/schedule";
+import { TIME_PATTERN } from "../../src/domain/time";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const dir = join(root, "supabase/migrations");
@@ -1341,5 +1344,161 @@ describe("the line's allergens migration (D-85, D-151 to D-153, task 4b)", () =>
       .filter((match) => (match[2] ?? "").toLowerCase() !== "trigger")
       .map((match) => match[1]);
     expect(callable).toEqual(["allergen_lists_problem"]);
+  });
+});
+
+describe("the schedule and availability migration (D-85, D-159, D-160, task 5)", () => {
+  const file = "20261009000001_schedule_availability.sql";
+  const text = readFileSync(join(dir, file), "utf8");
+  // Never written by an owner: the links, the stamp the database writes,
+  // what later tasks build, and the timestamps.
+  const neverWritten = [
+    "id",
+    "section_id",
+    "restaurant_id",
+    "allergens_reviewed_by",
+    "allergens_reviewed_at",
+    "allergen_suggestions",
+    "photo_url",
+    "photo_alt",
+    "import_confidence",
+    "external_ids",
+    "created_at",
+    "updated_at",
+  ];
+
+  function columnsOf(privilege: string): string[] {
+    const matches = [
+      ...text.matchAll(
+        new RegExp(
+          `grant ${privilege} \\(([^)]*)\\) on public\\.items to authenticated;`,
+          "g",
+        ),
+      ),
+    ];
+    expect(matches, `no ${privilege} column list on items`).toHaveLength(1);
+    return (matches[0]?.[1] ?? "").split(",").map((column) => column.trim());
+  }
+
+  function checkBody(name: string): string {
+    const from = text.indexOf(`add constraint ${name} check (`);
+    expect(from, `${name} is not in ${file}`).toBeGreaterThan(-1);
+    const next = text.indexOf("add constraint", from + 1);
+    return text.slice(from, next === -1 ? undefined : next);
+  }
+
+  it("stops rather than touch a row that already holds a schedule or a tag, and moves no data", () => {
+    const stop = text.indexOf("raise exception 'migration 9:");
+    const shape = text.indexOf("add constraint items_special_schedule_shape");
+    expect(stop).toBeGreaterThan(-1);
+    expect(shape).toBeGreaterThan(stop);
+    expect(text).not.toMatch(/update public\.\w+\s+set/);
+  });
+
+  it("holds the schedule's shape in one check on the column migration one made, every branch under a case, and no cast", () => {
+    const body = checkBody("items_special_schedule_shape");
+    expect(text).not.toMatch(/add column special_schedule/);
+    expect(text).not.toMatch(/alter column special_schedule/);
+    expect(body).not.toMatch(/::date/);
+    expect(body).toMatch(
+      /special_schedule is null\s+or case when jsonb_typeof\(special_schedule\) = 'object' then/,
+    );
+    expect(body).toMatch(
+      /special_schedule\s+- array\['days', 'weeks', 'months', 'hours', 'from', 'until'\]\s+= '\{\}'::jsonb/,
+    );
+    for (const [part, keys] of [
+      ["days", DAY_KEYS],
+      ["weeks", WEEK_KEYS],
+      ["months", MONTH_KEYS],
+    ] as const) {
+      expect(body).toContain(
+        `<@ '[${keys.map((key) => `"${key}"`).join(", ")}]'`,
+      );
+      expect(body).toMatch(
+        new RegExp(
+          `when special_schedule -> '${part}' is null then true[\\s\\S]*?when jsonb_typeof\\(special_schedule -> '${part}'\\) = 'array' then`,
+        ),
+      );
+      expect(body).toContain(
+        `jsonb_array_length(special_schedule -> '${part}') >= 1`,
+      );
+      for (const key of keys) {
+        expect(body).toContain(
+          `(special_schedule -> '${part}' @> '["${key}"]')::int`,
+        );
+      }
+    }
+    expect(body).toMatch(
+      /when special_schedule -> 'weeks' is null then true\s+when special_schedule -> 'days' is null then false/,
+    );
+    // Binary minus binds tighter than the arrow, so the hours object is
+    // taken in parentheses before its keys are removed (Michael, at the
+    // plan's approval).
+    expect(body).toContain(
+      "(special_schedule -> 'hours') - array['open', 'close'] = '{}'::jsonb",
+    );
+    expect(body.split(`~ '${TIME_PATTERN.source}'`)).toHaveLength(3);
+    expect(body).toMatch(
+      /->> 'open'\s+<> special_schedule -> 'hours' ->> 'close'/,
+    );
+    for (const side of ["from", "until"]) {
+      expect(body).toContain(
+        `when jsonb_typeof(special_schedule -> '${side}') = 'string' then\n          special_schedule ->> '${side}' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'\n          and pg_input_is_valid(special_schedule ->> '${side}', 'date')`,
+      );
+    }
+    expect(body).toMatch(
+      /special_schedule ->> 'from' <= special_schedule ->> 'until'/,
+    );
+    // Every list and every case closes on false, never on nothing.
+    expect(body.match(/else false end/g)).toHaveLength(7);
+  });
+
+  it("keeps each dietary tag to once, with the enum named inline and its type unchanged", () => {
+    expect(text).not.toMatch(/alter column dietary_tags/);
+    expect(text).toMatch(
+      /items_dietary_tags_once check \(\s+cardinality\(dietary_tags\) =\s+\(dietary_tags @> '\{vegan\}'::public\.dietary_tag\[\]\)::int\s+\+ \(dietary_tags @> '\{vegetarian\}'::public\.dietary_tag\[\]\)::int\s+\+ \(dietary_tags @> '\{made-without-gluten\}'::public\.dietary_tag\[\]\)::int\s+\)/,
+    );
+  });
+
+  it("adds the sold-out mark with no default and ties it to available", () => {
+    expect(text).toMatch(/add column sold_out_at timestamptz,/);
+    expect(text).not.toMatch(/sold_out_at timestamptz (not null|default)/);
+    expect(text).toMatch(
+      /items_sold_out_needs_available check \(\s+sold_out_at is null or available\s+\)/,
+    );
+  });
+
+  it("opens tags, availability with its mark, and the schedule to owners, and nothing else new", () => {
+    expect(text).toMatch(/revoke update on public\.items from authenticated;/);
+    expect(text).not.toMatch(/grant insert [^;]*public\.items/);
+    expect(columnsOf("update")).toEqual([
+      "name",
+      "description",
+      "price_kind",
+      "price_cents",
+      "note",
+      "allergens",
+      "custom_allergens",
+      "allergens_reviewed",
+      "dietary_tags",
+      "available",
+      "sold_out_at",
+      "special_schedule",
+      "sort",
+      "deleted_at",
+    ]);
+    for (const column of neverWritten) {
+      expect(columnsOf("update")).not.toContain(column);
+    }
+  });
+
+  it("touches no view, adds no function, trigger, or policy, and grants anon nothing", () => {
+    expect(text).not.toMatch(/create (or replace )?view/);
+    expect(text).not.toMatch(/drop view/);
+    expect(text).not.toMatch(/create (or replace )?function/);
+    expect(text).not.toMatch(/create trigger/);
+    expect(text).not.toMatch(/create policy/);
+    expect(text).not.toMatch(/to anon/);
+    expect(text).not.toMatch(/grant execute/);
   });
 });

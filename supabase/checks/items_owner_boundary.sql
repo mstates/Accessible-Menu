@@ -1,8 +1,8 @@
 -- Owner boundary check for items, the dishes of a section. Run in the
 -- Supabase SQL editor after every migration that touches items, the
 -- functions that count and delete what a menu or a section holds, the
--- function that moves a dish, the allergen check (migration 7), or the
--- lists rule (migration 8).
+-- function that moves a dish, the allergen check (migration 7), the
+-- lists rule (migration 8), or the schedule and availability (migration 9).
 -- Everything rolls back. Replace the uid below with your own auth.users id.
 -- A run that ends without an error passed every check.
 begin;
@@ -90,7 +90,7 @@ begin
     and att.attnum > 0 and not att.attisdropped
     and has_column_privilege('authenticated', 'public.items', att.attname,
       'update');
-  expected := 'allergens, allergens_reviewed, custom_allergens, deleted_at, description, name, note, price_cents, price_kind, sort';
+  expected := 'allergens, allergens_reviewed, available, custom_allergens, deleted_at, description, dietary_tags, name, note, price_cents, price_kind, sold_out_at, sort, special_schedule';
   if held is distinct from expected then
     raise exception 'FAIL: authenticated updates %, expected %', held, expected;
   end if;
@@ -198,6 +198,7 @@ declare
   at_when timestamptz;
   touched integer;
   wanted_word text;
+  bad text;
 begin
   insert into public.items (section_id, name, sort)
   values (a_section, 'Boundary check one', 9001) returning id into mine;
@@ -600,12 +601,109 @@ begin
 
   update public.items set custom_allergens = '{}', allergens = '{}' where id = mine;
 
+  -- Availability (D-160, migration 9): the flag, and the moment of a
+  -- sold-out mark, which needs the dish available.
+  update public.items set available = false where id = mine;
+  update public.items set available = true, sold_out_at = now() where id = mine;
+  raise notice 'ok: an owner writes available and the sold-out mark';
+
   begin
-    update public.items set available = false where id = mine;
-    raise exception 'FAIL: an owner wrote available';
-  exception when insufficient_privilege then
-    raise notice 'ok: available is not writable';
+    update public.items set available = false, sold_out_at = now()
+    where id = mine;
+    raise exception 'FAIL: a sold-out mark on a dish off the menu was accepted';
+  exception when check_violation then
+    raise notice 'ok: a sold-out mark needs the dish available (items_sold_out_needs_available)';
   end;
+  update public.items set available = false, sold_out_at = null where id = mine;
+  update public.items set available = true where id = mine;
+
+  -- Dietary tags (D-66, migration 9): the three, each once, written in the
+  -- enum's order and compared as stored.
+  update public.items set dietary_tags = '{vegan,vegetarian}' where id = mine;
+  raise notice 'ok: an owner writes dietary tags';
+
+  begin
+    update public.items set dietary_tags = '{vegan,vegan}' where id = mine;
+    raise exception 'FAIL: a repeated dietary tag was accepted';
+  exception when check_violation then
+    raise notice 'ok: each dietary tag once (items_dietary_tags_once)';
+  end;
+
+  begin
+    update public.items set dietary_tags = '{kosher}' where id = mine;
+    raise exception 'FAIL: a tag outside the three was accepted';
+  exception when invalid_text_representation then
+    raise notice 'ok: a tag outside the three is refused by the enum';
+  end;
+
+  update public.items set dietary_tags = '{vegetarian}'
+  where id = mine and dietary_tags = '{}'::public.dietary_tag[];
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a tag write that named tags the dish no longer holds landed';
+  end if;
+  raise notice 'ok: a tag write that names tags the dish no longer holds lands on no row';
+  update public.items set dietary_tags = '{}' where id = mine;
+
+  -- The schedule's shape (D-159, migration 9): any of its five parts, and
+  -- nothing else.
+  update public.items set special_schedule =
+    '{"days":["tue","thu"],"weeks":["first","last"],"months":["sep","oct","nov","dec","jan","feb","mar","apr"],"hours":{"open":"16:00","close":"21:00"},"from":"2026-09-01","until":"2027-04-30"}'
+  where id = mine;
+  update public.items set special_schedule = '{"until":"2026-10-31"}'
+  where id = mine;
+  update public.items set special_schedule =
+    '{"hours":{"open":"22:00","close":"02:00"}}'
+  where id = mine;
+  update public.items set special_schedule =
+    '{"from":"2027-02-10","until":"2027-02-10"}'
+  where id = mine;
+  raise notice 'ok: an owner writes a schedule with any of its five parts';
+
+  foreach bad in array array[
+    'null', '[]', '"tuesdays"', '{}', '{"holiday":true}',
+    '{"days":"tue"}', '{"days":[]}', '{"days":null}',
+    '{"days":["tuesday"]}', '{"days":["tue","tue"]}', '{"days":["tue",1]}',
+    '{"weeks":["first"]}', '{"days":["fri"],"weeks":["first","first"]}',
+    '{"days":["fri"],"weeks":["fifth"]}',
+    '{"months":["may","may"]}', '{"months":["sept"]}', '{"months":[]}',
+    '{"hours":{"open":"16:00"}}', '{"hours":{"open":"4 pm","close":"21:00"}}',
+    '{"hours":{"open":"16:00","close":"16:00"}}',
+    '{"hours":{"open":"16:00","close":"21:00","note":"x"}}',
+    '{"hours":{"open":null,"close":"21:00"}}', '{"hours":"16:00-21:00"}',
+    '{"from":"2027-2-10"}', '{"from":"2027-02-30"}', '{"from":null}',
+    '{"until":20261031}', '{"from":"2027-03-26","until":"2027-02-10"}'
+  ] loop
+    begin
+      update public.items set special_schedule = bad::jsonb where id = mine;
+      raise exception 'FAIL: % was accepted as a schedule', bad;
+    exception when check_violation then
+      null;
+    end;
+  end loop;
+  raise notice 'ok: every bad shape is refused as a check violation (items_special_schedule_shape)';
+
+  update public.items set special_schedule = '{"days":["tue"]}' where id = mine;
+  update public.items set special_schedule = '{"days":["wed"]}'
+  where id = mine and special_schedule is null;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a schedule write for a dish the page showed without one landed';
+  end if;
+  update public.items set special_schedule = '{"days":["wed"]}'
+  where id = mine and special_schedule = '{"days":["mon"]}'::jsonb;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a schedule write that named a schedule the dish no longer holds landed';
+  end if;
+  update public.items set special_schedule = '{"days":["wed"]}'
+  where id = mine and special_schedule = '{"days": ["tue"]}'::jsonb;
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: a schedule write that named the schedule the dish holds did not land';
+  end if;
+  raise notice 'ok: a schedule write lands only when it names the schedule the dish holds, as jsonb compares it';
+  update public.items set special_schedule = null where id = mine;
 
   begin
     insert into public.items (section_id, name, sort)

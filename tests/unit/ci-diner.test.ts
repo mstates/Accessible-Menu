@@ -33,7 +33,7 @@ describe("CI Diner's data file (D-126)", () => {
     expect(code).not.toMatch(/\b(create|alter|grant|revoke)\b/i);
   });
 
-  it("writes only through inserts, sort updates, the three dishes' prices, two dishes' allergens, and Starters' line", () => {
+  it("writes only through inserts, sort updates, the three dishes' prices, two dishes' allergens, Starters' line, and the three dishes' tags, availability, and schedule", () => {
     const updates = code.match(/\bupdate\s+public\.\w+\s+\w+\s+set\s+\w+/gi);
     expect(updates).toEqual([
       "update public.menus m\n  set sort",
@@ -48,7 +48,27 @@ describe("CI Diner's data file (D-126)", () => {
       "update public.items i\n  set allergens_reviewed",
       "update public.sections s\n  set every_item",
       "update public.sections s\n  set every_item_allergens_reviewed",
+      "update public.items i\n  set dietary_tags",
+      "update public.items i\n  set available",
+      "update public.items i\n  set special_schedule",
     ]);
+  });
+
+  // The tags, availability, and schedule updates (migration 9, task 5)
+  // touch Starters' three dishes by id and write nothing else to them.
+  it("tags, takes off, and schedules the three dishes by id and writes nothing else to them", () => {
+    const writes = [
+      ...code.matchAll(
+        /update public\.items i\n  set (dietary_tags|available|special_schedule)[^;]*;/g,
+      ),
+    ].map((match) => match[0]);
+    expect(writes).toHaveLength(3);
+    for (const statement of writes) {
+      expect(statement).toMatch(/where i\.id = (soup|salad|bread)/);
+      expect(statement).not.toMatch(
+        /\b(name|sort|description|note|price_kind|price_cents|allergens)\s*=/,
+      );
+    }
   });
 
   // The price updates touch only Starters' three dishes, by id, and write

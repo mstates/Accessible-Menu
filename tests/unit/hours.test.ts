@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DAY_KEYS,
+  dayEnd,
+  dayKeyOf,
   emptyHours,
   hoursInputSchema,
   hoursSchema,
@@ -364,5 +366,38 @@ describe("hours as the owner typed them (D-105)", () => {
       false,
     );
     expect(input.safeParse({ ...typed({}), extra: [] }).success).toBe(false);
+  });
+});
+
+describe("when a day's service ends (D-160)", () => {
+  it.each([
+    [[], null],
+    [[{ open: "11:00", close: "21:00" }], { daysOn: 0, time: "21:00" }],
+    [[{ open: "17:00", close: "02:00" }], { daysOn: 1, time: "02:00" }],
+    [
+      [
+        { open: "11:00", close: "14:00" },
+        { open: "17:00", close: "22:00" },
+      ],
+      { daysOn: 0, time: "22:00" },
+    ],
+    [
+      [
+        { open: "17:00", close: "01:00" },
+        { open: "11:00", close: "14:00" },
+      ],
+      { daysOn: 1, time: "01:00" },
+    ],
+    [[{ open: "00:00", close: "00:00" }], { daysOn: 1, time: "00:00" }],
+    [[{ open: "09:00", close: "09:00" }], { daysOn: 1, time: "00:00" }],
+    [[{ open: "18:00", close: "00:00" }], { daysOn: 1, time: "00:00" }],
+  ])("the day whose ranges are %j ends at %j", (ranges, expected) => {
+    expect(dayEnd(ranges)).toEqual(expected);
+  });
+
+  it("names the day of the week a calendar day falls on, Monday first", () => {
+    expect(dayKeyOf("2026-10-09")).toBe("fri");
+    expect(dayKeyOf("2026-03-08")).toBe("sun");
+    expect(dayKeyOf("2026-10-12")).toBe("mon");
   });
 });
