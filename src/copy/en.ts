@@ -833,7 +833,10 @@ export const en = {
         errors: {
           timeAmPmStarts: "Add am or pm to the time it starts.",
           timeAmPmEnds: "Add am or pm to the time it ends.",
-          timeFormat: "Type a time like 11 am, 5:30 pm, or 17:30.",
+          timeFormatStarts:
+            "Enter the time it starts, like 11 am, 5:30 pm, or 17:30.",
+          timeFormatEnds:
+            "Enter the time it ends, like 11 am, 5:30 pm, or 17:30.",
           timePairStarts:
             "Add the time it starts, or leave both blank for all day.",
           timePairEnds:

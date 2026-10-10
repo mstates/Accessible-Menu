@@ -35,10 +35,14 @@ const SLOW_MS = 10_000;
 
 // A field whose save failed: where it is, what went wrong, the sentence that
 // was spoken, and the value it failed with, which is not sent again until
-// the owner changes it or asks to try again.
+// the owner changes it or asks to try again. Fields that commit together
+// can be refused on more than one at once (D-164): fieldId and problem are
+// the first on the page, where focus goes, and others are the rest, each
+// shown under its own field.
 export type FieldFailure = {
   fieldId: string;
   problem: string;
+  others?: readonly { fieldId: string; problem: string }[];
   sentence: string;
   value: string;
 };

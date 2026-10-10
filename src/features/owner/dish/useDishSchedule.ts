@@ -61,11 +61,12 @@ import {
 // at once; the two time fields are one commit unit under one key, since
 // "Saved." is said per key (D-118); a date field saves when it is left;
 // Today only is a press with its own sentence, as an add is. Rules the
-// page can read are refused unsent, under the field. Unticking the last
-// day takes the weeks with it and says so. Under the group, the sentence
-// diners read and when the special next shows, from the one builder
-// (module rule 8), with today in the restaurant's zone from the server's
-// clock, never the browser's.
+// page can read are refused unsent, under the field, and the hours pair
+// on both sides at once when both are wrong, said once together, Starts
+// first (D-164). Unticking the last day takes the weeks with it and says
+// so. Under the group, the sentence diners read and when the special next
+// shows, from the one builder (module rule 8), with today in the
+// restaurant's zone from the server's clock, never the browser's.
 
 type Props = {
   strings: DishStrings;
@@ -107,6 +108,12 @@ const weekKey = (key: WeekKey) => `schedule:week:${key}`;
 const monthKey = (key: MonthKey) => `schedule:month:${key}`;
 
 type BoxPart = "days" | "weeks" | "months";
+
+// One side of the hours pair that cannot be sent, and why.
+type PairProblem = {
+  fieldId: string;
+  rule: keyof DishStrings["schedule"]["errors"];
+};
 
 function isWeekKey(value: string): value is WeekKey {
   return (WEEK_KEYS as readonly string[]).includes(value);
@@ -201,6 +208,30 @@ export function useDishSchedule({
       sentence: failureSentence(
         fill(copy.notSaved[part], { dish: dish.name }),
         copy.errors[rule],
+      ),
+      value,
+    });
+  }
+
+  // Refuses the hours pair before it is sent, with every problem at once,
+  // each under its own field, said once together, Starts first (D-164).
+  function refusePair(problems: readonly PairProblem[], value: string) {
+    const [first, ...rest] = problems;
+    if (!first) return;
+    editing.failField(HOURS_KEY, {
+      fieldId: first.fieldId,
+      problem: copy.errors[first.rule],
+      ...(rest.length > 0
+        ? {
+            others: rest.map((problem) => ({
+              fieldId: problem.fieldId,
+              problem: copy.errors[problem.rule],
+            })),
+          }
+        : {}),
+      sentence: failureSentence(
+        fill(copy.notSaved.hours, { dish: dish.name }),
+        problems.map((problem) => copy.errors[problem.rule]).join(" "),
       ),
       value,
     });
@@ -347,9 +378,12 @@ export function useDishSchedule({
     return normalizeSchedule(hours ? { ...rest, hours } : rest);
   }
 
-  // The pair was committed: both blank means all day; one blank, a time
-  // that does not read, or the same time twice is refused unsent, on the
-  // side it concerns; else the whole schedule is sent with the range.
+  // The pair was committed: both blank means all day; else every problem
+  // the page can read is refused unsent at once, each under its own field,
+  // said once together, Starts first (D-164): a blank side, a time that
+  // does not read, or, with both read, the same time twice. Nothing is
+  // sent until both are fixed; then the whole schedule is sent with the
+  // range.
   function commitHours(force = false) {
     const live = editing.peek();
     const draft = live.drafts[HOURS_KEY];
@@ -361,42 +395,34 @@ export function useDishSchedule({
     const close = closeText.trim();
     const value = draft ?? "";
     let hours: TimeRange | undefined;
-    if (open === "" && close === "") hours = undefined;
-    else if (open === "") {
-      return refuseUnsent(
-        HOURS_KEY,
-        "hours",
-        ids.open,
-        "timePairStarts",
-        value,
-      );
-    } else if (close === "") {
-      return refuseUnsent(HOURS_KEY, "hours", ids.close, "timePairEnds", value);
-    } else {
-      const opens = parseTime(open);
-      if (!opens.ok) {
-        return refuseUnsent(
-          HOURS_KEY,
-          "hours",
-          ids.open,
-          opens.problem === "ampm" ? "timeAmPmStarts" : "timeFormat",
-          value,
-        );
+    if (open !== "" || close !== "") {
+      const problems: PairProblem[] = [];
+      const opens = open === "" ? null : parseTime(open);
+      const closes = close === "" ? null : parseTime(close);
+      if (opens === null) {
+        problems.push({ fieldId: ids.open, rule: "timePairStarts" });
+      } else if (!opens.ok) {
+        problems.push({
+          fieldId: ids.open,
+          rule:
+            opens.problem === "ampm" ? "timeAmPmStarts" : "timeFormatStarts",
+        });
       }
-      const closes = parseTime(close);
-      if (!closes.ok) {
-        return refuseUnsent(
-          HOURS_KEY,
-          "hours",
-          ids.close,
-          closes.problem === "ampm" ? "timeAmPmEnds" : "timeFormat",
-          value,
-        );
+      if (closes === null) {
+        problems.push({ fieldId: ids.close, rule: "timePairEnds" });
+      } else if (!closes.ok) {
+        problems.push({
+          fieldId: ids.close,
+          rule: closes.problem === "ampm" ? "timeAmPmEnds" : "timeFormatEnds",
+        });
       }
-      if (opens.time === closes.time) {
-        return refuseUnsent(HOURS_KEY, "hours", ids.close, "sameTime", value);
+      if (opens?.ok && closes?.ok && opens.time === closes.time) {
+        problems.push({ fieldId: ids.close, rule: "sameTime" });
       }
-      hours = { open: opens.time, close: closes.time };
+      if (problems.length > 0) return refusePair(problems, value);
+      if (opens?.ok && closes?.ok) {
+        hours = { open: opens.time, close: closes.time };
+      }
     }
     const range = hours;
     // The server's last answer is what the page shows; the ref is read
@@ -555,6 +581,16 @@ export function useDishSchedule({
     hoursDraft !== undefined ? splitPair(hoursDraft) : savedPair();
   const hoursFailure = editing.failures[HOURS_KEY];
 
+  // The problem under one of the pair's fields, if it has one (D-164).
+  function hoursProblemAt(fieldId: string): string | null {
+    if (!hoursFailure) return null;
+    if (hoursFailure.fieldId === fieldId) return hoursFailure.problem;
+    return (
+      hoursFailure.others?.find((other) => other.fieldId === fieldId)
+        ?.problem ?? null
+    );
+  }
+
   const showing = shown ? showingAt(shown, at, timeZone) : null;
 
   return {
@@ -585,7 +621,7 @@ export function useDishSchedule({
       open: {
         id: ids.open,
         value: openShown,
-        error: hoursFailure?.fieldId === ids.open ? hoursFailure.problem : null,
+        error: hoursProblemAt(ids.open),
         onChange: (value: string) =>
           editing.type(HOURS_KEY, joinPair(value, closeShown)),
         onCommit: () => commitHours(),
@@ -593,8 +629,7 @@ export function useDishSchedule({
       close: {
         id: ids.close,
         value: closeShown,
-        error:
-          hoursFailure?.fieldId === ids.close ? hoursFailure.problem : null,
+        error: hoursProblemAt(ids.close),
         onChange: (value: string) =>
           editing.type(HOURS_KEY, joinPair(openShown, value)),
         onCommit: () => commitHours(),

@@ -509,6 +509,97 @@ test("the two time fields commit together: Tab between them sends nothing, Enter
   await expect(scheduleLine(page)).toHaveText(schedule.none);
 });
 
+// D-164: the pair refused on both sides at once, each problem under its own
+// field, said once together, Starts first, and nothing sent until both are
+// fixed.
+test("the hours pair left with two problems shows both at once, each under its own field, says them once together with Starts first, and sends nothing until both are fixed", async ({
+  page,
+}) => {
+  const { dishes } = ownerFixture();
+  await openDish(page, "one");
+  const starts = field(page, schedule.starts);
+  const ends = field(page, schedule.ends);
+  const notSaved = fill(schedule.notSaved.hours, { dish: dishes.one.name });
+  const sent = await writesSoFar();
+
+  // "4" in Starts with Ends blank, D-164's own case.
+  await starts.fill("4");
+  await page.keyboard.press("Enter");
+  const both = `${notSaved} ${schedule.errors.timeAmPmStarts} ${schedule.errors.timePairEnds}`;
+  await expect(status(page)).toHaveText(both);
+  await expect.poll(() => said(page, both)).toBe(1);
+  await expect(starts).toHaveAttribute("aria-invalid", "true");
+  await expect(starts).toHaveAccessibleDescription(
+    `${schedule.errors.timeAmPmStarts} ${schedule.hoursHint}`,
+  );
+  await expect(ends).toHaveAttribute("aria-invalid", "true");
+  await expect(ends).toHaveAccessibleDescription(
+    `${schedule.errors.timePairEnds} ${schedule.hoursHint}`,
+  );
+  await expectNoMissingIds(page);
+
+  // Starts fixed alone: only the Ends problem stands, and nothing is sent.
+  await starts.fill("4 pm");
+  await page.keyboard.press("Enter");
+  await expect(status(page)).toHaveText(
+    `${notSaved} ${schedule.errors.timePairEnds}`,
+  );
+  await expect(starts).not.toHaveAttribute("aria-invalid", "true");
+  await expect(starts).toHaveAccessibleDescription(schedule.hoursHint);
+  await expect(ends).toHaveAttribute("aria-invalid", "true");
+
+  // Ends fixed alone: only the Starts problem stands.
+  await starts.fill("4");
+  await ends.fill("9 pm");
+  await page.keyboard.press("Enter");
+  await expect(status(page)).toHaveText(
+    `${notSaved} ${schedule.errors.timeAmPmStarts}`,
+  );
+  await expect(ends).not.toHaveAttribute("aria-invalid", "true");
+
+  // Two problems of other kinds: Starts blank and an Ends that does not
+  // read, whose sentence names its side (Q-73).
+  await starts.fill("");
+  await ends.fill("abc");
+  await page.keyboard.press("Enter");
+  await expect(status(page)).toHaveText(
+    `${notSaved} ${schedule.errors.timePairStarts} ${schedule.errors.timeFormatEnds}`,
+  );
+  await expect(starts).toHaveAccessibleDescription(
+    `${schedule.errors.timePairStarts} ${schedule.hoursHint}`,
+  );
+  await expect(ends).toHaveAccessibleDescription(
+    `${schedule.errors.timeFormatEnds} ${schedule.hoursHint}`,
+  );
+  expect(await writesSoFar(), "nothing is sent until both are fixed").toBe(
+    sent,
+  );
+  await expect
+    .poll(
+      async () =>
+        (await heard(page)).filter((each) => each.startsWith(notSaved)).length,
+    )
+    .toBe(4);
+  await expectNoMissingIds(page);
+
+  // Both fixed: one write lands.
+  await starts.fill("4 pm");
+  await ends.fill("9 pm");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => said(page, editing.savedAgain)).toBe(1);
+  expect(await writesSoFar()).toBe(sent + 1);
+  expect((await row(dishes.one.id)).special_schedule).toEqual({
+    hours: { open: "16:00", close: "21:00" },
+  });
+
+  // As it was.
+  await starts.fill("");
+  await ends.fill("");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => said(page, saved)).toBe(1);
+  expect((await row(dishes.one.id)).special_schedule).toBeNull();
+});
+
 test("a date reads in each of its forms and comes back with its year, a day-first number and a last day before the first are refused unsent, Today only fills both days with its own sentence, and Undo takes it back", async ({
   page,
 }) => {
