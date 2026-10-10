@@ -9,8 +9,11 @@ import {
   setOwnerDishPrice,
   setOwnerDishPriceKind,
   setOwnerDishText,
+  writeOwnerDishAvailability,
+  type AvailabilityPatch,
   type DishWriteError,
 } from "@/core/supabase/dishes";
+import { AVAILABILITY } from "@/domain/availability";
 import {
   addOwnerSize,
   setOwnerSizeDeleted,
@@ -39,8 +42,8 @@ import { dishScope } from "../owner-scope";
 import type { DishMoveProblem } from "./dish-words";
 
 // A dish's own page saves through these (D-111, D-128): its description,
-// its price choice, its one price, and its note (D-139), its sizes, and its
-// move to another section (D-129). Nothing here redirects: a missing
+// its price choice, its one price, and its note (D-139), its sizes, its
+// availability (D-160), and its move to another section (D-129). Nothing here redirects: a missing
 // session comes back as a result and the typed text stays on screen. Every
 // call that reached the database with a live session ends with refresh(),
 // so its own response carries the re-rendered page. The code, the dish, and
@@ -66,6 +69,12 @@ export type DishMoveResult<Value> =
   { ok: true; value: Value } | { ok: false; problem: ServerMoveProblem };
 
 const idSchema = z.uuid();
+const availabilitySchema = z.enum(AVAILABILITY);
+// A row as the page read it, for an Undo that writes it back exactly.
+const availabilityRowSchema = z.object({
+  available: z.boolean(),
+  soldOutAt: z.string().nullable(),
+});
 const dishTextSchema = z.enum(DISH_TEXTS);
 const sizeTextSchema = z.enum(SIZE_TEXTS);
 const kindSchema = z.enum(PRICE_KINDS);
@@ -208,6 +217,69 @@ export async function setDishPriceKind(
     );
   }
   return { ok: true, value: { priceKind: result.value.priceKind } };
+}
+
+// How the dish stands (D-160): available, sold out today, or off the menu
+// for now. A sold-out mark is the server's own clock, never a browser's.
+// With exact and expected, the write is an Undo: it puts the row back as
+// it was, and only while the dish still holds the row the change left, so
+// it never writes over a newer choice and never makes a new mark.
+export async function setDishAvailability(
+  rawCode: string,
+  rawDish: string,
+  rawChoice: unknown,
+  rawExact?: unknown,
+  rawExpected?: unknown,
+): Promise<DishPageResult<{ available: boolean; soldOutAt: string | null }>> {
+  const scope = await dishScope(rawCode, rawDish);
+  if (!scope.ok) return scope;
+  const choice = availabilitySchema.safeParse(rawChoice);
+  if (!choice.success) return failed;
+  let patch: AvailabilityPatch;
+  let expected: AvailabilityPatch | undefined;
+  if (rawExact !== undefined) {
+    const exact = availabilityRowSchema.safeParse(rawExact);
+    const was = availabilityRowSchema.safeParse(rawExpected);
+    if (!exact.success || !was.success) return failed;
+    patch = {
+      available: exact.data.available,
+      sold_out_at: exact.data.soldOutAt,
+    };
+    expected = {
+      available: was.data.available,
+      sold_out_at: was.data.soldOutAt,
+    };
+  } else if (choice.data === "off") {
+    patch = { available: false, sold_out_at: null };
+  } else if (choice.data === "sold-out") {
+    patch = { available: true, sold_out_at: new Date().toISOString() };
+  } else {
+    patch = { available: true, sold_out_at: null };
+  }
+  const result = await writeOwnerDishAvailability(
+    scope.client,
+    scope.sectionId,
+    scope.dishId,
+    scope.userId,
+    patch,
+    expected,
+  );
+  refresh();
+  if (!result.ok) {
+    return refuse(
+      fromDishWrite(
+        result.error,
+        expected === undefined ? "parent-gone" : "changed",
+      ),
+    );
+  }
+  return {
+    ok: true,
+    value: {
+      available: result.value.available,
+      soldOutAt: result.value.soldOutAt,
+    },
+  };
 }
 
 // A new size, blank, and how many sizes the dish has now that it is in.

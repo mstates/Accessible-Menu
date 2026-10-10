@@ -1,5 +1,6 @@
 "use client";
 
+import type { RefObject } from "react";
 import { TextField } from "@/ui/TextField";
 
 type Props = {
@@ -22,6 +23,13 @@ type Props = {
   onChange: (value: string) => void;
   // The field was committed. The screen decides whether anything is sent.
   onCommit: () => void;
+  // Fields that commit together, like a special's Starts and Ends (D-159):
+  // a blur that lands inside this element is not a commit, so Tab from one
+  // to the other sends nothing; leaving the pair, or Enter, commits.
+  commitWithin?: RefObject<HTMLElement | null>;
+  // One hint shared by several fields, tied by id, the hours grid's
+  // pattern (D-105), beside any description of the field's own.
+  "aria-describedby"?: string;
 };
 
 // A real, always-visible field that saves when it is committed (D-111):
@@ -44,10 +52,13 @@ export function AutosaveTextField({
   error,
   onChange,
   onCommit,
+  commitWithin,
+  "aria-describedby": describedBy,
 }: Props) {
   return (
     <TextField
       id={id}
+      aria-describedby={describedBy}
       label={label}
       labelSuffix={labelSuffix}
       description={description}
@@ -56,7 +67,17 @@ export function AutosaveTextField({
       prefix={prefix}
       value={value}
       onChange={onChange}
-      onBlur={onCommit}
+      onBlur={(event) => {
+        const next = event.relatedTarget;
+        if (
+          commitWithin?.current &&
+          next instanceof Node &&
+          commitWithin.current.contains(next)
+        ) {
+          return;
+        }
+        onCommit();
+      }}
       onKeyDown={
         multiline
           ? undefined

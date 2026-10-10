@@ -33,12 +33,15 @@ import { ownerEnv, ownerFixture } from "./owner-env";
 import { restaurantName } from "./pages";
 import { expectWrites, guardWrites } from "./write-guard";
 
-// A dish's own page (D-128, D-139, D-148), signed in as the test owner
-// (D-100), on the three dishes the data file priced one way each: by size,
-// at one price, and at market price, which it also listed one way each:
-// the first checked with milk, wheat, and celery, the second checked with
-// none, the third not checked, and a second Soup of the day in Mains for
-// the same-named line (D-129). The gate never writes and never types into
+// A dish's own page (D-128, D-139, D-148, D-159, D-160), signed in as the
+// test owner (D-100), on the three dishes the data file priced one way
+// each: by size, at one price, and at market price, which it also listed
+// one way each: the first checked with milk, wheat, and celery, the second
+// checked with none, the third not checked, and a second Soup of the day
+// in Mains for the same-named line (D-129); and showed one way each (task
+// 5): the first a special every day from 4 to 9 pm, the second tagged
+// vegetarian and made without gluten ingredients, the third off the menu
+// for now. The gate never writes and never types into
 // a field that saves when it is left (D-108, D-111, D-115): every test
 // here runs behind the write guard. The tests that press a control that
 // saves, a radio, Add a size, a box, say they expect a write; the guard
@@ -57,6 +60,10 @@ const menusPath = restaurantMenusPath(code);
 const strings = en.owner.dish;
 const editing = en.owner.editing;
 const nav = en.owner.restaurants.nav;
+const tags = strings.tags;
+const availability = strings.availability;
+const schedule = strings.schedule;
+const dayNames = en.owner.restaurants.days;
 
 guardWrites();
 
@@ -211,6 +218,38 @@ function reads(
   );
 }
 
+// The showing groups (task 5).
+function tagsGroup(page: Page) {
+  return page.getByRole("group", { name: tags.heading, exact: true });
+}
+
+function tagsLine(page: Page) {
+  return page.locator("#dish-tags-sentence");
+}
+
+function availabilityGroup(page: Page) {
+  return page.getByRole("radiogroup", {
+    name: availability.heading,
+    exact: true,
+  });
+}
+
+function boxGroup(page: Page, name: string) {
+  return page.getByRole("group", { name, exact: true });
+}
+
+function scheduleField(page: Page, name: string) {
+  return page.getByRole("textbox", { name, exact: true });
+}
+
+function todayButton(page: Page) {
+  return page.getByRole("button", { name: schedule.todayOnly, exact: true });
+}
+
+function scheduleLine(page: Page) {
+  return page.locator("#dish-schedule-sentence");
+}
+
 // The Select's trigger. React Aria names it by its label and its value.
 function moveSelect(page: Page) {
   return page.getByRole("button", { name: new RegExp(strings.move.label) });
@@ -348,12 +387,319 @@ test("the page reads in order: the lead, the description, the price group under 
       addOtherButton(page),
       checkBox(page),
       sentenceLine(page),
+      main.getByRole("heading", { level: 2, name: tags.heading }),
+      tagsGroup(page),
+      main.getByRole("heading", { level: 2, name: availability.heading }),
+      availabilityGroup(page),
+      main.getByRole("heading", { level: 2, name: schedule.heading }),
+      main.getByText(schedule.lead, { exact: true }),
+      boxGroup(page, schedule.daysLabel),
+      boxGroup(page, schedule.hoursLabel),
+      scheduleField(page, schedule.starts),
+      scheduleField(page, schedule.ends),
+      todayButton(page),
+      scheduleField(page, schedule.firstDay),
+      scheduleField(page, schedule.lastDay),
+      main.getByText(schedule.weeksLead, { exact: true }),
+      boxGroup(page, schedule.weeksLabel),
+      main.getByText(schedule.monthsLead, { exact: true }),
+      boxGroup(page, schedule.monthsLabel),
+      scheduleLine(page),
       savedStatus(page),
       main.locator('a[href*="/dishes/"]'),
       main.getByRole("heading", { level: 2, name: strings.move.heading }),
     ],
-    "the h1, the lead, the description, the price heading, its group, the sizes, Add a size, the note, the allergen heading, the nine, the other allergens, Add another allergen, the check, its sentence, the status, the next dish, then the move, in that order",
+    "the h1, the lead, the description, the price heading, its group, the sizes, Add a size, the note, the allergen heading, the nine, the other allergens, Add another allergen, the check, its sentence, the tags under their heading, availability under its, the schedule under its with its lead, days, hours, Today only, the two days, the weeks with their lead, the months with theirs, and its sentence, the status, the next dish, then the move, in that order",
   );
+});
+
+// Task 5, D-66: the three tags named by the words diners read, each with
+// its own hint and never the others', the group with no description of its
+// own, and the sentence under the group only while a tag is ticked.
+test("the dietary tags read as three boxes with their hints, and the sentence diners read follows a tagged dish", async ({
+  page,
+}) => {
+  await openDish(page, "one");
+  const group = tagsGroup(page);
+  await expect(group).toHaveCount(1);
+  await expect(group).toHaveAccessibleDescription("");
+  const boxes = group.getByRole("checkbox");
+  await expect(boxes).toHaveCount(3);
+  const names = en.dietary.names;
+  for (const [index, id] of (
+    ["vegan", "vegetarian", "made-without-gluten"] as const
+  ).entries()) {
+    await expect(boxes.nth(index)).toHaveAccessibleName(names[id]);
+    await expect(boxes.nth(index)).toHaveAccessibleDescription(tags.hints[id]);
+  }
+  await expect(box(page, names.vegan)).not.toBeChecked();
+  await expect(box(page, names.vegetarian)).toBeChecked();
+  await expect(box(page, names["made-without-gluten"])).toBeChecked();
+  await expect(tagsLine(page)).toHaveText(
+    fill(tags.dinersRead, {
+      sentence: `"${names.vegetarian}. ${names["made-without-gluten"]}."`,
+    }),
+  );
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+
+  await openDish(page, "sizes");
+  for (const name of Object.values(names)) {
+    await expect(box(page, name)).not.toBeChecked();
+  }
+  await expect(tagsLine(page), "no tag, no sentence").toHaveCount(0);
+});
+
+// Task 5, D-160: three radios as Price's, the two that change what diners
+// see with a hint, and the group's line for a dish off the menu, which is
+// read with the group and each radio (D-147).
+test("availability reads as three radios with the two hints, a dish off the menu says it is hidden, and an available dish says nothing", async ({
+  page,
+}) => {
+  await openDish(page, "market");
+  const group = availabilityGroup(page);
+  await expect(group).toHaveCount(1);
+  const choices = group.getByRole("radio");
+  await expect(choices).toHaveCount(3);
+  for (const [index, label] of [
+    availability.available,
+    availability.soldOut,
+    availability.off,
+  ].entries()) {
+    await expect(choices.nth(index)).toHaveAccessibleName(label);
+  }
+  await expect(radio(page, availability.off)).toBeChecked();
+  await expect(group).toHaveAccessibleDescription(availability.hidden);
+  await expect(radio(page, availability.available)).toHaveAccessibleDescription(
+    availability.hidden,
+  );
+  await expect(radio(page, availability.soldOut)).toHaveAccessibleDescription(
+    `${availability.soldOutHint} ${availability.hidden}`,
+  );
+  await expect(radio(page, availability.off)).toHaveAccessibleDescription(
+    `${availability.offHint} ${availability.hidden}`,
+  );
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+
+  await openDish(page, "one");
+  await expect(radio(page, availability.available)).toBeChecked();
+  await expect(availabilityGroup(page)).toHaveAccessibleDescription("");
+  await expect(radio(page, availability.available)).toHaveAccessibleDescription(
+    "",
+  );
+  await expect(radio(page, availability.soldOut)).toHaveAccessibleDescription(
+    availability.soldOutHint,
+  );
+});
+
+// Task 5, D-159: the special's hours in the two time fields, each described
+// by the one hint, the dates blank with theirs, no box ticked, and the
+// sentence diners read with the line after it; a dish with no schedule
+// says so.
+test("the schedule reads a special's hours in one format with one hint on both fields, its sentence and when it next shows, and a dish with no schedule says so", async ({
+  page,
+}) => {
+  await openDish(page, "sizes");
+  const starts = scheduleField(page, schedule.starts);
+  const ends = scheduleField(page, schedule.ends);
+  await expect(starts).toHaveValue("4 pm");
+  await expect(ends).toHaveValue("9 pm");
+  await expect(starts).toHaveAccessibleDescription(schedule.hoursHint);
+  await expect(ends).toHaveAccessibleDescription(schedule.hoursHint);
+  await expect(scheduleField(page, schedule.firstDay)).toHaveValue("");
+  await expect(
+    scheduleField(page, schedule.firstDay),
+  ).toHaveAccessibleDescription(schedule.dateHint);
+  await expect(scheduleField(page, schedule.lastDay)).toHaveValue("");
+  for (const label of [
+    schedule.daysLabel,
+    schedule.weeksLabel,
+    schedule.monthsLabel,
+  ]) {
+    await expect(
+      boxGroup(page, label).getByRole("checkbox", { checked: true }),
+    ).toHaveCount(0);
+  }
+  await expect(
+    boxGroup(page, schedule.daysLabel).getByRole("checkbox"),
+  ).toHaveCount(7);
+  await expect(
+    boxGroup(page, schedule.weeksLabel).getByRole("checkbox"),
+  ).toHaveCount(5);
+  await expect(
+    boxGroup(page, schedule.monthsLabel).getByRole("checkbox"),
+  ).toHaveCount(12);
+  await expect(box(page, dayNames.mon)).toHaveCount(1);
+  await expect(box(page, schedule.weeks.first)).toHaveCount(1);
+  await expect(box(page, "January")).toHaveCount(1);
+  await expect(scheduleLine(page)).toHaveText(
+    new RegExp(
+      `^${escape(fill(schedule.dinersRead, { sentence: '"Every day, 4 to 9 pm."' }))} (${escape(fill(schedule.showsNow, { time: "9 pm" }))}|Next shows [A-Z][a-z]+, [A-Z][a-z]+ \\d{1,2}\\.)$`,
+    ),
+  );
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+
+  await openDish(page, "one");
+  await expect(scheduleLine(page)).toHaveText(schedule.none);
+  await expect(scheduleField(page, schedule.starts)).toHaveValue("");
+});
+
+// A tag tick, an availability choice, and a day tick each save at once;
+// each shows at once while its save waits, and goes back when the guard
+// answers it.
+test("a tag tick shows at once, is refused once when it cannot land, and goes back", async ({
+  page,
+}) => {
+  const writes = expectWrites(page, { hold: true });
+  const { dishes } = ownerFixture();
+  const vegan = en.dietary.names.vegan;
+  await openDish(page, "market");
+  await page.getByText(vegan, { exact: true }).click();
+  await expect(box(page, vegan)).toBeChecked();
+  await expect(tagsLine(page)).toHaveText(
+    fill(tags.dinersRead, { sentence: `"${vegan}."` }),
+  );
+  await expectNoMissingIds(page);
+
+  writes.release();
+  const failure = `${fill(tags.notSaved, { dish: dishes.market.name })} ${editing.problems.outOfDate}`;
+  await expect(savedStatus(page)).toHaveText(failure);
+  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
+  await expect(box(page, vegan), "the box is back").not.toBeChecked();
+  await expect(box(page, vegan)).toHaveAttribute("aria-invalid", "true");
+  await expect(tagsLine(page)).toHaveCount(0);
+  expect(writes.answered.length).toBeGreaterThan(0);
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+test("Sold out today shows at once with no line until it lands, is refused once when it cannot land, and goes back", async ({
+  page,
+}) => {
+  const writes = expectWrites(page, { hold: true });
+  const { dishes } = ownerFixture();
+  await openDish(page, "one");
+  await page.getByText(availability.soldOut, { exact: true }).click();
+  await expect(radio(page, availability.soldOut)).toBeChecked();
+  await expect(
+    availabilityGroup(page),
+    "the line waits for the server's answer",
+  ).toHaveAccessibleDescription("");
+  await expectNoMissingIds(page);
+
+  writes.release();
+  const failure = `${fill(availability.notSaved, { dish: dishes.one.name })} ${editing.problems.outOfDate}`;
+  await expect(savedStatus(page)).toHaveText(failure);
+  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
+  await expect(
+    radio(page, availability.available),
+    "the choice is back",
+  ).toBeChecked();
+  await expect(availabilityGroup(page)).toHaveAttribute("aria-invalid", "true");
+  expect(writes.answered.length).toBeGreaterThan(0);
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+test("a day tick shows at once with the sentence it would give diners, is refused once when it cannot land, and goes back", async ({
+  page,
+}) => {
+  const writes = expectWrites(page, { hold: true });
+  const { dishes } = ownerFixture();
+  await openDish(page, "sizes");
+  await page.getByText(dayNames.tue, { exact: true }).click();
+  await expect(box(page, dayNames.tue)).toBeChecked();
+  await expect(scheduleLine(page)).toContainText(
+    fill(schedule.dinersRead, { sentence: '"Tuesdays, 4 to 9 pm."' }),
+  );
+  await expectNoMissingIds(page);
+
+  writes.release();
+  const failure = `${fill(schedule.notSaved.days, { dish: dishes.sizes.name })} ${editing.problems.outOfDate}`;
+  await expect(savedStatus(page)).toHaveText(failure);
+  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
+  await expect(box(page, dayNames.tue), "the box is back").not.toBeChecked();
+  await expect(box(page, dayNames.tue)).toHaveAttribute("aria-invalid", "true");
+  await expect(scheduleLine(page)).toContainText(
+    fill(schedule.dinersRead, { sentence: '"Every day, 4 to 9 pm."' }),
+  );
+  expect(writes.answered.length).toBeGreaterThan(0);
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+// The two time fields commit together, and a date field when it is left:
+// the write guard proves that Tab and Enter through them unchanged send
+// nothing.
+test("Tab and Enter through the unchanged time pair and the unchanged dates send nothing and say nothing", async ({
+  page,
+}) => {
+  await openDish(page, "sizes");
+  await scheduleField(page, schedule.starts).focus();
+  await page.keyboard.press("Tab");
+  await expect(scheduleField(page, schedule.ends)).toBeFocused();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab");
+  await expect(todayButton(page)).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(scheduleField(page, schedule.firstDay)).toBeFocused();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab");
+  await expect(scheduleField(page, schedule.lastDay)).toBeFocused();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab");
+  await expect(savedStatus(page)).toHaveText(editing.saved);
+  await expect(log(page)).toHaveText("");
+});
+
+// Today only is a press with no field of its own, like Add a size: answered
+// in the browser, it is said once and focus stays on the button.
+test("Today only sends one write, is said once when it cannot land, and keeps focus on the button", async ({
+  page,
+}) => {
+  const writes = expectWrites(page, { hold: true });
+  const { dishes } = ownerFixture();
+  await openDish(page, "one");
+  await todayButton(page).focus();
+  await page.keyboard.press("Enter");
+  await expectNoMissingIds(page);
+  writes.release();
+  const failure = `${fill(schedule.notSaved.today, { dish: dishes.one.name })} ${editing.problems.outOfDate}`;
+  await expect(savedStatus(page)).toHaveText(failure);
+  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
+  await expect(todayButton(page)).toBeFocused();
+  await expect(
+    scheduleField(page, schedule.firstDay),
+    "the date went back",
+  ).toHaveValue("");
+  expect(writes.answered.length).toBe(1);
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+// A week says which of the month's Mondays, so with no day it is refused
+// before anything is sent: no expectWrites, so the guard is the proof.
+test("a week ticked with no day is refused unsent, said once, with the box back and marked", async ({
+  page,
+}) => {
+  const { dishes } = ownerFixture();
+  await openDish(page, "one");
+  await page.getByText(schedule.weeks.first, { exact: true }).click();
+  const refused = `${fill(schedule.notSaved.weeks, { dish: dishes.one.name })} ${schedule.errors.weeksNeedDay}`;
+  await expect(savedStatus(page)).toHaveText(refused);
+  await expect(log(page).getByText(refused, { exact: true })).toHaveCount(1);
+  await expect(box(page, schedule.weeks.first)).not.toBeChecked();
+  await expect(box(page, schedule.weeks.first)).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await expect(
+    page.getByRole("button", { name: editing.tryAgain, exact: true }),
+  ).toHaveCount(1);
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
 });
 
 // D-148: the nine in the FDA's order, each with its hint; the other

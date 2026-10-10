@@ -200,8 +200,8 @@ export async function sectionControls(
 // the page shows it, Add a size, each other allergen's two buttons, named
 // by the row as the page shows it, Add another allergen, each same-named
 // dish's Apply button, Undo, the link to the next dish when there is one,
-// and the move's button; the move's Select is named by its label and its
-// value, so the sweep checks it.
+// Today only (task 5), and the move's button; the move's Select is named
+// by its label and its value, so the sweep checks it.
 export async function dishControls(
   page: Page,
   menu: string,
@@ -263,6 +263,7 @@ export async function dishControls(
     ...others,
     button(words.allergens.addOther),
     ...applies.map((name) => button(name)),
+    button(words.schedule.todayOnly),
     button(editing.undo),
     ...nextName.map((text) => link(text)),
     button(words.move.submit),

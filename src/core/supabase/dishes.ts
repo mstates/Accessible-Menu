@@ -9,7 +9,13 @@ import {
 } from "@/domain/dish";
 import { nameKey } from "@/domain/menu";
 import { priceInputText } from "@/domain/money";
-import { ALLERGEN_IDS, type AllergenId } from "@/domain/types";
+import { parseSchedule, scheduleJson, type Schedule } from "@/domain/schedule";
+import {
+  ALLERGEN_IDS,
+  DIETARY_TAG_IDS,
+  type AllergenId,
+  type DietaryTagId,
+} from "@/domain/types";
 import { shaped } from "./log";
 
 // Owner-side reads and writes on dishes, through the owner's own client so
@@ -20,11 +26,14 @@ import { shaped } from "./log";
 // and OwnerDishDetail on the dish's own page. A delete marks the row and
 // keeps it, so Undo can bring it back; reads leave marked rows out. Owners
 // write name, description, the price choice, price_cents, note, the two
-// allergen lists, the allergen check, sort, and deleted_at and nothing else:
+// allergen lists, the allergen check, the dietary tags, available with the
+// sold-out mark, the schedule, sort, and deleted_at and nothing else:
 // nothing about photos yet, and never who checked a list or when, which the
 // database stamps (D-148). A move to another section goes through
 // move_item(), since section_id is not a column owners write (migration 6).
-// Nothing here can publish.
+// The sold-out mark is read and written here as a column and never read for
+// its meaning, which domain/availability.ts decides (D-160). Nothing here
+// can publish.
 
 const columns = "id, name, sort";
 
@@ -39,9 +48,11 @@ function toDish(row: z.infer<typeof rowSchema>): OwnerDish {
 }
 
 // The dish as its own page reads it (D-128), with the section it is in,
-// its two allergen lists, and its check: the flag, who, and when (D-148).
+// its two allergen lists, and its check: the flag, who, and when (D-148),
+// its tags, its availability with the mark, and its schedule (D-159,
+// D-160).
 const detailColumns =
-  "id, name, description, price_kind, price_cents, note, allergens, custom_allergens, allergens_reviewed, allergens_reviewed_by, allergens_reviewed_at, sort, section_id";
+  "id, name, description, price_kind, price_cents, note, allergens, custom_allergens, allergens_reviewed, allergens_reviewed_by, allergens_reviewed_at, dietary_tags, available, sold_out_at, special_schedule, sort, section_id";
 
 const detailSchema = z.object({
   id: z.string(),
@@ -55,6 +66,12 @@ const detailSchema = z.object({
   allergens_reviewed: z.boolean(),
   allergens_reviewed_by: z.string().nullable(),
   allergens_reviewed_at: z.string().nullable(),
+  dietary_tags: z.array(z.enum(DIETARY_TAG_IDS)),
+  available: z.boolean(),
+  sold_out_at: z.string().nullable(),
+  // The schedule's shape is the domain's to read: a value that is not a
+  // schedule reads as none, as hours do (D-92).
+  special_schedule: z.unknown(),
   sort: z.number(),
   section_id: z.string(),
 });
@@ -85,6 +102,10 @@ function toDetail(
               row.allergens_reviewed_by === viewer,
           }
         : null,
+    tags: row.dietary_tags,
+    available: row.available,
+    soldOutAt: row.sold_out_at,
+    schedule: parseSchedule(row.special_schedule),
     sectionId: row.section_id,
   };
 }
@@ -113,6 +134,9 @@ export type DishWriteResult<Value = unknown> =
 
 // Postgres's code for an error a trigger raises by name.
 const RAISED = "P0001";
+// Postgres's code for a check constraint refusing a row; the constraint's
+// name is the rule (migration 9).
+const CHECK_VIOLATION = "23514";
 
 function refused(
   code: string | undefined,
@@ -122,6 +146,10 @@ function refused(
     return { ok: false, error: { kind: "name-taken" } };
   if (code === RAISED && /^[a-z_]+$/.test(message)) {
     return { ok: false, error: { kind: "refused", rule: message } };
+  }
+  if (code === CHECK_VIOLATION) {
+    const rule = /violates check constraint "([a-z_]+)"/.exec(message)?.[1];
+    if (rule) return { ok: false, error: { kind: "refused", rule } };
   }
   return { ok: false, error: { kind: "failed" } };
 }
@@ -379,6 +407,101 @@ export async function writeOwnerDishAllergens(
   if (expected.allergens_reviewed_at !== undefined) {
     update = update.eq("allergens_reviewed_at", expected.allergens_reviewed_at);
   }
+  const { data, error } = await update.select(detailColumns).maybeSingle();
+  if (error) return refused(error.code, error.message);
+  if (!data) return notFound;
+  const row = shaped(detailSchema, data, "items");
+  return row ? { ok: true, value: toDetail(row, viewer) } : failed;
+}
+
+// Writes a dish's dietary tags, scoped to the section the page read the
+// dish in, and lands only if the dish still holds the tags the page showed
+// (D-149's rule, widened to tags at task 5's plan): a stale tab's tick
+// would otherwise put back a tag another tab removed. Both lists are in
+// the enum's order, the way every write leaves them.
+export async function writeOwnerDishTags(
+  client: SupabaseClient,
+  sectionId: string,
+  id: string,
+  viewer: string | null,
+  tags: readonly DietaryTagId[],
+  shown: readonly DietaryTagId[],
+): Promise<DishWriteResult<OwnerDishDetail>> {
+  const { data, error } = await client
+    .from("items")
+    .update({ dietary_tags: [...tags] })
+    .eq("id", id)
+    .eq("section_id", sectionId)
+    .is("deleted_at", null)
+    .eq("dietary_tags", arrayLiteral(shown))
+    .select(detailColumns)
+    .maybeSingle();
+  if (error) return refused(error.code, error.message);
+  if (!data) return notFound;
+  const row = shaped(detailSchema, data, "items");
+  return row ? { ok: true, value: toDetail(row, viewer) } : failed;
+}
+
+// What a write on a dish's availability sets (D-160): the flag and the
+// mark together, so the three states are the three rows the database
+// allows. With expected, the write lands only while the dish still holds
+// that pair: an Undo never writes over a newer choice.
+export type AvailabilityPatch = {
+  available: boolean;
+  sold_out_at: string | null;
+};
+
+export async function writeOwnerDishAvailability(
+  client: SupabaseClient,
+  sectionId: string,
+  id: string,
+  viewer: string | null,
+  patch: AvailabilityPatch,
+  expected?: AvailabilityPatch,
+): Promise<DishWriteResult<OwnerDishDetail>> {
+  let update = client
+    .from("items")
+    .update({ available: patch.available, sold_out_at: patch.sold_out_at })
+    .eq("id", id)
+    .eq("section_id", sectionId)
+    .is("deleted_at", null);
+  if (expected) {
+    update = update.eq("available", expected.available);
+    update =
+      expected.sold_out_at === null
+        ? update.is("sold_out_at", null)
+        : update.eq("sold_out_at", expected.sold_out_at);
+  }
+  const { data, error } = await update.select(detailColumns).maybeSingle();
+  if (error) return refused(error.code, error.message);
+  if (!data) return notFound;
+  const row = shaped(detailSchema, data, "items");
+  return row ? { ok: true, value: toDetail(row, viewer) } : failed;
+}
+
+// Writes a dish's whole schedule, or none, scoped to the section the page
+// read the dish in, and lands only if the dish still holds the schedule the
+// page showed (D-149's rule, widened to the schedule at task 5's plan),
+// since each part is its own control but the column is one value. jsonb
+// compares by value, so the text's key order never matters.
+export async function writeOwnerDishSchedule(
+  client: SupabaseClient,
+  sectionId: string,
+  id: string,
+  viewer: string | null,
+  schedule: Schedule | null,
+  shown: Schedule | null,
+): Promise<DishWriteResult<OwnerDishDetail>> {
+  let update = client
+    .from("items")
+    .update({ special_schedule: schedule })
+    .eq("id", id)
+    .eq("section_id", sectionId)
+    .is("deleted_at", null);
+  update =
+    shown === null
+      ? update.is("special_schedule", null)
+      : update.eq("special_schedule", scheduleJson(shown));
   const { data, error } = await update.select(detailColumns).maybeSingle();
   if (error) return refused(error.code, error.message);
   if (!data) return notFound;

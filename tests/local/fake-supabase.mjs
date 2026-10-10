@@ -4,9 +4,10 @@
 // migration four's for sections, migration five's for items and its four
 // functions, migration six's for a dish's own texts and price, its sizes,
 // and move_item(), migration seven's for a dish's allergen lists and their
-// check, and migration eight's for a section's line shown with every dish
-// and its own lists and check. It lets saves land on this machine, which the gate can
-// never do (D-115): `npm run local` starts it, builds and serves the app
+// check, migration eight's for a section's line shown with every dish
+// and its own lists and check, and migration nine's for a dish's tags,
+// availability with its sold-out mark, and schedule. It lets saves land on
+// this machine, which the gate can never do (D-115): `npm run local` starts it, builds and serves the app
 // against it, and runs the checks in tests/local (D-142). It holds no key
 // and names no real project: the session it hands out is an unsigned
 // token, and the restaurant is a stand-in, not CI Diner. It is not a copy
@@ -97,6 +98,7 @@ function seed(withDishes = true) {
       allergens: ["milk", "wheat"],
       custom_allergens: ["celery"],
       checked: true,
+      schedule: { hours: { open: "16:00", close: "21:00" } },
     },
     {
       name: "House salad",
@@ -105,6 +107,7 @@ function seed(withDishes = true) {
       allergens: [],
       custom_allergens: [],
       checked: true,
+      tags: ["vegetarian", "made-without-gluten"],
     },
     {
       name: "Garlic bread",
@@ -113,8 +116,12 @@ function seed(withDishes = true) {
       allergens: [],
       custom_allergens: [],
       checked: false,
+      available: false,
     },
   ];
+  // As CI Diner's data file leaves Starters (migration 9, task 5): House
+  // salad tagged, Garlic bread off the menu for now, Soup of the day a
+  // special every day from 4 to 9 pm.
   items = (withDishes ? priced : []).map((dish, index) => ({
     id: randomUUID(),
     section_id: starters.id,
@@ -129,6 +136,10 @@ function seed(withDishes = true) {
     allergens_reviewed: dish.checked,
     allergens_reviewed_by: dish.checked ? user.id : null,
     allergens_reviewed_at: dish.checked ? stamp() : null,
+    dietary_tags: dish.tags ?? [],
+    available: dish.available ?? true,
+    sold_out_at: null,
+    special_schedule: dish.schedule ?? null,
     sort: index + 1,
     deleted_at: null,
     created_at: stamp(),
@@ -148,6 +159,10 @@ function seed(withDishes = true) {
       allergens_reviewed: false,
       allergens_reviewed_by: null,
       allergens_reviewed_at: null,
+      dietary_tags: [],
+      available: true,
+      sold_out_at: null,
+      special_schedule: null,
       sort: 1,
       deleted_at: null,
       created_at: stamp(),
@@ -492,6 +507,8 @@ function itemProblem(row) {
     "items_other_allergens_count",
   );
   if (lists) return lists;
+  const showing = showingProblem(row);
+  if (showing) return showing;
   if (row.deleted_at === null) {
     const taken = items.some(
       (i) =>
@@ -501,6 +518,115 @@ function itemProblem(row) {
         nameKey(i.name) === nameKey(name),
     );
     if (taken) return unique("items_name_key");
+  }
+  return null;
+}
+
+// Migration nine's rules for a dish's tags, its sold-out mark, and its
+// schedule (D-159, D-160): each tag one of the three and once; a mark only
+// on a dish that is available; a schedule null or an object of any of its
+// six keys, each list non-empty with every value allowed and once, weeks
+// only with days, hours a range in HH:MM that opens and closes at different
+// times, dates real and in order.
+const DIETARY_TAGS = ["vegan", "vegetarian", "made-without-gluten"];
+const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const WEEK_KEYS = ["first", "second", "third", "fourth", "last"];
+const MONTH_KEYS = [
+  "jan",
+  "feb",
+  "mar",
+  "apr",
+  "may",
+  "jun",
+  "jul",
+  "aug",
+  "sep",
+  "oct",
+  "nov",
+  "dec",
+];
+const SCHEDULE_KEYS = ["days", "weeks", "months", "hours", "from", "until"];
+const TIME = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+const DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+
+function onceOf(list, keys) {
+  return (
+    Array.isArray(list) &&
+    list.length >= 1 &&
+    list.every((key) => keys.includes(key)) &&
+    new Set(list).size === list.length
+  );
+}
+
+function realDay(day) {
+  if (!DATE.test(day)) return false;
+  const at = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(at.getTime()) && at.toISOString().slice(0, 10) === day;
+}
+
+function scheduleShapeOk(schedule) {
+  if (schedule === null) return true;
+  if (typeof schedule !== "object" || Array.isArray(schedule)) return false;
+  const keys = Object.keys(schedule);
+  if (keys.length === 0) return false;
+  if (keys.some((key) => !SCHEDULE_KEYS.includes(key))) return false;
+  if ("days" in schedule && !onceOf(schedule.days, DAY_KEYS)) return false;
+  if (
+    "weeks" in schedule &&
+    (!("days" in schedule) || !onceOf(schedule.weeks, WEEK_KEYS))
+  ) {
+    return false;
+  }
+  if ("months" in schedule && !onceOf(schedule.months, MONTH_KEYS)) {
+    return false;
+  }
+  if ("hours" in schedule) {
+    const range = schedule.hours;
+    if (!range || typeof range !== "object" || Array.isArray(range)) {
+      return false;
+    }
+    if (Object.keys(range).some((key) => !["open", "close"].includes(key))) {
+      return false;
+    }
+    if (
+      typeof range.open !== "string" ||
+      typeof range.close !== "string" ||
+      !TIME.test(range.open) ||
+      !TIME.test(range.close) ||
+      range.open === range.close
+    ) {
+      return false;
+    }
+  }
+  for (const side of ["from", "until"]) {
+    if (side in schedule) {
+      const day = schedule[side];
+      if (typeof day !== "string" || !realDay(day)) return false;
+    }
+  }
+  if (
+    "from" in schedule &&
+    "until" in schedule &&
+    schedule.from > schedule.until
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function showingProblem(row) {
+  const tags = row.dietary_tags;
+  if (!Array.isArray(tags)) return check("items", "items_dietary_tags_once");
+  const outside = tags.find((tag) => !DIETARY_TAGS.includes(tag));
+  if (outside !== undefined) return badEnum(outside);
+  if (new Set(tags).size !== tags.length) {
+    return check("items", "items_dietary_tags_once");
+  }
+  if (row.sold_out_at !== null && !row.available) {
+    return check("items", "items_sold_out_needs_available");
+  }
+  if (!scheduleShapeOk(row.special_schedule)) {
+    return check("items", "items_special_schedule_shape");
   }
   return null;
 }
@@ -608,6 +734,17 @@ function likeToRegExp(pattern) {
   return new RegExp(`^${source}$`, "is");
 }
 
+// JSON text with its keys in one order at every level, so two values that
+// jsonb would call equal give the same text.
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
 function matches(row, params) {
   for (const [key, raw] of params) {
     if (
@@ -627,6 +764,10 @@ function matches(row, params) {
         const literal = parseArrayLiteral(wanted);
         if (literal === null) throw new Error(`bad array literal: ${wanted}`);
         if (JSON.stringify(literal) !== JSON.stringify(value)) return false;
+      } else if (value !== null && typeof value === "object") {
+        // A jsonb column compares by value, whatever order its keys came
+        // in, so a schedule the page showed matches the stored one.
+        if (canonical(JSON.parse(wanted)) !== canonical(value)) return false;
       } else if (String(value) !== wanted) return false;
     } else if (raw.startsWith("ilike.")) {
       if (typeof value !== "string" || !likeToRegExp(raw.slice(6)).test(value))
@@ -783,6 +924,10 @@ const server = http.createServer(async (req, res) => {
         allergens_reviewed: false,
         allergens_reviewed_by: null,
         allergens_reviewed_at: null,
+        dietary_tags: [],
+        available: true,
+        sold_out_at: null,
+        special_schedule: null,
         sort: 99,
         deleted_at: null,
         created_at: stamp(),
@@ -803,6 +948,43 @@ const server = http.createServer(async (req, res) => {
         custom_allergens: split(params.get("others")),
         allergens_reviewed: params.get("checked") === "1",
       });
+      const problem = itemProblem(next);
+      if (problem) return send(res, ...problem);
+      Object.assign(dish, next);
+      return send(res, 200, dish);
+    }
+    // A dish's tags, schedule, or availability changed somewhere else:
+    // another tab, another person. Migration nine's rules apply.
+    if (path === "/__test/set-tags") {
+      const dish = items.find((i) => i.id === params.get("id"));
+      if (!dish) return send(res, 404, { message: "no such dish" });
+      const tags = params.get("tags");
+      const next = { ...dish, dietary_tags: tags ? tags.split(",") : [] };
+      const problem = itemProblem(next);
+      if (problem) return send(res, ...problem);
+      Object.assign(dish, next);
+      return send(res, 200, dish);
+    }
+    if (path === "/__test/set-schedule") {
+      const dish = items.find((i) => i.id === params.get("id"));
+      if (!dish) return send(res, 404, { message: "no such dish" });
+      const next = {
+        ...dish,
+        special_schedule: JSON.parse(params.get("schedule") ?? "null"),
+      };
+      const problem = itemProblem(next);
+      if (problem) return send(res, ...problem);
+      Object.assign(dish, next);
+      return send(res, 200, dish);
+    }
+    if (path === "/__test/set-availability") {
+      const dish = items.find((i) => i.id === params.get("id"));
+      if (!dish) return send(res, 404, { message: "no such dish" });
+      const next = {
+        ...dish,
+        available: params.get("available") !== "0",
+        sold_out_at: params.get("sold_out_at") || null,
+      };
       const problem = itemProblem(next);
       if (problem) return send(res, ...problem);
       Object.assign(dish, next);
@@ -1176,6 +1358,10 @@ const server = http.createServer(async (req, res) => {
           allergens_reviewed: false,
           allergens_reviewed_by: null,
           allergens_reviewed_at: null,
+          dietary_tags: [],
+          available: true,
+          sold_out_at: null,
+          special_schedule: null,
           sort: payload.sort ?? 0,
           deleted_at: null,
           created_at: stamp(),
@@ -1195,6 +1381,10 @@ const server = http.createServer(async (req, res) => {
           "allergens",
           "custom_allergens",
           "allergens_reviewed",
+          "dietary_tags",
+          "available",
+          "sold_out_at",
+          "special_schedule",
           "sort",
           "deleted_at",
         ];

@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Announcer, useAnnounce } from "@/core/a11y/announcer";
 import type { AllergenCopy } from "@/domain/allergens";
+import type { DietaryCopy } from "@/domain/dietary";
 import type { OwnerDish, OwnerDishDetail, OwnerSize } from "@/domain/dish";
+import type { Hours } from "@/domain/hours";
+import type { ScheduleCopy } from "@/domain/schedule";
+import type { TimeCopy } from "@/domain/time";
 import { Button } from "@/ui/Button";
 import { ComboBox } from "@/ui/ComboBox";
 import { PageLink } from "@/ui/PageLink";
@@ -22,7 +26,11 @@ import {
   sizeSuffix,
   type DishStrings,
 } from "./dish-words";
+import { DishAvailability } from "./DishAvailability";
+import { DishSchedule } from "./DishSchedule";
+import { DishTags } from "./DishTags";
 import { MoveDish } from "./MoveDish";
+import type { ShowingNow } from "./schedule-words";
 import { ADD_SIZE_ID, KIND_ID, sizeButtonId, useDishPage } from "./useDishPage";
 
 type Props = {
@@ -51,6 +59,16 @@ type Props = {
   // page's language.
   timeZone: string;
   lang: string;
+  // What the server decided the dish's availability is at this render
+  // (D-160), the hours it decided it from, and its clock as an instant,
+  // which every time-dependent line reads (task 5).
+  showing: ShowingNow;
+  hours: Hours | null;
+  now: string;
+  dietaryCopy: DietaryCopy;
+  // The diner-facing schedule words, with the singular day names.
+  scheduleCopy: ScheduleCopy;
+  timeCopy: TimeCopy;
 };
 
 // How long after the page shows the dish in its new section its move is
@@ -60,10 +78,11 @@ const AFTER_THE_TITLE_MS = 100;
 
 const PRICE_HEADING_ID = "dish-price-heading";
 
-// A dish's own page (D-128, D-139, D-148): the lead, the description, the
-// price group under its heading, the note, the allergen group under its
-// heading, the saved status and Undo, the link to the next dish, and the
-// move to another section (D-129). Everything on it shares one queue, one
+// A dish's own page (D-128, D-139, D-148, D-159, D-160): the lead, the
+// description, the price group under its heading, the note, the allergen
+// group under its heading, the dietary tags, availability, and the schedule
+// each under theirs, the saved status and Undo, the link to the next dish,
+// and the move to another section (D-129). Everything on it shares one queue, one
 // status, and one Undo (D-111).
 export function DishPage(props: Props) {
   return (
@@ -89,6 +108,12 @@ function DishEditor({
   sameNamed,
   timeZone,
   lang,
+  showing,
+  hours,
+  now,
+  dietaryCopy,
+  scheduleCopy,
+  timeCopy,
 }: Props) {
   // A move changes the page's title, since the title names the section and
   // the menu, and Next's route announcer reads a changed title at once and
@@ -119,6 +144,14 @@ function DishEditor({
     sizes,
     sameNamed,
     sayOnceIn,
+    showing,
+    hours,
+    timeZone,
+    lang,
+    now,
+    dietaryCopy,
+    scheduleCopy,
+    timeCopy,
   });
 
   // The restaurant's own size names first, then the starter list, each
@@ -295,6 +328,20 @@ function DishEditor({
         suggestions={otherSuggestions}
         timeZone={timeZone}
         lang={lang}
+      />
+
+      <DishTags strings={strings.tags} names={dietaryCopy} tags={page.tags} />
+
+      <DishAvailability
+        strings={strings.availability}
+        availability={page.availability}
+      />
+
+      <DishSchedule
+        strings={strings.schedule}
+        dayNames={scheduleCopy.day}
+        lang={lang}
+        schedule={page.schedule}
       />
 
       <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">

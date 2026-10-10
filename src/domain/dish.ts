@@ -1,14 +1,17 @@
 import type { AllergenCheck, OwnerAllergens } from "./allergens";
 import { cleanMenuName } from "./menu";
 import { parsePrice, type PriceRule } from "./money";
+import type { Schedule } from "./schedule";
 import { cleanNote } from "./section";
+import type { DietaryTagId } from "./types";
 
 // The owner-side dish: the row an owner reads on a section's page, with its
 // name, and the dish as its own page reads it (D-128), with everything an
 // owner writes there: the description, the price choice, the one price, the
-// note, and the sizes (task 3b), and its allergens with their check (task
-// 4, D-148). Tags, availability, and the photo join in tasks 5 and 6. The
-// diner-side Item in types.ts is the published view model and stays
+// note, and the sizes (task 3b), its allergens with their check (task 4,
+// D-148), and its tags, its availability with the moment of a sold-out
+// mark, and its schedule (task 5, D-159, D-160). The photo joins in task 6.
+// The diner-side Item in types.ts is the published view model and stays
 // separate until the diner page reads real data (D-78). The table is called
 // items; everything above it says dish. Pure: no React, no network.
 
@@ -26,13 +29,19 @@ export type { AllergenCheck };
 export type OwnerDishAllergens = OwnerAllergens;
 
 // A dish on its own page. price is the one price as its field shows it, two
-// decimals or blank for none; the sizes are read beside it.
+// decimals or blank for none; the sizes are read beside it. The mark is the
+// row's as stored: what it means now is decided by domain/availability.ts
+// and nowhere else (D-160).
 export type OwnerDishDetail = OwnerDish &
   OwnerDishAllergens & {
     description: string;
     note: string;
     priceKind: PriceKind;
     price: string;
+    tags: DietaryTagId[];
+    available: boolean;
+    soldOutAt: string | null;
+    schedule: Schedule | null;
   };
 
 // The texts of a dish an owner writes on its page, in the page's order.

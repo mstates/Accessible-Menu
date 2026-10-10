@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useLayoutEffect, useRef, type FocusEvent } from "react";
+import { Fragment, useLayoutEffect, useRef } from "react";
+import { handToBox } from "../editing/hand-to-box";
 import {
   US_MAJOR_ALLERGENS,
   type AllergenCopy,
@@ -37,16 +38,6 @@ type Props = {
   timeZone: string;
   lang: string;
 };
-
-// A wrapper that takes a failed save's focus and hands it to the box
-// inside, so a reader hears the box and its state (the price group's
-// pattern, D-143).
-function handToBox(event: FocusEvent<HTMLDivElement>) {
-  if (event.target !== event.currentTarget) return;
-  event.currentTarget
-    .querySelector<HTMLInputElement>('input[type="checkbox"]')
-    ?.focus();
-}
 
 // The allergen group (D-128, D-148, D-152), under its own heading: the nine
 // major allergens as boxes, each with a hint under its words; the other

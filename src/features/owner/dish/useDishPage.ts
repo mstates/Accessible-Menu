@@ -9,6 +9,10 @@ import {
   useState,
 } from "react";
 import { useAnnounce } from "@/core/a11y/announcer";
+import type { DietaryCopy } from "@/domain/dietary";
+import type { Hours } from "@/domain/hours";
+import type { ScheduleCopy } from "@/domain/schedule";
+import type { TimeCopy } from "@/domain/time";
 import {
   cleanDishText,
   cleanSizeText,
@@ -66,6 +70,7 @@ import {
   sizeAddedSentence,
   sizeLabel,
   sizeRemovedSentence,
+  showingUndoLabel,
   sizeWords,
   undoLabel,
   undoneSentence,
@@ -73,11 +78,16 @@ import {
   type DishUndo,
   type TextUndo,
 } from "./dish-words";
+import type { ShowingNow } from "./schedule-words";
 import { useDishAllergens } from "./useDishAllergens";
+import { useDishAvailability } from "./useDishAvailability";
+import { useDishSchedule } from "./useDishSchedule";
+import { useDishTags } from "./useDishTags";
 
 // A dish's own page (D-111, D-128, D-139): the state and the handlers
 // behind its texts, its price choice, its sizes, its allergens (D-148,
-// useDishAllergens), and its Undo. The page has texts and no list, so it
+// useDishAllergens), its tags, its availability, and its schedule (task 5,
+// useDishTags, useDishAvailability, useDishSchedule), and its Undo. The page has texts and no list, so it
 // does not use the shared list; it composes the same editing state, the
 // same Undo stack, and the same text-commit path (texts.ts) the lists use,
 // and keeps one queue, one saved status, and one Undo for everything on
@@ -101,6 +111,17 @@ type Props = {
   sameNamed: SameNamedPlace[];
   // Says a sentence once the page shows the dish in that section.
   sayOnceIn: (sectionId: string, sentence: string) => void;
+  // What the server decided the dish's availability is at this render
+  // (D-160), the restaurant's hours and zone it decided it from, and its
+  // clock, which every time-dependent line on the page reads.
+  showing: ShowingNow;
+  hours: Hours | null;
+  timeZone: string;
+  lang: string;
+  now: string;
+  dietaryCopy: DietaryCopy;
+  scheduleCopy: ScheduleCopy;
+  timeCopy: TimeCopy;
 };
 
 const KIND_KEY = "kind";
@@ -130,6 +151,14 @@ export function useDishPage({
   sizes,
   sameNamed,
   sayOnceIn,
+  showing,
+  hours,
+  timeZone,
+  lang,
+  now,
+  dietaryCopy,
+  scheduleCopy,
+  timeCopy,
 }: Props) {
   const announce = useAnnounce();
   const editing = useEditing(editingStrings);
@@ -208,6 +237,45 @@ export function useDishPage({
     announce,
     focusNextRef: focusNext,
     sameNamed,
+  });
+
+  // The showing groups share the page's editing state and Undo (task 5).
+  const tags = useDishTags({
+    strings,
+    editingStrings,
+    code,
+    dish,
+    editor,
+    words,
+    names: dietaryCopy,
+  });
+  const availability = useDishAvailability({
+    strings,
+    editingStrings,
+    code,
+    dish,
+    editor,
+    words,
+    showing,
+    hours,
+    timeZone,
+    lang,
+    now,
+    timeCopy,
+  });
+  const schedule = useDishSchedule({
+    strings,
+    editingStrings,
+    code,
+    dish,
+    editor,
+    words,
+    announce,
+    timeZone,
+    lang,
+    now,
+    scheduleCopy,
+    timeCopy,
   });
 
   function labelOf(size: OwnerSize, index: number): string {
@@ -478,6 +546,12 @@ export function useDishPage({
       case "check":
       case "apply":
         return allergens.reverse(entry);
+      case "tags":
+        return tags.reverse(entry);
+      case "availability":
+        return availability.reverse(entry);
+      case "schedule":
+        return schedule.reverse(entry);
     }
   }
 
@@ -518,6 +592,9 @@ export function useDishPage({
     const { failures } = editing.peek();
     for (const key of Object.keys(failures)) {
       if (allergens.tryAgain(key, failures[key]?.value ?? "")) continue;
+      if (tags.tryAgain(key, failures[key]?.value ?? "")) continue;
+      if (availability.tryAgain(key, failures[key]?.value ?? "")) continue;
+      if (schedule.tryAgain(key, failures[key]?.value ?? "")) continue;
       if (key === KIND_KEY) {
         const failed = failures[key]?.value;
         if (failed === "one" || failed === "sizes" || failed === "market") {
@@ -542,11 +619,22 @@ export function useDishPage({
   }
 
   const newest = newestUndo(undo.stack);
+  const undoText = newest
+    ? newest.kind === "tags" ||
+      newest.kind === "availability" ||
+      newest.kind === "schedule"
+      ? showingUndoLabel(
+          strings,
+          { tag: dietaryCopy.names, box: schedule.boxName },
+          newest,
+        )
+      : undoLabel(strings, newest)
+    : null;
 
   return {
     editing,
     words,
-    undoText: newest ? undoLabel(strings, newest) : null,
+    undoText,
     own: {
       fieldOf: (field: DishText): TextState => textOf(editor, ownHome(), field),
     },
@@ -564,6 +652,9 @@ export function useDishPage({
       remove: removeSize,
     },
     allergens,
+    tags,
+    availability,
+    schedule,
     undoNewest,
     tryAgain,
     // A change the page made that is not a text's goes on the same Undo

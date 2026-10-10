@@ -8,6 +8,7 @@ import {
   restaurantAllergenNote,
   type AllergenSentence,
 } from "@/domain/allergens";
+import { dietarySentence } from "@/domain/dietary";
 import { feedbackPath, statementPath } from "@/domain/menu-url";
 import { formatPrice } from "@/domain/money";
 import type { Item, Menu, Restaurant, Section } from "@/domain/types";
@@ -139,6 +140,9 @@ function sectionLink(section: Section, copy: Copy): string {
 function MenuItem({ item, copy }: { item: Item; copy: Copy }) {
   const price = formatPrice(item.price, copy.money);
   const sentence = allergenSentence(item, copy.allergens);
+  // The tags in words, from the one builder the owner's page reads too
+  // (module rule 8, D-66).
+  const dietary = dietarySentence(item.dietaryTags, copy.dietary);
   return (
     <li className="py-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4">
@@ -152,10 +156,8 @@ function MenuItem({ item, copy }: { item: Item; copy: Copy }) {
       <p className="mt-2">
         <AllergenLine sentence={sentence} />
       </p>
-      {item.dietaryTags.length > 0 ? (
-        <p className="mt-1 text-foreground-muted">
-          {item.dietaryTags.map((tag) => copy.dietary.names[tag]).join(", ")}
-        </p>
+      {dietary ? (
+        <p className="mt-1 text-foreground-muted">{dietary.text}</p>
       ) : null}
       {item.note ? (
         <p className="mt-1 text-foreground-muted">{item.note}</p>

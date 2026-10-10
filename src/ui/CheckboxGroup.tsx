@@ -13,14 +13,17 @@ import {
 import { fieldDescription } from "./field-description";
 
 type GroupProps = Omit<CheckboxGroupProps, "children"> & {
-  label: string;
+  // The group's visible label, or none when a heading names the group
+  // through aria-labelledby, as the dish page's Dietary tags heading does.
+  label?: string;
   description?: string;
   errorMessage?: string;
   children: ReactNode;
 };
 
 // A labelled group of checkboxes. Group semantics and the error wiring come
-// from React Aria.
+// from React Aria. A description here is read with every box in the group,
+// so a hint meant for the group alone is a lead before it, not this.
 export function CheckboxGroup({
   label,
   description,
@@ -34,7 +37,7 @@ export function CheckboxGroup({
       {...fieldDescription(description)}
       className="flex flex-col gap-2"
     >
-      <Label className="font-semibold">{label}</Label>
+      {label ? <Label className="font-semibold">{label}</Label> : null}
       {description ? (
         <Text slot="description" className="text-sm text-foreground-muted">
           {description}

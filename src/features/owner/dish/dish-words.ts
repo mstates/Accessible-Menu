@@ -1,4 +1,14 @@
 import { z } from "zod";
+import {
+  availabilityChangeSchema,
+  availabilityUndoLabel,
+  scheduleChangeSchema,
+  scheduleUndoLabel,
+  tagsChangeSchema,
+  tagsUndoLabel,
+  type BoxName,
+  type TagNames,
+} from "./schedule-words";
 import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
 import {
@@ -100,6 +110,11 @@ export const dishUndoSchema = z.discriminatedUnion("kind", [
   othersChangeSchema,
   checkChangeSchema,
   applyChangeSchema,
+  // The showing groups' own changes: the tags, availability, and the
+  // schedule (task 5, schedule-words.ts).
+  tagsChangeSchema,
+  availabilityChangeSchema,
+  scheduleChangeSchema,
 ]);
 
 export type DishUndo = z.infer<typeof dishUndoSchema>;
@@ -110,8 +125,37 @@ export type AllergenUndo = Extract<
   { kind: "allergen" | "others" | "check" | "apply" }
 >;
 
+// The entries the showing groups leave, which each takes back itself.
+export type ShowingUndo = Extract<
+  DishUndo,
+  { kind: "tags" | "availability" | "schedule" }
+>;
+
 // The entries whose Undo the page's texts and sizes take back.
-export type TextUndo = Exclude<DishUndo, AllergenUndo | { kind: "relocate" }>;
+export type TextUndo = Exclude<
+  DishUndo,
+  AllergenUndo | ShowingUndo | { kind: "relocate" }
+>;
+
+// The names an Undo label of the showing groups needs: a tag's visible
+// words, and a day, week, or month box's.
+export type ShowingNames = { tag: TagNames; box: BoxName };
+
+// The Undo control's whole name for a showing group's change.
+export function showingUndoLabel(
+  strings: DishStrings,
+  names: ShowingNames,
+  entry: ShowingUndo,
+): string {
+  switch (entry.kind) {
+    case "tags":
+      return tagsUndoLabel(strings.tags, names.tag, entry);
+    case "availability":
+      return availabilityUndoLabel(strings.availability, entry);
+    case "schedule":
+      return scheduleUndoLabel(strings.schedule, names.box, entry);
+  }
+}
 
 // The words the dish's own texts are committed, failed, and said in
 // (texts.ts): the page's rules and errors, with the dish as the placeholder
@@ -284,8 +328,12 @@ export function notRemovedSentence(
   );
 }
 
-// The Undo control's whole name, which is also its visible text.
-export function undoLabel(strings: DishStrings, entry: DishUndo): string {
+// The Undo control's whole name, which is also its visible text. The
+// showing groups' entries have their own (showingUndoLabel).
+export function undoLabel(
+  strings: DishStrings,
+  entry: Exclude<DishUndo, ShowingUndo>,
+): string {
   switch (entry.kind) {
     case "own":
       return fill(strings.undo[entry.field], { dish: entry.name });

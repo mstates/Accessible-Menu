@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import {
   FieldError,
   Label,
@@ -51,27 +51,58 @@ export function RadioGroup({
   );
 }
 
-type ItemProps = Omit<RadioProps, "children"> & { children: ReactNode };
+type ItemProps = Omit<RadioProps, "children"> & {
+  children: ReactNode;
+  // A hint shown under the radio's words and tied to it, like a sold-out
+  // choice's (D-160). It sits beside the label, not inside it, or its words
+  // would join the radio's name. The group's own description still reaches
+  // every radio through React Aria.
+  description?: string;
+};
 
 // One radio button. The chosen state is a dot drawn in currentColor inside
 // a round box with an edge, not a fill alone, so it survives forced colors,
-// the way the Checkbox's check mark does.
-export function Radio({ children, ...props }: ItemProps) {
+// the way the Checkbox's check mark does. React Aria's Radio has no
+// description slot, so a hint is tied by id to a span that is always on the
+// page while the radio is, joined with any ids the caller ties as well;
+// nothing here comes or goes, so the tie never points at a gone id (D-147).
+export function Radio({
+  children,
+  description,
+  "aria-describedby": describedByToo,
+  ...props
+}: ItemProps) {
+  const hintId = useId();
+  const describedBy =
+    [description ? hintId : null, describedByToo ?? null]
+      .filter((id) => id !== null)
+      .join(" ") || undefined;
   return (
-    <AriaRadio {...props} className="group flex items-start gap-3 py-1">
-      <span
-        aria-hidden="true"
-        className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border bg-background group-data-[focus-visible]:outline-3 group-data-[focus-visible]:outline-offset-2 group-data-[focus-visible]:outline-focus"
+    <>
+      <AriaRadio
+        {...props}
+        aria-describedby={describedBy}
+        className="group flex items-start gap-3 py-1"
       >
-        <svg
-          viewBox="0 0 24 24"
-          className="size-3 opacity-0 group-data-[selected]:opacity-100"
-          fill="currentColor"
+        <span
+          aria-hidden="true"
+          className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border bg-background group-data-[focus-visible]:outline-3 group-data-[focus-visible]:outline-offset-2 group-data-[focus-visible]:outline-focus"
         >
-          <circle cx="12" cy="12" r="12" />
-        </svg>
-      </span>
-      <span className="min-w-0">{children}</span>
-    </AriaRadio>
+          <svg
+            viewBox="0 0 24 24"
+            className="size-3 opacity-0 group-data-[selected]:opacity-100"
+            fill="currentColor"
+          >
+            <circle cx="12" cy="12" r="12" />
+          </svg>
+        </span>
+        <span className="min-w-0">{children}</span>
+      </AriaRadio>
+      {description ? (
+        <span id={hintId} className="-mt-1 pl-9 text-sm text-foreground-muted">
+          {description}
+        </span>
+      ) : null}
+    </>
   );
 }

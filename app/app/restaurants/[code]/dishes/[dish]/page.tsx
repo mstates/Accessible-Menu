@@ -18,6 +18,7 @@ import {
 } from "@/core/supabase/sections";
 import { listOwnerSizeNames, listOwnerSizes } from "@/core/supabase/sizes";
 import { rankOtherAllergenNames, sameAllergenLists } from "@/domain/allergens";
+import { availabilityAt } from "@/domain/availability";
 import { nextDish } from "@/domain/dish";
 import type { SameNamedPlace } from "@/features/owner/allergens/allergen-words";
 import { DishPage } from "@/features/owner/dish/DishPage";
@@ -168,6 +169,17 @@ export default async function RestaurantDishPage({ params }: Props) {
     ];
   });
 
+  // What the dish's availability is now (D-160), decided once here from
+  // the row, the restaurant's hours and zone, and this render's clock,
+  // which the page's time-dependent lines read too.
+  const now = new Date();
+  const showing = availabilityAt(
+    { available: dish.available, soldOutAt: dish.soldOutAt },
+    now,
+    restaurant.hours,
+    restaurant.timezone,
+  );
+
   return (
     <PageFrame
       siteName={en.site.name}
@@ -217,6 +229,10 @@ export default async function RestaurantDishPage({ params }: Props) {
           allergens: dish.allergens,
           otherAllergens: dish.otherAllergens,
           check: dish.check,
+          tags: dish.tags,
+          available: dish.available,
+          soldOutAt: dish.soldOutAt,
+          schedule: dish.schedule,
         }}
         section={{ id: section.id, name: section.name }}
         menu={menu}
@@ -229,6 +245,16 @@ export default async function RestaurantDishPage({ params }: Props) {
         sameNamed={sameNamed}
         timeZone={restaurant.timezone}
         lang={en.lang}
+        showing={{
+          state: showing.state,
+          until:
+            showing.state === "sold-out" ? showing.until.toISOString() : null,
+        }}
+        hours={restaurant.hours}
+        now={now.toISOString()}
+        dietaryCopy={en.dietary}
+        scheduleCopy={{ ...en.schedule, day: en.owner.restaurants.days }}
+        timeCopy={en.time}
       />
     </PageFrame>
   );
