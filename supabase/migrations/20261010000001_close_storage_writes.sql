@@ -1,0 +1,17 @@
+-- Migration 10. Storage writes closed (Phase 1, the small task after task
+-- 5, D-165). Migration one's policy "owners manage their restaurant files"
+-- let any signed-in owner write, overwrite, delete, and list files under
+-- their restaurant's folder in both buckets while nothing in the app uses
+-- either, so anyone who signs up could host images in the public
+-- menu-photos. Dish photos are parked (D-165), so the policy goes and
+-- nothing replaces it: storage.objects keeps row level security, this was
+-- the only policy on it, and with none left every insert, update, delete,
+-- and select on a row of either bucket by a signed-in owner or by anon is
+-- refused. Each bucket reopens with the task that uses it, under a policy
+-- that task designs (Phase 2's import for menu-sources). The buckets
+-- (D-73) and owns_object() stay, with their grants as migration one left
+-- them. Nothing else (D-85): no function, no trigger, no column, no grant,
+-- and no data to move, since nothing has ever written a file. A plain
+-- drop, so a database that does not hold the policy stops the migration
+-- and is looked at by hand first.
+drop policy "owners manage their restaurant files" on storage.objects;

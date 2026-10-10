@@ -1502,3 +1502,35 @@ describe("the schedule and availability migration (D-85, D-159, D-160, task 5)",
     expect(text).not.toMatch(/grant execute/);
   });
 });
+
+describe("the Storage writes migration (D-85, D-165, the small task after task 5)", () => {
+  const file = "20261010000001_close_storage_writes.sql";
+  const text = readFileSync(join(dir, file), "utf8");
+  // What the file does once its comment lines are gone.
+  const statements = text
+    .split("\n")
+    .filter((line) => line.trim() !== "" && !line.trimStart().startsWith("--"));
+
+  it("drops migration one's policy on storage.objects by name, with a plain drop, and nothing else", () => {
+    expect(statements).toEqual([
+      'drop policy "owners manage their restaurant files" on storage.objects;',
+    ]);
+  });
+
+  it("creates that policy once and drops it once across the migrations, so none is left on storage.objects", () => {
+    const created = [
+      ...sql.matchAll(/create policy "([^"]+)" on storage\.objects/g),
+    ].map((match) => match[1]);
+    const dropped = [
+      ...sql.matchAll(/drop policy "([^"]+)" on storage\.objects/g),
+    ].map((match) => match[1]);
+    expect(created).toEqual(["owners manage their restaurant files"]);
+    expect(dropped).toEqual(created);
+  });
+
+  it("keeps the buckets and owns_object()", () => {
+    expect(sql).toMatch(/insert into storage\.buckets/);
+    expect(sql).not.toMatch(/delete from storage\.buckets/);
+    expect(sql).not.toMatch(/drop function public\.owns_object/);
+  });
+});
