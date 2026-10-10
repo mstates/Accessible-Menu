@@ -25,6 +25,7 @@ declare
   uid uuid := current_setting('boundary.uid')::uuid;
   home uuid;
   held text;
+  touched integer;
 begin
   if not exists (select 1 from auth.users u where u.id = uid) then
     raise exception 'FAIL: put your auth.users id in boundary.uid';
@@ -72,6 +73,32 @@ begin
     raise exception 'FAIL: the editor''s role could not plant a file in storage.objects, so the checks below have nothing to stand on';
   end;
   raise notice 'ok: one file per bucket is planted under this user''s restaurant';
+
+  -- Supabase Storage guards SQL deletes of its own: its migration
+  -- 0055-prevent-direct-deletes adds storage.protect_delete() and the
+  -- trigger protect_objects_delete, before delete on storage.objects for
+  -- each statement, which raises 42501 unless storage.allow_delete_query
+  -- is 'true'. The delete checks below read 42501 as a refusal, so with
+  -- the guard in place they would pass whatever the policies say and could
+  -- never fail. The Storage API sets that same switch for its own deletes,
+  -- so row level security is what decides a real delete. The switch is set
+  -- for this transaction only, which rolls back, and proved by deleting
+  -- one scratch file as the editor's role: one row, or the switch did not
+  -- take.
+  perform set_config('storage.allow_delete_query', 'true', true);
+  insert into storage.objects (bucket_id, name)
+  values ('menu-sources', home || '/scratch.pdf');
+  begin
+    delete from storage.objects
+    where bucket_id = 'menu-sources' and name = home || '/scratch.pdf';
+    get diagnostics touched = row_count;
+  exception when insufficient_privilege then
+    raise exception 'FAIL: Supabase''s guard refused the editor''s own delete, so the switch did not take';
+  end;
+  if touched <> 1 then
+    raise exception 'FAIL: the editor''s own delete touched % rows, not one', touched;
+  end if;
+  raise notice 'ok: Supabase''s guard on SQL deletes is set aside for this transaction, as the Storage API does, so row level security decides the delete checks below';
 end;
 $$;
 
