@@ -21,9 +21,9 @@ import type { DishStrings, DishUndo } from "./dish-words";
 // group's target. Its ids start with "dish-", its sentences name the dish,
 // every write carries the lists the page showed and no words, since a
 // dish's check covers its lists alone (D-148), its Undo entries are the
-// page's own, and it alone has the same-named offer (D-129). The group
-// itself, its state and its handlers, is useAllergenGroup, which a
-// section's line shares (D-152).
+// page's own, and its same-named offer reaches dishes and options (D-129,
+// D-166). The group itself, its state and its handlers, is
+// useAllergenGroup, which an option shares (D-154).
 
 type Props = {
   strings: DishStrings;
@@ -73,15 +73,26 @@ export function useDishAllergens({
     sameNamed: {
       places: sameNamed,
       apply: (place, shown) =>
-        applyDishAllergens(code, dish.id, place.id, {
-          source: shown,
-          target: {
-            allergens: [...place.lists.allergens],
-            others: [...place.lists.others],
+        applyDishAllergens(
+          code,
+          dish.id,
+          { kind: place.kind, id: place.id },
+          {
+            source: shown,
+            target: {
+              allergens: [...place.lists.allergens],
+              others: [...place.lists.others],
+            },
           },
-        }),
+        ),
       undoApply: (entry) =>
-        undoDishAllergensApply(code, dish.id, entry.id, entry.before, entry.at),
+        undoDishAllergensApply(
+          code,
+          dish.id,
+          { kind: entry.target ?? "dish", id: entry.id },
+          entry.before,
+          entry.at,
+        ),
     },
   };
   return useAllergenGroup({

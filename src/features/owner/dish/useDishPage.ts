@@ -1,14 +1,8 @@
 "use client";
 
-import {
-  startTransition,
-  useLayoutEffect,
-  useMemo,
-  useOptimistic,
-  useRef,
-  useState,
-} from "react";
+import { startTransition, useMemo, useOptimistic, useState } from "react";
 import { useAnnounce } from "@/core/a11y/announcer";
+import type { OwnerChoiceList } from "@/domain/choices";
 import type { DietaryCopy } from "@/domain/dietary";
 import type { Hours } from "@/domain/hours";
 import type { ScheduleCopy } from "@/domain/schedule";
@@ -47,6 +41,7 @@ import {
   type UndoOutcome,
 } from "../editing/undo";
 import { useEditing } from "../editing/useEditing";
+import { useFocusNext } from "../editing/useFocusNext";
 import { useUndoStack } from "../editing/useUndoStack";
 import {
   addSize as addSizeAction,
@@ -58,6 +53,13 @@ import {
   setSizeText,
 } from "./actions";
 import type { SameNamedPlace } from "../allergens/allergen-words";
+import {
+  choiceListUndoLabel,
+  readListEntry,
+  wrapListEntry,
+  type ChoiceStrings,
+} from "../choices/choice-words";
+import { useChoiceListRows } from "../choices/useChoiceListRows";
 import {
   dishUndoSchema,
   dishWords,
@@ -81,17 +83,20 @@ import {
 import type { ShowingNow } from "./schedule-words";
 import { useDishAllergens } from "./useDishAllergens";
 import { useDishAvailability } from "./useDishAvailability";
+import { useDishCookedToOrder } from "./useDishCookedToOrder";
 import { useDishSchedule } from "./useDishSchedule";
 import { useDishTags } from "./useDishTags";
 
 // A dish's own page (D-111, D-128, D-139): the state and the handlers
 // behind its texts, its price choice, its sizes, its allergens (D-148,
 // useDishAllergens), its tags, its availability, and its schedule (task 5,
-// useDishTags, useDishAvailability, useDishSchedule), and its Undo. The page has texts and no list, so it
-// does not use the shared list; it composes the same editing state, the
-// same Undo stack, and the same text-commit path (texts.ts) the lists use,
-// and keeps one queue, one saved status, and one Undo for everything on
-// it. The price choice saves on change and says "Saved." once, as a field
+// useDishTags, useDishAvailability, useDishSchedule), its Cooked to order
+// mark and its choice lists (task 7, useDishCookedToOrder,
+// useChoiceListRows), and its Undo. The page's own texts take no list; it
+// composes the same editing state, the same Undo stack, and the same
+// text-commit path (texts.ts) the lists use, and its choice lists share
+// them (D-145), so it keeps one queue, one saved status, and one Undo for
+// everything on it. The price choice saves on change and says "Saved." once, as a field
 // does (D-118); the other choices' values stay stored and come back on
 // switching back (Michael, October 7, 2026). A size is added blank and
 // takes focus in its name once it lands; a remove takes effect at once,
@@ -100,9 +105,13 @@ import { useDishTags } from "./useDishTags";
 
 type Props = {
   strings: DishStrings;
+  choiceStrings: ChoiceStrings;
   editing: EditingStrings;
   code: string;
   dish: OwnerDishDetail;
+  // The dish's choice lists, in order, each with how many options it
+  // holds (D-166).
+  lists: OwnerChoiceList[];
   // The sizes as the server holds them, in price order. Every save ends
   // with a refresh, so this is always the truth.
   sizes: OwnerSize[];
@@ -145,9 +154,11 @@ type Order = {
 
 export function useDishPage({
   strings,
+  choiceStrings,
   editing: editingStrings,
   code,
   dish,
+  lists,
   sizes,
   sameNamed,
   sayOnceIn,
@@ -209,22 +220,7 @@ export function useDishPage({
 
   // Where focus belongs after the page next changes: the name of a size
   // just added, a neighbor's name after a remove, as the list hook does.
-  const focusNext = useRef<{ id: string; force: boolean } | null>(null);
-  useLayoutEffect(() => {
-    const wanted = focusNext.current;
-    if (!wanted) return;
-    const element = document.getElementById(wanted.id);
-    const active = document.activeElement;
-    if (wanted.force) {
-      if (!element) return;
-      focusNext.current = null;
-      if (active !== element) element.focus();
-      return;
-    }
-    if (active === element) return;
-    if (active === null || active === document.body) element?.focus();
-    else focusNext.current = null;
-  });
+  const focusNextRef = useFocusNext();
 
   // The allergen group shares the page's editing state, Undo, and focus.
   const allergens = useDishAllergens({
@@ -235,7 +231,7 @@ export function useDishPage({
     editor,
     words,
     announce,
-    focusNextRef: focusNext,
+    focusNextRef,
     sameNamed,
   });
 
@@ -276,6 +272,28 @@ export function useDishPage({
     now,
     scheduleCopy,
     timeCopy,
+  });
+  const cookedToOrder = useDishCookedToOrder({
+    strings,
+    editingStrings,
+    code,
+    dish,
+    editor,
+    words,
+  });
+
+  // The choice lists share the page's editing state and Undo (D-145,
+  // D-166): their entries sit on the page's stack, wrapped.
+  const choices = useChoiceListRows<DishUndo>({
+    strings: choiceStrings,
+    editingStrings,
+    code,
+    home: { kind: "dish", id: dish.id },
+    lists,
+    shared: {
+      editor: { editing, undo },
+      entries: { make: wrapListEntry, read: readListEntry },
+    },
   });
 
   function labelOf(size: OwnerSize, index: number): string {
@@ -391,7 +409,10 @@ export function useDishPage({
           return;
         }
         const { size, total } = result.value;
-        focusNext.current = { id: sizeFieldId(size.id, "name"), force: true };
+        focusNextRef.current = {
+          id: sizeFieldId(size.id, "name"),
+          force: true,
+        };
         editing.landed();
         undo.replace(
           pushUndo(undo.peek(), {
@@ -412,7 +433,7 @@ export function useDishPage({
     const label = labelOf(size, index);
     const ids = shownSizes.map((entry) => entry.id);
     const neighbor = shownSizes[index + 1] ?? shownSizes[index - 1];
-    focusNext.current = {
+    focusNextRef.current = {
       id: neighbor ? sizeFieldId(neighbor.id, "name") : ADD_SIZE_ID,
       force: true,
     };
@@ -424,7 +445,7 @@ export function useDishPage({
           removeSizeAction(code, dish.id, size.id, false),
         );
         if (!result.ok) {
-          focusNext.current = { id: sizeButtonId(size.id), force: true };
+          focusNextRef.current = { id: sizeButtonId(size.id), force: true };
           editing.failChange(
             notRemovedSentence(strings, words, label, result.problem),
           );
@@ -552,6 +573,21 @@ export function useDishPage({
         return availability.reverse(entry);
       case "schedule":
         return schedule.reverse(entry);
+      case "cooked-to-order":
+        return cookedToOrder.reverse(entry);
+      case "choice-list": {
+        const result = await choices.undoShared(entry);
+        if (!result) {
+          return {
+            ok: false,
+            outcome: "stale",
+            sentence: editingStrings.stale,
+          };
+        }
+        return result.outcome === "applied"
+          ? { ok: true, sentence: result.sentence }
+          : { ok: false, outcome: result.outcome, sentence: result.sentence };
+      }
     }
   }
 
@@ -595,6 +631,8 @@ export function useDishPage({
       if (tags.tryAgain(key, failures[key]?.value ?? "")) continue;
       if (availability.tryAgain(key, failures[key]?.value ?? "")) continue;
       if (schedule.tryAgain(key, failures[key]?.value ?? "")) continue;
+      if (cookedToOrder.tryAgain(key, failures[key]?.value ?? "")) continue;
+      if (choices.tryAgainKey(key, failures[key]?.value ?? "")) continue;
       if (key === KIND_KEY) {
         const failed = failures[key]?.value;
         if (failed === "one" || failed === "sizes" || failed === "market") {
@@ -628,7 +666,9 @@ export function useDishPage({
           { tag: dietaryCopy.names, box: schedule.boxName },
           newest,
         )
-      : undoLabel(strings, newest)
+      : newest.kind === "choice-list"
+        ? choiceListUndoLabel(choices.words, newest)
+        : undoLabel(strings, newest)
     : null;
 
   return {
@@ -655,6 +695,8 @@ export function useDishPage({
     tags,
     availability,
     schedule,
+    cookedToOrder,
+    choices,
     undoNewest,
     tryAgain,
     // A change the page made that is not a text's goes on the same Undo

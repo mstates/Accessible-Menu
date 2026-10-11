@@ -57,9 +57,11 @@ export const ownerStatePath = join(
 // the sections checks read, with how many sections and dishes, since its
 // delete question names both; which menu holds none; and, in the first,
 // which section holds the dishes the dishes checks read and which holds
-// none; and, in that section, one dish priced each way (D-139), for the
-// dish page checks. The setup finds them, fails closed when they are not
-// there, and writes them beside the session file. Ids, names, and counts
+// none; in that section, one dish priced each way (D-139), for the dish
+// page checks; and the two choice lists the choices checks read (D-166):
+// the one on that section and the one on its one-price dish, each with how
+// many options it holds. The setup finds them, fails closed when they are
+// not there, and writes them beside the session file. Ids, names, and counts
 // only, no secret. A menu's page, a section's page, and a dish's page are
 // named by an id, so their paths are known when a test runs, never when
 // the test files are loaded.
@@ -86,6 +88,14 @@ const fixtureSchema = z.object({
     sizes: z.object({ id: z.string(), name: z.string() }),
     one: z.object({ id: z.string(), name: z.string() }),
     market: z.object({ id: z.string(), name: z.string() }),
+  }),
+  lists: z.object({
+    section: z.object({
+      id: z.string(),
+      lead: z.string(),
+      options: z.number(),
+    }),
+    dish: z.object({ id: z.string(), lead: z.string(), options: z.number() }),
   }),
 });
 

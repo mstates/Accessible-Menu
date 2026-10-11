@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useLayoutEffect, useRef } from "react";
+import { Fragment } from "react";
 import { handToBox } from "../editing/hand-to-box";
 import {
   US_MAJOR_ALLERGENS,
@@ -27,10 +27,12 @@ type Props = {
   // The diner-facing words, for the sentence diners will read.
   allergenCopy: AllergenCopy;
   group: AllergenGroupView;
-  // The group's heading, and the lead under it: a dish's name the dish, a
-  // line's quote the line's words (D-152).
+  // The group's heading, and the lead under it: a dish's name the dish, an
+  // option's name the option (D-166).
   heading: string;
   lead: string;
+  // The heading's level: 2 on a dish's page, 3 under an option's own h2.
+  headingLevel?: 2 | 3;
   // The other allergens the restaurant's dishes and lines already name
   // first, then the starter list, each once.
   suggestions: readonly string[];
@@ -39,14 +41,14 @@ type Props = {
   lang: string;
 };
 
-// The allergen group (D-128, D-148, D-152), under its own heading: the nine
+// The allergen group (D-128, D-148, D-166), under its own heading: the nine
 // major allergens as boxes, each with a hint under its words; the other
 // allergens as rows named by their place, each a field that suggests names
 // and a Remove button; one box that checks the list; under it, always, the
 // sentence diners will read, from the one builder (D-35, module rule 8),
 // with the words in bold as the diner page draws them, and who checked it
-// and when; and, while a dish is checked, a line and a button for each
-// same-named dish elsewhere in the restaurant (D-129). The check box is
+// and when; and, while the subject is checked, a line and a button for each
+// same-named dish or option elsewhere in the restaurant (D-129). The check box is
 // described by its hint, by that sentence, which is always on the page, so
 // nothing ever points at a gone id (D-147), and by its error while one
 // stands. Everything saves through the page's one queue, status, and Undo
@@ -57,6 +59,7 @@ export function AllergenGroup({
   group,
   heading,
   lead,
+  headingLevel = 2,
   suggestions,
   timeZone,
   lang,
@@ -65,31 +68,13 @@ export function AllergenGroup({
   const sentence = dinerSentence(allergenCopy, group.lists, group.check.shown);
   const stamp = stampLine(strings, group.check.stamp, timeZone, lang);
   const shownMajors = new Set<string>(group.allergens.shown);
-
-  // The group leaving the page with focus inside it (a line cleared, here or
-  // from another tab) hands focus to the page's fallback. The cleanup runs
-  // as the group unmounts, before its nodes go, so the active element is
-  // still inside; it reads the latest leaving through a ref, so it runs at
-  // unmount alone.
-  const container = useRef<HTMLDivElement>(null);
-  const leaving = useRef(group.leaving);
-  useLayoutEffect(() => {
-    leaving.current = group.leaving;
-  });
-  useLayoutEffect(
-    () => () => {
-      if (container.current?.contains(document.activeElement)) {
-        leaving.current();
-      }
-    },
-    [],
-  );
+  const Heading = headingLevel === 2 ? "h2" : "h3";
 
   return (
-    <div ref={container} className="mt-8 flex flex-col gap-6">
-      <h2 id={ids.heading} className="text-xl font-bold">
+    <div className="mt-8 flex flex-col gap-6">
+      <Heading id={ids.heading} className="text-xl font-bold">
         {heading}
-      </h2>
+      </Heading>
 
       {/* The lead for the whole group, as a plain paragraph: tied to the
           group, React Aria would read it with every box as well. */}

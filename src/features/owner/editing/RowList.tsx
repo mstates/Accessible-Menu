@@ -9,7 +9,7 @@ import { TextField } from "@/ui/TextField";
 import { AutosaveTextField } from "./AutosaveTextField";
 import { fieldSuffix, rowAction } from "./list-words";
 import { SavedStatus } from "./SavedStatus";
-import type { ListRow, RowListState } from "./useRowList";
+import type { ListRow, RowListState, SharedRowListState } from "./useRowList";
 
 type Props<
   Row extends ListRow,
@@ -17,17 +17,36 @@ type Props<
   Other extends { kind: string },
   OwnField extends string,
 > = {
-  list: RowListState<Row, Field, Other, OwnField>;
+  list:
+    | RowListState<Row, Field, Other, OwnField>
+    | SharedRowListState<Row, Field, Other, OwnField>;
   // A lead for the rows, between the status and the list. A page whose
   // own texts come first puts what it says about its rows here, right above
   // them.
   intro?: string;
   // What the screen adds right after its own texts, before the status: a
-  // section's page puts its line's allergen group here (D-152).
+  // section's page puts its choice lists here (D-166).
   afterOwn?: ReactNode;
   // What the screen adds after the add form: a section's page puts the
   // section's move here, under the same status and the same Undo.
   children?: ReactNode;
+  // Whether the page's own texts are drawn here as text fields. A page that
+  // draws one of them itself, a choice list's lead as a combo box, says
+  // false and draws them before the list (D-166).
+  drawOwn?: boolean;
+  // Whether the saved status and Undo are drawn here. A list that shares
+  // its page's editor says false: the page draws its one status (D-111).
+  status?: boolean;
+  // The level of each row's heading: 2 on a list page, 3 under a heading
+  // of the page's own, as the choice lists sit under "Choice lists".
+  rowHeading?: 2 | 3;
+  // What each saved row adds after its buttons: an option's allergen group
+  // (D-166).
+  afterRow?: (row: Row) => ReactNode;
+  // The id of the heading that names the rows, for a list that sits under
+  // a heading of the page's own: the rows are then an ordered list named
+  // by it, apart from the page's own rows.
+  labelledBy?: string;
 };
 
 // One editing list on the page (D-128): the page's own texts when it has
@@ -46,13 +65,25 @@ export function RowList<
   Field extends string,
   Other extends { kind: string } = never,
   OwnField extends string = never,
->({ list, intro, afterOwn, children }: Props<Row, Field, Other, OwnField>) {
+>({
+  list,
+  intro,
+  afterOwn,
+  children,
+  drawOwn = true,
+  status = true,
+  rowHeading = 2,
+  afterRow,
+  labelledBy,
+}: Props<Row, Field, Other, OwnField>) {
   const { words, fields, link, editing, shown, unsaved, own } = list;
   const { strings, editing: editingWords } = words;
+  const RowHeading = rowHeading === 2 ? "h2" : "h3";
+  const Rows = labelledBy ? "ol" : "ul";
 
   return (
     <>
-      {own ? (
+      {own && drawOwn ? (
         // The page is the record these texts belong to, so their labels do
         // not name it.
         <div className="mt-6 flex flex-col gap-4">
@@ -73,27 +104,29 @@ export function RowList<
 
       {afterOwn}
 
-      <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
-        <SavedStatus
-          strings={editingWords}
-          status={editing.status}
-          notice={editing.notice}
-          canRetry={Object.keys(editing.failures).length > 0}
-          outOfDate={editing.outOfDate}
-          onRetry={list.tryAgain}
-        />
-        <Button
-          aria-disabled={list.undoText ? undefined : true}
-          onPress={list.undoNewest}
-        >
-          {list.undoText ?? editingWords.undo}
-        </Button>
-      </div>
+      {status ? (
+        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
+          <SavedStatus
+            strings={editingWords}
+            status={editing.status}
+            notice={editing.notice}
+            canRetry={Object.keys(editing.failures).length > 0}
+            outOfDate={editing.outOfDate}
+            onRetry={list.tryAgain}
+          />
+          <Button
+            aria-disabled={list.undoText ? undefined : true}
+            onPress={list.undoNewest}
+          >
+            {list.undoText ?? editingWords.undo}
+          </Button>
+        </div>
+      ) : null}
 
       {intro ? <p className="mt-6 text-foreground-muted">{intro}</p> : null}
 
       {shown.length + unsaved.length > 0 ? (
-        <ul className="mt-6 flex flex-col gap-4">
+        <Rows aria-labelledby={labelledBy} className="mt-6 flex flex-col gap-4">
           {shown.map((row, index) => {
             // Every field and button names its row. A field's label is
             // followed by the row in hidden text; a button's name, and the
@@ -108,7 +141,9 @@ export function RowList<
                 key={row.id}
                 className="flex flex-col gap-3 rounded border border-border p-4"
               >
-                <h2 className="text-xl font-bold">{row.name}</h2>
+                <RowHeading className="text-xl font-bold">
+                  {row.name}
+                </RowHeading>
                 {fields.map((field) => {
                   const spec = words.fields[field];
                   return (
@@ -119,6 +154,8 @@ export function RowList<
                       labelSuffix={fieldSuffix(words, field, row.name)}
                       description={spec.hint}
                       multiline={spec.multiline}
+                      inputMode={spec.inputMode}
+                      prefix={spec.prefix}
                     />
                   );
                 })}
@@ -158,6 +195,7 @@ export function RowList<
                     {strings.remove}
                   </Button>
                 </div>
+                {afterRow?.(row)}
               </li>
             );
           })}
@@ -197,7 +235,7 @@ export function RowList<
               </li>
             );
           })}
-        </ul>
+        </Rows>
       ) : (
         <p className="mt-6">{strings.none}</p>
       )}
@@ -213,6 +251,7 @@ export function RowList<
         <TextField
           id={list.addFieldId}
           label={strings.newLabel}
+          description={strings.newHint}
           autoComplete="off"
           value={list.newName}
           onChange={list.typeNewName}

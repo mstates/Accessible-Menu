@@ -5,22 +5,28 @@ import { z } from "zod";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
 import {
+  listOwnerChoiceLists,
+  listOwnerOptionOtherAllergenNames,
+  listOwnerSameNamedOptions,
+} from "@/core/supabase/choices";
+import {
   findOwnerDish,
   listOwnerDishes,
+  listOwnerDishNames,
   listOwnerOtherAllergenNames,
   listOwnerSameNamedDishes,
 } from "@/core/supabase/dishes";
 import { findOwnerMenu, listOwnerMenuNames } from "@/core/supabase/menus";
 import {
   findOwnerSection,
-  listOwnerLineOtherAllergenNames,
   listOwnerSectionNames,
 } from "@/core/supabase/sections";
 import { listOwnerSizeNames, listOwnerSizes } from "@/core/supabase/sizes";
-import { rankOtherAllergenNames, sameAllergenLists } from "@/domain/allergens";
+import { rankOtherAllergenNames } from "@/domain/allergens";
 import { availabilityAt } from "@/domain/availability";
 import { nextDish } from "@/domain/dish";
-import type { SameNamedPlace } from "@/features/owner/allergens/allergen-words";
+import { dishPlaces, optionPlaces } from "@/features/owner/allergens/places";
+import { placeIn } from "@/features/owner/choices/choice-words";
 import { DishPage } from "@/features/owner/dish/DishPage";
 import { loadRestaurant } from "@/features/owner/load-restaurant";
 import {
@@ -88,16 +94,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 // One dish's own page (D-128): its description, its price (D-139), and its
-// note, its sizes, its allergens and their check (D-148), the link to the
-// next dish, and its move to another section (D-129). The page is named for
-// the dish, in the title and in the h1, and the title names its section and
-// its menu right after it. Menus stays marked in the restaurant's nav as
-// the part this page sits inside, and the breadcrumb above the h1 leads
-// back to the section, the menu, and Menus. The sizes, the section's
-// dishes, the restaurant's menus and sections, the size names in use, the
-// other allergens in use on dishes and on lines (D-152), and the
-// same-named dishes are read on every render, and every save ends with a
-// refresh, so what the page shows is what the server holds.
+// note, its sizes, its allergens and their check (D-148), its calories and
+// its Cooked to order mark (D-167), its choice lists (D-166), the link to
+// the next dish, and its move to another section (D-129). The page is
+// named for the dish, in the title and in the h1, and the title names its
+// section and its menu right after it. Menus stays marked in the
+// restaurant's nav as the part this page sits inside, and the breadcrumb
+// above the h1 leads back to the section, the menu, and Menus. The sizes,
+// the choice lists, the section's dishes, the restaurant's menus and
+// sections, the size names in use, the other allergens in use on dishes
+// and on options, and the same-named dishes and options are read on every
+// render, and every save ends with a refresh, so what the page shows is
+// what the server holds.
 export default async function RestaurantDishPage({ params }: Props) {
   const { code, dish: dishId } = await params;
   const { supabase, email, restaurant, dish, section, menu } = await loadDish(
@@ -108,28 +116,32 @@ export default async function RestaurantDishPage({ params }: Props) {
   if (!restaurant || !dish || !section || !menu) notFound();
   const [
     sizes,
+    lists,
     dishes,
     menus,
     sections,
     sizeNames,
     dishOtherNames,
-    lineOtherNames,
+    optionOtherNames,
     namesakes,
+    sameOptions,
   ] = await Promise.all([
     listOwnerSizes(supabase, dish.id),
+    listOwnerChoiceLists(supabase, { kind: "dish", id: dish.id }),
     listOwnerDishes(supabase, section.id),
     listOwnerMenuNames(supabase, restaurant.id),
     listOwnerSectionNames(supabase, restaurant.id),
     listOwnerSizeNames(supabase, restaurant.id),
     listOwnerOtherAllergenNames(supabase, restaurant.id),
-    listOwnerLineOtherAllergenNames(supabase, restaurant.id),
+    listOwnerOptionOtherAllergenNames(supabase, restaurant.id),
     listOwnerSameNamedDishes(supabase, restaurant.id, dish.id, dish.name),
+    listOwnerSameNamedOptions(supabase, restaurant.id, dish.name, null),
   ]);
-  // The restaurant's own other allergens, on dishes and on lines, most used
-  // first (D-149, D-152).
+  // The restaurant's own other allergens, on dishes and on options, most
+  // used first (D-149, D-166).
   const otherNames = rankOtherAllergenNames([
     ...dishOtherNames,
-    ...lineOtherNames,
+    ...optionOtherNames,
   ]);
   // Every other live section of a live menu, under its menu (D-129).
   const targets: SelectGroup[] = menus
@@ -141,33 +153,30 @@ export default async function RestaurantDishPage({ params }: Props) {
         .map((entry) => ({ id: entry.id, label: entry.name })),
     }))
     .filter((group) => group.items.length > 0);
-  // The same-named dishes the allergen check names (D-129): live dishes, in
-  // live sections of live menus, whose lists differ from this dish's as a
-  // diner reads them, or which are not checked. Where each one is comes
-  // from the same reads the move targets use.
+  // The same-named dishes and options the allergen check names (D-129,
+  // D-166): live ones, in live sections of live menus, whose lists differ
+  // from this dish's as a diner reads them, or which are not checked. Where
+  // each one is comes from the same reads the move targets use, and from
+  // the dishes the options' lists hang under.
   const ownLists = { allergens: dish.allergens, others: dish.otherAllergens };
-  const sameNamed: SameNamedPlace[] = namesakes.flatMap((other) => {
-    const inSection = sections.find((entry) => entry.id === other.sectionId);
-    const inMenu = inSection
-      ? menus.find((entry) => entry.id === inSection.menuId)
-      : undefined;
-    if (!inSection || !inMenu) return [];
-    const lists = { allergens: other.allergens, others: other.otherAllergens };
-    if (other.reviewed && sameAllergenLists(lists, ownLists)) return [];
-    return [
-      {
-        id: other.id,
-        name: other.name,
-        section: inSection.name,
-        menu: inMenu.name,
-        lists,
-        reviewed: other.reviewed,
-        reason: other.reviewed
-          ? ("different" as const)
-          : ("unchecked" as const),
-      },
-    ];
-  });
+  const homeDishes = await listOwnerDishNames(
+    supabase,
+    restaurant.id,
+    sameOptions
+      .filter((other) => other.home.kind === "dish")
+      .map((other) => other.home.id),
+  );
+  const context = {
+    sections,
+    menus,
+    dishes: homeDishes,
+    placeIn: (lead: string, home: string) =>
+      placeIn(en.owner.choices, lead, home),
+  };
+  const sameNamed = [
+    ...dishPlaces(namesakes, ownLists, context),
+    ...optionPlaces(sameOptions, ownLists, context),
+  ];
 
   // What the dish's availability is now (D-160), decided once here from
   // the row, the restaurant's hours and zone, and this render's clock,
@@ -217,6 +226,7 @@ export default async function RestaurantDishPage({ params }: Props) {
       <p className="mt-6 text-foreground-muted">{strings.lead}</p>
       <DishPage
         strings={strings}
+        choiceStrings={en.owner.choices}
         editing={en.owner.editing}
         code={restaurant.code}
         dish={{
@@ -226,6 +236,8 @@ export default async function RestaurantDishPage({ params }: Props) {
           note: dish.note,
           priceKind: dish.priceKind,
           price: dish.price,
+          calories: dish.calories,
+          cookedToOrder: dish.cookedToOrder,
           allergens: dish.allergens,
           otherAllergens: dish.otherAllergens,
           check: dish.check,
@@ -237,6 +249,7 @@ export default async function RestaurantDishPage({ params }: Props) {
         section={{ id: section.id, name: section.name }}
         menu={menu}
         sizes={sizes}
+        lists={lists}
         sizeNames={sizeNames}
         next={nextDish(dishes, dish.id)}
         targets={targets}

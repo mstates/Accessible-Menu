@@ -1,15 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { findOwnerChoiceList } from "@/core/supabase/choices";
 import { findOwnerDish } from "@/core/supabase/dishes";
 import { findOwnerMenu } from "@/core/supabase/menus";
 import { findOwnerRestaurantId } from "@/core/supabase/restaurants";
 import { findOwnerSection } from "@/core/supabase/sections";
 import { createSupabaseServerClient } from "@/core/supabase/server";
+import type { ChoiceHome } from "@/domain/choices";
 import { isMenuCode, normalizeMenuCode } from "@/domain/menu-url";
 
 // The session and ownership check every editing save starts with (D-111),
-// for the menus list, for a menu's sections, for a section's dishes, and
-// for a dish's own page. A
+// for the menus list, for a menu's sections, for a section's dishes, for a
+// dish's own page, and for a choice list's own page (D-166). A
 // failed save must never leave the page, so nothing here redirects: a
 // missing session comes back as a result and the typed text stays on
 // screen. The code and the ids are user input: they are checked here, and
@@ -189,4 +191,44 @@ export async function dishScope(
     sectionId: section.id,
     menuId: menu.id,
   };
+}
+
+export type ListScope =
+  | {
+      ok: true;
+      client: SupabaseClient;
+      restaurantId: string;
+      userId: string;
+      listId: string;
+      // The dish or the section the list belongs to, which is not in the
+      // page's address, and must itself be live in a live menu.
+      home: ChoiceHome;
+    }
+  | Refused;
+
+// The owner's session and restaurant, then the choice list: one of this
+// restaurant's, not deleted, under a dish or a section that is live in a
+// live menu (D-166). A tab left open on a list whose home has gone saves
+// nothing more.
+export async function listScope(
+  rawCode: string,
+  rawList: string,
+): Promise<ListScope> {
+  const scope = await ownerScope(rawCode);
+  if (!scope.ok) return scope;
+  const listId = idSchema.safeParse(rawList);
+  if (!listId.success) return refuse("parent-gone");
+  const list = await findOwnerChoiceList(
+    scope.client,
+    scope.restaurantId,
+    listId.data,
+  );
+  if (list === "failed") return refuse("failed");
+  if (list === "not-found") return refuse("parent-gone");
+  const home =
+    list.home.kind === "dish"
+      ? await dishScope(rawCode, list.home.id)
+      : await sectionScope(rawCode, list.home.id);
+  if (!home.ok) return home;
+  return { ...scope, listId: list.id, home: list.home };
 }

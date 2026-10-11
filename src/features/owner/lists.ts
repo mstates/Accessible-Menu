@@ -72,18 +72,18 @@ export const sectionList: ListKind<"name", Copy["owner"]["sections"]> = {
 // The texts of a section besides its name.
 export const SECTION_OWN_TEXTS = [
   "note",
-  "everyItem",
 ] as const satisfies readonly SectionText[];
 export type SectionOwnText = (typeof SECTION_OWN_TEXTS)[number];
 
-// A section's own texts, at the top of its own page, above its dishes
+// A section's own text, at the top of its own page, above its dishes
 // (D-120, D-135): the note, which takes several lines and saves only when
-// it is left, and the line shown with every dish. The page is the section,
-// so a label does not name it, while every sentence the log says still
-// does, since a sentence is heard on its own. The sentences, the rules, and
-// their messages are the section's, from its slice of copy; the labels and
-// hints are the page's. A section that is gone, or whose menu is, is the
-// page's own parent gone, so it is said in the page's words.
+// it is left. What a section offered with every dish is a choice list now
+// (D-166). The page is the section, so a label does not name it, while
+// every sentence the log says still does, since a sentence is heard on its
+// own. The sentences, the rules, and their messages are the section's,
+// from its slice of copy; the labels and hints are the page's. A section
+// that is gone, or whose menu is, is the page's own parent gone, so it is
+// said in the page's words.
 export const sectionTexts = {
   fields: SECTION_OWN_TEXTS,
   clean: cleanSectionText,
@@ -109,14 +109,6 @@ export const sectionTexts = {
         notSaved: sections.notSaved.note,
         changed: sections.undo.note,
         back: sections.undo.noteBack,
-      },
-      everyItem: {
-        label: dishes.section.everyItemLabel,
-        suffix: "",
-        hint: dishes.section.everyItemHint,
-        notSaved: sections.notSaved.everyItem,
-        changed: sections.undo.everyItem,
-        back: sections.undo.everyItemBack,
       },
     },
   }),

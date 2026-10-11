@@ -19,8 +19,8 @@ type Props = {
   // What one of several fields with the same visible label belongs to:
   // "for Cup". The field is named whole, "Size for Cup", on the field
   // itself, and keeps that name while it has focus (D-140), as TextField
-  // does.
-  labelSuffix: string;
+  // does. A field alone on its page, a choice list's lead, has none.
+  labelSuffix?: string;
   // The whole name of the button that opens the list, named the same way.
   buttonLabel: string;
   description?: string;
@@ -63,7 +63,7 @@ export function ComboBox({
   onChange,
   onCommit,
 }: Props) {
-  const name = `${label} ${labelSuffix}`;
+  const name = labelSuffix ? `${label} ${labelSuffix}` : label;
   const [held, setHeld] = useState<string | null>(null);
   const items = suggestions.map((text) => ({ id: text }));
   return (

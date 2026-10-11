@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { AllergenLists } from "@/domain/allergens";
+import { caloriesInputText, type Calories } from "@/domain/calories";
 import {
   PRICE_KINDS,
   type OwnerDish,
@@ -25,9 +26,10 @@ import { shaped } from "./log";
 // place the row shape is known. Features see OwnerDish on a section's page
 // and OwnerDishDetail on the dish's own page. A delete marks the row and
 // keeps it, so Undo can bring it back; reads leave marked rows out. Owners
-// write name, description, the price choice, price_cents, note, the two
-// allergen lists, the allergen check, the dietary tags, available with the
-// sold-out mark, the schedule, sort, and deleted_at and nothing else:
+// write name, description, the price choice, price_cents, the two calorie
+// columns, the Cooked to order mark (D-167), note, the two allergen lists,
+// the allergen check, the dietary tags, available with the sold-out mark,
+// the schedule, sort, and deleted_at and nothing else:
 // nothing about photos yet, and never who checked a list or when, which the
 // database stamps (D-148). A move to another section goes through
 // move_item(), since section_id is not a column owners write (migration 6).
@@ -50,9 +52,9 @@ function toDish(row: z.infer<typeof rowSchema>): OwnerDish {
 // The dish as its own page reads it (D-128), with the section it is in,
 // its two allergen lists, and its check: the flag, who, and when (D-148),
 // its tags, its availability with the mark, and its schedule (D-159,
-// D-160).
+// D-160), its calories and its Cooked to order mark (D-167).
 const detailColumns =
-  "id, name, description, price_kind, price_cents, note, allergens, custom_allergens, allergens_reviewed, allergens_reviewed_by, allergens_reviewed_at, dietary_tags, available, sold_out_at, special_schedule, sort, section_id";
+  "id, name, description, price_kind, price_cents, calories_low, calories_high, cooked_to_order, note, allergens, custom_allergens, allergens_reviewed, allergens_reviewed_by, allergens_reviewed_at, dietary_tags, available, sold_out_at, special_schedule, sort, section_id";
 
 const detailSchema = z.object({
   id: z.string(),
@@ -60,6 +62,9 @@ const detailSchema = z.object({
   description: z.string().nullable(),
   price_kind: z.enum(PRICE_KINDS),
   price_cents: z.number().nullable(),
+  calories_low: z.number().nullable(),
+  calories_high: z.number().nullable(),
+  cooked_to_order: z.boolean(),
   note: z.string().nullable(),
   allergens: z.array(z.enum(ALLERGEN_IDS)),
   custom_allergens: z.array(z.string()),
@@ -90,6 +95,8 @@ function toDetail(
     note: row.note ?? "",
     priceKind: row.price_kind,
     price: priceInputText(row.price_cents),
+    calories: caloriesInputText(row.calories_low, row.calories_high),
+    cookedToOrder: row.cooked_to_order,
     allergens: row.allergens,
     otherAllergens: row.custom_allergens,
     check:
@@ -322,18 +329,36 @@ async function writeDish(
   value: string | number | null,
   expected: string | number | null | undefined,
 ): Promise<DishWriteResult<OwnerDishDetail>> {
+  return writeDishColumns(
+    client,
+    sectionId,
+    id,
+    { [column]: value },
+    expected === undefined ? {} : { [column]: expected },
+  );
+}
+
+// The same, for a write of more than one column at once, each with what it
+// must still hold: a pair of calories (D-167).
+async function writeDishColumns(
+  client: SupabaseClient,
+  sectionId: string,
+  id: string,
+  values: Record<string, unknown>,
+  expected: Record<string, string | number | boolean | null>,
+): Promise<DishWriteResult<OwnerDishDetail>> {
   let update = client
     .from("items")
-    .update({ [column]: value })
+    .update(values)
     .eq("id", id)
     .eq("section_id", sectionId)
     .is("deleted_at", null);
-  if (expected !== undefined) {
+  for (const [column, value] of Object.entries(expected)) {
     update =
-      expected === null ? update.is(column, null) : update.eq(column, expected);
+      value === null ? update.is(column, null) : update.eq(column, value);
   }
   const { data, error } = await update.select(detailColumns).maybeSingle();
-  if (error) return refused(error.code);
+  if (error) return refused(error.code, error.message);
   if (!data) return notFound;
   const row = shaped(detailSchema, data, "items");
   return row ? { ok: true, value: toDetail(row, null) } : failed;
@@ -569,10 +594,43 @@ export async function listOwnerSameNamedDishes(
     }));
 }
 
+// The live dishes among the given ids, by name and section: where a choice
+// list under a dish is, for the same-named offer's place words (D-166). A
+// read that fails throws.
+export type NamedDish = { id: string; name: string; sectionId: string };
+
+const namedSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  section_id: z.string(),
+});
+
+export async function listOwnerDishNames(
+  client: SupabaseClient,
+  restaurantId: string,
+  ids: readonly string[],
+): Promise<NamedDish[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await client
+    .from("items")
+    .select("id, name, section_id")
+    .eq("restaurant_id", restaurantId)
+    .is("deleted_at", null)
+    .in("id", [...ids]);
+  if (error) throw new Error("dishes could not be read");
+  const rows = shaped(z.array(namedSchema), data, "items");
+  if (!rows) throw new Error("dishes could not be read");
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    sectionId: row.section_id,
+  }));
+}
+
 // The other allergens the restaurant's live dishes already name, as stored,
-// repeats included; the domain ranks them with the lines' names, most used
-// first and then by name, for the other-allergen field to suggest before
-// the starter list (D-148, D-152), the way size names are suggested
+// repeats included; the domain ranks them with the options' names, most
+// used first and then by name, for the other-allergen field to suggest
+// before the starter list (D-148, D-166), the way size names are suggested
 // (D-139). A read that fails throws.
 export async function listOwnerOtherAllergenNames(
   client: SupabaseClient,
@@ -614,6 +672,51 @@ export function setOwnerDishPrice(
   expected?: number | null,
 ): Promise<DishWriteResult<OwnerDishDetail>> {
   return writeDish(client, sectionId, id, "price_cents", cents, expected);
+}
+
+// The two calorie columns a pair of calories lives in (D-167): the low
+// number, and the high one or null for a single number.
+function calorieColumns(calories: Calories | null) {
+  return {
+    calories_low: calories?.low ?? null,
+    calories_high: calories?.high ?? null,
+  };
+}
+
+// A dish's calories, both columns in one statement, or none (D-167). With
+// expected, the write happens only while the dish still holds that pair.
+export function setOwnerDishCalories(
+  client: SupabaseClient,
+  sectionId: string,
+  id: string,
+  calories: Calories | null,
+  expected?: Calories | null,
+): Promise<DishWriteResult<OwnerDishDetail>> {
+  return writeDishColumns(
+    client,
+    sectionId,
+    id,
+    calorieColumns(calories),
+    expected === undefined ? {} : calorieColumns(expected),
+  );
+}
+
+// The Cooked to order mark (D-167). With expected, the write is an Undo:
+// it lands only while the mark is still the one the change left.
+export function setOwnerDishCookedToOrder(
+  client: SupabaseClient,
+  sectionId: string,
+  id: string,
+  on: boolean,
+  expected?: boolean,
+): Promise<DishWriteResult<OwnerDishDetail>> {
+  return writeDishColumns(
+    client,
+    sectionId,
+    id,
+    { cooked_to_order: on },
+    expected === undefined ? {} : { cooked_to_order: expected },
+  );
 }
 
 // How a dish is priced (D-139). The other choices' values stay stored and

@@ -146,10 +146,23 @@ describe("the list in a given order", () => {
 describe("a delete that takes content with it (D-119)", () => {
   it("asks first when the row holds anything, and not when it is empty", () => {
     expect(deleteAsksFirst(HOLDS_NOTHING)).toBe(false);
-    expect(deleteAsksFirst({ sections: 0, dishes: 0 })).toBe(false);
-    expect(deleteAsksFirst({ sections: 1, dishes: 0 }), "a menu").toBe(true);
-    expect(deleteAsksFirst({ sections: 4, dishes: 12 }), "a menu").toBe(true);
-    expect(deleteAsksFirst({ sections: 0, dishes: 1 }), "a section").toBe(true);
+    expect(deleteAsksFirst({ sections: 0, dishes: 0, options: 0 })).toBe(false);
+    expect(
+      deleteAsksFirst({ sections: 1, dishes: 0, options: 0 }),
+      "a menu",
+    ).toBe(true);
+    expect(
+      deleteAsksFirst({ sections: 4, dishes: 12, options: 0 }),
+      "a menu",
+    ).toBe(true);
+    expect(
+      deleteAsksFirst({ sections: 0, dishes: 1, options: 0 }),
+      "a section",
+    ).toBe(true);
+    expect(
+      deleteAsksFirst({ sections: 0, dishes: 0, options: 2 }),
+      "a choice list (D-166)",
+    ).toBe(true);
   });
 
   it("keeps the counts on a listed menu through a reorder", () => {

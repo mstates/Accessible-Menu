@@ -28,6 +28,7 @@ import {
   othersChangeSchema,
   type UndoLists,
 } from "../allergens/group-undo";
+import { choiceListEntrySchema } from "../choices/choice-words";
 import {
   failureSentence,
   problemText,
@@ -55,8 +56,9 @@ export type { UndoLists };
 // One change the owner can take back on a dish's page: a text of the dish,
 // its price choice, a text of a size, a size added or removed, the dish
 // moved to another section, a major allergen ticked or unticked, the other
-// allergens changed, the list checked or unchecked, and this dish's lists
-// applied to a same-named dish (D-129). A changed text remembers both texts
+// allergens changed, the list checked or unchecked, this dish's lists
+// applied to a same-named dish or option (D-129), the Cooked to order mark
+// (D-167), and a change among its choice lists (D-166). A changed text remembers both texts
 // and is taken back only while the field still holds the one that change
 // wrote. A removed size remembers the order the page showed, so Undo puts
 // it back in its place. A move remembers the section the dish came from and
@@ -115,9 +117,20 @@ export const dishUndoSchema = z.discriminatedUnion("kind", [
   tagsChangeSchema,
   availabilityChangeSchema,
   scheduleChangeSchema,
+  // The Cooked to order mark (task 7, D-167): on or off.
+  z.object({
+    kind: z.literal("cooked-to-order"),
+    id: z.string(),
+    name: z.string(),
+    on: z.boolean(),
+  }),
+  // The choice lists' own entries, wrapped (D-166).
+  choiceListEntrySchema,
 ]);
 
 export type DishUndo = z.infer<typeof dishUndoSchema>;
+
+export type CookedToOrderUndo = Extract<DishUndo, { kind: "cooked-to-order" }>;
 
 // The entries the allergen group leaves, which it takes back itself.
 export type AllergenUndo = Extract<
@@ -134,7 +147,9 @@ export type ShowingUndo = Extract<
 // The entries whose Undo the page's texts and sizes take back.
 export type TextUndo = Exclude<
   DishUndo,
-  AllergenUndo | ShowingUndo | { kind: "relocate" }
+  | AllergenUndo
+  | ShowingUndo
+  | { kind: "relocate" | "cooked-to-order" | "choice-list" }
 >;
 
 // The names an Undo label of the showing groups needs: a tag's visible
@@ -194,6 +209,14 @@ export function dishWords(
         changed: strings.undo.price,
         back: strings.undo.priceBack,
       },
+      calories: {
+        label: strings.price.caloriesLabel,
+        suffix: "",
+        hint: strings.price.caloriesHint,
+        notSaved: strings.notSaved.calories,
+        changed: strings.undo.calories,
+        back: strings.undo.caloriesBack,
+      },
       note: {
         label: strings.noteLabel,
         suffix: "",
@@ -241,8 +264,51 @@ export function sizeWords(
         changed: strings.undo.sizePrice,
         back: strings.undo.sizePriceBack,
       },
+      calories: {
+        label: strings.price.sizeCaloriesLabel,
+        suffix: strings.price.labelFor,
+        hint: strings.price.caloriesHint,
+        notSaved: strings.notSaved.sizeCalories,
+        changed: strings.undo.sizeCalories,
+        back: strings.undo.sizeCaloriesBack,
+      },
     },
   };
+}
+
+// The Undo control's words for a size's text, by field.
+function sizeTextUndo(
+  strings: DishStrings,
+  field: SizeText,
+  back: boolean,
+): string {
+  const { undo } = strings;
+  switch (field) {
+    case "name":
+      return back ? undo.sizeNameBack : undo.sizeName;
+    case "price":
+      return back ? undo.sizePriceBack : undo.sizePrice;
+    case "calories":
+      return back ? undo.sizeCaloriesBack : undo.sizeCalories;
+  }
+}
+
+// The Undo control's words for the Cooked to order mark, and what Undo says
+// once it is put back (D-167).
+export function cookedToOrderUndoLabel(
+  strings: DishStrings,
+  entry: CookedToOrderUndo,
+): string {
+  const { undo } = strings.cookedToOrder;
+  return fill(entry.on ? undo.on : undo.off, { dish: entry.name });
+}
+
+export function cookedToOrderUndoneSentence(
+  strings: DishStrings,
+  entry: CookedToOrderUndo,
+): string {
+  const { undo } = strings.cookedToOrder;
+  return fill(entry.on ? undo.onBack : undo.offBack, { dish: entry.name });
 }
 
 // A size as its sentences and its controls name it: its name, or its place
@@ -329,10 +395,11 @@ export function notRemovedSentence(
 }
 
 // The Undo control's whole name, which is also its visible text. The
-// showing groups' entries have their own (showingUndoLabel).
+// showing groups' entries have their own (showingUndoLabel), and so do the
+// choice lists' (choice-words.ts).
 export function undoLabel(
   strings: DishStrings,
-  entry: Exclude<DishUndo, ShowingUndo>,
+  entry: Exclude<DishUndo, ShowingUndo | { kind: "choice-list" }>,
 ): string {
   switch (entry.kind) {
     case "own":
@@ -340,10 +407,9 @@ export function undoLabel(
     case "kind":
       return fill(strings.undo.priceKind, { dish: entry.name });
     case "size-text":
-      return fill(
-        entry.field === "name" ? strings.undo.sizeName : strings.undo.sizePrice,
-        { size: entry.size },
-      );
+      return fill(sizeTextUndo(strings, entry.field, false), {
+        size: entry.size,
+      });
     case "size-add":
       return fill(strings.undo.sizeAdded, { size: entry.size });
     case "size-remove":
@@ -358,6 +424,8 @@ export function undoLabel(
     case "check":
     case "apply":
       return allergenUndoLabel(strings.allergens, entry);
+    case "cooked-to-order":
+      return cookedToOrderUndoLabel(strings, entry);
   }
 }
 
@@ -374,12 +442,9 @@ export function undoneSentence(strings: DishStrings, entry: TextUndo): string {
         kind: kindLabel(strings, entry.from),
       });
     case "size-text":
-      return fill(
-        entry.field === "name"
-          ? strings.undo.sizeNameBack
-          : strings.undo.sizePriceBack,
-        { size: entry.size },
-      );
+      return fill(sizeTextUndo(strings, entry.field, true), {
+        size: entry.size,
+      });
     case "size-add":
       return fill(strings.undo.sizeRemoved, { size: entry.size });
     case "size-remove":

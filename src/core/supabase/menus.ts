@@ -83,15 +83,16 @@ export async function listOwnerMenus(
   if (!rows) throw new Error("menus could not be read");
   const held = new Map<string, Held>();
   for (const { menuId, dishes } of counts) {
-    const soFar = held.get(menuId) ?? { sections: 0, dishes: 0 };
+    const soFar = held.get(menuId) ?? { sections: 0, dishes: 0, options: 0 };
     held.set(menuId, {
       sections: soFar.sections + 1,
       dishes: soFar.dishes + dishes,
+      options: 0,
     });
   }
   return rows.map((row) => ({
     ...toMenu(row),
-    ...(held.get(row.id) ?? { sections: 0, dishes: 0 }),
+    ...(held.get(row.id) ?? { sections: 0, dishes: 0, options: 0 }),
   }));
 }
 
@@ -218,6 +219,7 @@ export async function deleteOwnerMenu(
     p_id: id,
     p_sections: told.sections,
     p_dishes: told.dishes,
+    p_options: 0,
   });
   if (!error) return { ok: true, value: null };
   if (error.message === "delete_grew") {

@@ -391,7 +391,6 @@ export const en = {
       notSaved: {
         name: "Name of {section} was not saved.",
         note: "Note for {section} was not saved.",
-        everyItem: "The line for every dish in {section} was not saved.",
       },
       notAdded: "{section} was not added.",
       notMoved: "{section} was not moved.",
@@ -400,7 +399,6 @@ export const en = {
         nameRequired: "A section needs a name.",
         nameLength: "Keep the name to 60 characters.",
         noteLength: "Keep the note to 500 characters.",
-        everyItemLength: "Keep this line to 120 characters.",
         nameTaken: "Another section is called {section}.",
         gone: "That section is no longer here. Reload the page.",
         parentGone: "This menu is no longer here. Go back to Menus.",
@@ -414,14 +412,11 @@ export const en = {
         deleted: "Undo: deleted {section}",
         moved: "Undo: moved {section}",
         note: "Undo: changed the note for {section}",
-        everyItem: "Undo: changed the line for every dish in {section}",
         renamedBack: "Undone. The name is {from} again.",
         removed: "Undone. {section} is removed.",
         restored: "Undone. {section} is back, {position} of {total}.",
         movedBack: "Undone. {section} is back at {position} of {total}.",
         noteBack: "Undone. The note for {section} is as it was.",
-        everyItemBack:
-          "Undone. The line for every dish in {section} is as it was.",
         textChanged: "That was changed again since, so nothing was undone.",
         restoreBlocked:
           "{section} cannot come back while another section is called {section}.",
@@ -491,79 +486,15 @@ export const en = {
         renameBlocked:
           "The name {from} is taken by another dish, so this was not undone.",
       },
-      // The section's own texts, at the top of its page (D-120, D-135).
-      // The page is the section, so the labels do not name it. The lead
-      // comes before the first field it governs.
+      // The section's own text, at the top of its page (D-120, D-135). The
+      // page is the section, so the label does not name it. The lead comes
+      // before the first field it governs. What a section offered with
+      // every dish is a choice list now (D-166, owner.choices).
       section: {
         lead: "Each change saves when you leave its field.",
         noteLabel: "Note",
         noteHint:
           "For the whole section. Diners read it once, under the section name.",
-        everyItemLabel: "Shown with every dish",
-        everyItemHint:
-          'For an option or side, like "Add spaghetti to any dish for 3 dollars." Diners read it with each dish in this section. Once it is saved, list its allergens below.',
-      },
-      // The line's own allergens (task 4b, D-152, D-153): the dish page's
-      // group under the line, with these words in place of the dish's. The
-      // sentences name the section, since a sentence is heard on its own
-      // (D-135); the heading names the line, since the headings list reads
-      // it alone; the lead quotes the words the server holds, so the owner
-      // sees which line a check covers.
-      line: {
-        heading: "Allergens in the line shown with every dish",
-        lead: 'For "{words}": tick each major allergen this line contains, add any others below, then check the list once it is complete.',
-        checkHint:
-          "Check this once every allergen in this line is listed above. A change to the line or its list clears the check.",
-        othersFull: "A line lists ten other allergens at most.",
-        cleared:
-          "Not checked since the line or its list changed. Check it again once the list is complete.",
-        listsChanged:
-          "The line or its allergen list changed since this page showed it, so it is not checked. Look at the line as it is now, then check it.",
-        listsMoved:
-          "The line or its allergen list changed since this page showed it, so nothing was saved. Look at the line as it is now.",
-        checkChanged:
-          "The check changed since this page showed it. The page shows it as it is now.",
-        // Said after "Saved." when clearing the line took its list or its
-        // check with it.
-        wentWithIt: "Its allergen list went with it. Undo brings it back.",
-        notSaved: {
-          allergens:
-            "The allergens of the line for every dish in {section} were not saved.",
-          check:
-            "The allergen check for the line for every dish in {section} was not saved.",
-        },
-        errors: {
-          otherTaken: "This line already lists {other}.",
-          otherMajorBoth:
-            "Peanuts and Tree nuts have their own boxes above. Tick the one this line has, or both.",
-        },
-        undo: {
-          ticked:
-            "Undo: ticked {allergen} for the line for every dish in {section}",
-          unticked:
-            "Undo: unticked {allergen} for the line for every dish in {section}",
-          othersChanged:
-            "Undo: changed the other allergens for the line for every dish in {section}",
-          othersBack:
-            "Undone. The other allergens for the line for every dish in {section} are as they were.",
-          checked:
-            "Undo: checked the allergens for the line for every dish in {section}",
-          unchecked:
-            "Undo: unchecked the allergens for the line for every dish in {section}",
-          checkedBack:
-            "Undone. The allergens for the line for every dish in {section} are not checked.",
-          uncheckedBack:
-            "Undone. The allergens for the line for every dish in {section} are checked by you.",
-          listsChanged:
-            "The line or its allergen list was changed again since, so nothing was undone.",
-          // The words' own Undo (sections.undo.everyItem names it): what it
-          // says when a cleared line comes back with its list, and when the
-          // line stays because it has allergens now (D-119).
-          wordsRestored:
-            "Undone. The line for every dish in {section} is back with its allergen list, not checked.",
-          wordsGrew:
-            "The line for every dish in {section} has allergens now, so it stays. To clear it, empty the field.",
-        },
       },
       // Moving the section itself to another menu of the restaurant, from
       // its own page (D-129). Nothing is sent until the button is pressed.
@@ -612,6 +543,11 @@ export const en = {
         amountLabel: "Price",
         amountHint: "In dollars, like 12 or 12.50.",
         currency: "$",
+        // Calories (D-167), one field beside each price: the dish's own
+        // under One price or Market price, and one for each size.
+        caloriesLabel: "Calories",
+        caloriesHint: "A number, like 760, or a range, like 760 to 860.",
+        sizeCaloriesLabel: "Calories",
         marketHint: 'Diners read "Market price."',
         sizesLabel: "Sizes",
         sizeNameLabel: "Size",
@@ -652,9 +588,11 @@ export const en = {
         description: "The description of {dish} was not saved.",
         note: "The note for {dish} was not saved.",
         price: "The price of {dish} was not saved.",
+        calories: "The calories of {dish} were not saved.",
         priceKind: "The price choice for {dish} was not saved.",
         sizeName: "The name of {size} was not saved.",
         sizePrice: "The price for {size} was not saved.",
+        sizeCalories: "The calories for {size} were not saved.",
       },
       notAdded: "A size was not added.",
       notRemoved: "{size} was not removed.",
@@ -664,6 +602,10 @@ export const en = {
         sizeNameLength: "Keep a size name to 40 characters.",
         priceFormat: "Type a price like 12, 12.50, or $12.",
         priceRange: "Keep the price under $100,000.",
+        caloriesFormat:
+          "Type calories as a whole number, like 760, or a range, like 760 to 860.",
+        caloriesRange: "Keep calories under 100,000.",
+        caloriesOrder: "Put the lower number first, like 760 to 860.",
         nameTaken: "Another size of this dish is called {size}.",
         gone: "That size is no longer here. Reload the page.",
         parentGone: "This dish is no longer here. Go back to Menus.",
@@ -676,6 +618,8 @@ export const en = {
         noteBack: "Undone. The note for {dish} is as it was.",
         price: "Undo: changed the price of {dish}",
         priceBack: "Undone. The price of {dish} is as it was.",
+        calories: "Undo: changed the calories of {dish}",
+        caloriesBack: "Undone. The calories of {dish} are as they were.",
         priceKind: "Undo: changed how {dish} is priced",
         priceKindBack: "Undone. {dish} is priced as before: {kind}.",
         sizeAdded: "Undo: added {size}",
@@ -686,6 +630,8 @@ export const en = {
         sizeNameBack: "Undone. The name of {size} is as it was.",
         sizePrice: "Undo: changed the price for {size}",
         sizePriceBack: "Undone. The price for {size} is as it was.",
+        sizeCalories: "Undo: changed the calories for {size}",
+        sizeCaloriesBack: "Undone. The calories for {size} are as they were.",
         textChanged: "That was changed again since, so nothing was undone.",
         restoreBlocked:
           "{size} cannot come back while another size is called {size}.",
@@ -861,6 +807,21 @@ export const en = {
             "The schedule was changed again since, so nothing was undone.",
         },
       },
+      // Cooked to order (task 7, D-167): one box under its own heading,
+      // after Schedule. The advisory itself is the menu's, once, in the
+      // diner page task.
+      cookedToOrder: {
+        heading: "Cooked to order",
+        label: "Cooked to order",
+        hint: "For meat, fish, or eggs that can be served rare or undercooked. Diners read Cooked to order. with this dish, and the menu carries the advisory once.",
+        notSaved: "The Cooked to order mark for {dish} was not saved.",
+        undo: {
+          on: "Undo: ticked Cooked to order for {dish}",
+          off: "Undo: unticked Cooked to order for {dish}",
+          onBack: "Undone. {dish} is not marked cooked to order.",
+          offBack: "Undone. {dish} is marked cooked to order again.",
+        },
+      },
       // The dish's allergens and their check (task 4, D-148): the nine
       // major allergens as boxes with a hint each, other allergens as typed
       // rows, one box that checks the list, and the sentence diners read
@@ -1020,6 +981,251 @@ export const en = {
         },
       },
     },
+    // Choice lists (task 7, D-166, D-167): what a diner picks or adds with
+    // a dish. A list belongs to one dish or one section and shows as a row
+    // on its home's page, under its own heading; its lead and its options
+    // are edited on the list's own page, where each option has its name,
+    // its added price, its calories, and its own allergen group, the dish
+    // page's with these words in place of the dish's. The sentences name
+    // the list or the option, since a sentence is heard on its own.
+    choices: {
+      heading: "Choice lists",
+      leadDish:
+        "What a diner picks or adds with this dish, like a side, a dressing, or an add-on. Each list has a lead, like Choose one side, and its options.",
+      leadSection:
+        "What a diner picks or adds with any dish in this section, like a side, a dressing, or an add-on. Each list has a lead, like Choose one side, and its options.",
+      // The rows on a dish's or a section's page: one row a list, named by
+      // its lead, with no field; the lead is edited on the list's page.
+      lists: {
+        none: "No choice lists yet. Add the first one below.",
+        moveUp: "Move up",
+        moveDown: "Move down",
+        remove: "Delete",
+        // A row control's whole name: its visible label first, then its
+        // list.
+        rowAction: "{action}, {list}",
+        // The link from a list's row to its own page.
+        edit: "Edit choices",
+        newLabel: "New choice list",
+        newHint: "The words diners read first, like Choose one side or Add on.",
+        add: "Add choice list",
+        count: {
+          one: "{count} choice list",
+          other: "{count} choice lists",
+        },
+        // A delete that takes options with it asks first, and names what
+        // goes (D-119). The question is the dialog's name.
+        optionCount: {
+          one: "{count} option",
+          other: "{count} options",
+        },
+        deleteAsk: "Delete {list}, with its {options}?",
+        keep: "Keep",
+        added: "{list} added. {count}.",
+        movedUp: "{list} moved up. {position} of {total}.",
+        movedDown: "{list} moved down. {position} of {total}.",
+        alreadyFirst: "{list} is already first.",
+        alreadyLast: "{list} is already last.",
+        deleted: "{list} deleted. Undo is available.",
+        removed: "{list} removed.",
+        notAdded: "{list} was not added.",
+        notMoved: "{list} was not moved.",
+        notDeleted: "{list} was not deleted.",
+        errors: {
+          leadRequired: "A choice list needs a lead.",
+          leadLength: "Keep the lead to 120 characters.",
+          // Which one fills nameTaken depends on the home (choice-words.ts).
+          leadTakenDish: "This dish already has a choice list called {list}.",
+          leadTakenSection:
+            "This section already has a choice list called {list}.",
+          gone: "That choice list is no longer here. Reload the page.",
+          listChanged: "The choice lists changed. Reload the page.",
+          // The database found more options than the owner was told about.
+          grew: "It has options this page did not show. Press Delete again.",
+        },
+        undo: {
+          renamed: "Undo: renamed {from} to {to}",
+          added: "Undo: added {list}",
+          deleted: "Undo: deleted {list}",
+          moved: "Undo: moved {list}",
+          renamedBack: "Undone. The lead is {from} again.",
+          removed: "Undone. {list} is removed.",
+          restored: "Undone. {list} is back, {position} of {total}.",
+          movedBack: "Undone. {list} is back at {position} of {total}.",
+          textChanged: "That was changed again since, so nothing was undone.",
+          restoreBlocked:
+            "{list} cannot come back while another choice list is called {list}.",
+          renameBlocked:
+            "The lead {from} is taken by another choice list, so this was not undone.",
+          // Undo never deletes content: an added list that holds options
+          // now stays, and its Delete button is the way to remove it.
+          addGrew:
+            "{list} has options now, so it stays. To delete it, use its Delete button.",
+        },
+      },
+      // The list's own page: its lead, then its options. The page is named
+      // for its lead, so the lead's label does not repeat it; every
+      // sentence names the list, since a sentence is heard on its own.
+      page: {
+        lead: "Each change saves when you leave its field.",
+        leadLabel: "Lead",
+        leadHint:
+          "The words diners read first, like Choose one side or Add on.",
+        showLeads: "Show suggested leads",
+        suggestions: [
+          "Choose one side",
+          "Choose two sides",
+          "Sweet or unsweet",
+          "Add on",
+          "Choose a dressing",
+        ],
+        optionsLead:
+          "Options are what a diner picks or adds, like Fries or Ranch. Each has its own allergen list.",
+        notSaved: {
+          lead: "The lead of {list} was not saved.",
+        },
+        errors: {
+          leadRequired: "A choice list needs a lead.",
+          leadLength: "Keep the lead to 120 characters.",
+          leadTakenDish: "This dish already has a choice list called {list}.",
+          leadTakenSection:
+            "This section already has a choice list called {list}.",
+          gone: "This choice list is no longer here. Go back to Menus.",
+          parentGone: "This choice list is no longer here. Go back to Menus.",
+          listChanged: "The options changed. Reload the page.",
+        },
+        undo: {
+          lead: "Undo: changed the lead of {list}",
+          leadBack: "Undone. The lead is {list} again.",
+        },
+      },
+      // The options on the list's page: one row each, with three fields
+      // and its allergen group, added by name (D-125).
+      options: {
+        none: "No options yet. Add the first one below.",
+        nameLabel: "Option name",
+        // Follows a field's label in hidden text, so every row's fields
+        // name their option: "Option name for Fries", "Added price for
+        // Fries".
+        labelFor: "for {option}",
+        priceLabel: "Added price",
+        priceHint:
+          "In dollars, like 1 or 1.50. Leave blank when it costs nothing extra.",
+        caloriesLabel: "Calories",
+        caloriesHint: "A number, like 760, or a range, like 760 to 860.",
+        moveUp: "Move up",
+        moveDown: "Move down",
+        remove: "Remove",
+        rowAction: "{action}, {option}",
+        newLabel: "New option name",
+        add: "Add option",
+        count: {
+          one: "{count} option",
+          other: "{count} options",
+        },
+        added: "{option} added. {count}.",
+        movedUp: "{option} moved up. {position} of {total}.",
+        movedDown: "{option} moved down. {position} of {total}.",
+        alreadyFirst: "{option} is already first.",
+        alreadyLast: "{option} is already last.",
+        deleted: "{option} removed. Undo is available.",
+        removed: "{option} removed.",
+        notSaved: {
+          name: "Name of {option} was not saved.",
+          price: "The added price for {option} was not saved.",
+          calories: "The calories for {option} were not saved.",
+        },
+        notAdded: "{option} was not added.",
+        notMoved: "{option} was not moved.",
+        notDeleted: "{option} was not removed.",
+        errors: {
+          nameRequired: "An option needs a name.",
+          nameLength: "Keep the name to 60 characters.",
+          nameTaken: "This list already has an option called {option}.",
+          priceFormat: "Type a price like 2, 1.50, or $2.",
+          priceRange: "Keep the price under $100,000.",
+          caloriesFormat:
+            "Type calories as a whole number, like 760, or a range, like 760 to 860.",
+          caloriesRange: "Keep calories under 100,000.",
+          caloriesOrder: "Put the lower number first, like 760 to 860.",
+          gone: "That option is no longer here. Reload the page.",
+          parentGone: "This choice list is no longer here. Go back to Menus.",
+          listChanged: "The options changed. Reload the page.",
+        },
+        undo: {
+          renamed: "Undo: renamed {from} to {to}",
+          added: "Undo: added {option}",
+          deleted: "Undo: removed {option}",
+          moved: "Undo: moved {option}",
+          price: "Undo: changed the added price for {option}",
+          priceBack: "Undone. The added price for {option} is as it was.",
+          calories: "Undo: changed the calories for {option}",
+          caloriesBack: "Undone. The calories for {option} are as they were.",
+          renamedBack: "Undone. The name is {from} again.",
+          removed: "Undone. {option} is removed.",
+          restored: "Undone. {option} is back, {position} of {total}.",
+          movedBack: "Undone. {option} is back at {position} of {total}.",
+          textChanged: "That was changed again since, so nothing was undone.",
+          restoreBlocked:
+            "{option} cannot come back while another option is called {option}.",
+          renameBlocked:
+            "The name {from} is taken by another option, so this was not undone.",
+        },
+      },
+      // An option's own allergens (D-154, D-166): the dish page's group
+      // under the option's row, with these words in place of the dish's.
+      // As a change to the dish's list clears its check, a change to the
+      // option's name clears the option's, since the name is all that
+      // names the food (Michael, October 10, 2026).
+      allergens: {
+        heading: "Allergens for {option}",
+        lead: "Tick each major allergen this option contains, add any others below, then check the list once it is complete.",
+        checkHint:
+          "Check this once every allergen in this option is listed above. A change to the option's name or its list clears the check.",
+        othersFull: "An option lists ten other allergens at most.",
+        cleared:
+          "Not checked since the option or its list changed. Check it again once the list is complete.",
+        listsChanged:
+          "The option or its allergen list changed since this page showed it, so it is not checked. Look at the option as it is now, then check it.",
+        listsMoved:
+          "The option or its allergen list changed since this page showed it, so nothing was saved. Look at the option as it is now.",
+        checkChanged:
+          "The check changed since this page showed it. The page shows it as it is now.",
+        notSaved: {
+          allergens: "The allergens of {option} were not saved.",
+          check: "The allergen check for {option} was not saved.",
+        },
+        errors: {
+          otherTaken: "This option already lists {other}.",
+          otherMajorBoth:
+            "Peanuts and Tree nuts have their own boxes above. Tick the one this option has, or both.",
+        },
+        sameNamed: {
+          sourceChanged:
+            "This option's list changed since this page showed it, so nothing was applied.",
+          sourceUnchecked:
+            "This option is not checked now, so nothing was applied.",
+        },
+        undo: {
+          ticked: "Undo: ticked {allergen} for {option}",
+          unticked: "Undo: unticked {allergen} for {option}",
+          othersChanged: "Undo: changed the other allergens for {option}",
+          othersBack:
+            "Undone. The other allergens for {option} are as they were.",
+          checked: "Undo: checked the allergens for {option}",
+          unchecked: "Undo: unchecked the allergens for {option}",
+          checkedBack: "Undone. The allergens for {option} are not checked.",
+          uncheckedBack:
+            "Undone. The allergens for {option} are checked by you.",
+          listsChanged:
+            "The option or its allergen list was changed again since, so nothing was undone.",
+        },
+      },
+      // Where an option is, as the same-named offer names a place (D-129,
+      // D-166): the list it is in and the list's home, "Choose one side
+      // for Kids burger", in the section's place of the sentence.
+      placeIn: "{lead} for {home}",
+    },
   },
   directory: {
     title: "Accessible menus in {city}",
@@ -1130,6 +1336,16 @@ export const en = {
     cent: { one: "cent", other: "cents" },
     and: "and",
     to: "to",
+    // An option's added price (D-166): "+$2.00" is said "plus two
+    // dollars", and a price of zero reads the same both ways.
+    plus: "plus",
+    noExtraCharge: "no extra charge",
+  },
+  // Calories (D-167), read by one builder everywhere they show.
+  calories: {
+    one: "{count} calorie",
+    other: "{count} calories",
+    range: "{low} to {high} calories",
   },
   time: {
     am: "am",

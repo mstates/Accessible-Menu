@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { en } from "../../src/copy";
+import { fill } from "../../src/copy/fill";
 import {
+  cookedToOrderUndoneSentence,
   dishUndoSchema,
   dishWords,
   kindLabel,
@@ -124,6 +126,90 @@ describe("the words the dish's texts are said in", () => {
     expect(
       problemText(words, { kind: "invalid", rule: "descriptionLength" }, dish),
     ).toBe(strings.errors.descriptionLength);
+    expect(
+      problemText(words, { kind: "invalid", rule: "caloriesOrder" }, dish),
+    ).toBe(strings.errors.caloriesOrder);
+  });
+
+  // D-167: calories beside each price, one field a place.
+  it("names the calories field plainly on the dish and for its size", () => {
+    expect(words.fields.calories).toMatchObject({
+      label: strings.price.caloriesLabel,
+      suffix: "",
+      hint: strings.price.caloriesHint,
+    });
+    expect(notSavedSentence(words, "calories", dish)).toBe(
+      `The calories of ${dish} were not saved.`,
+    );
+    expect(sizes.fields.calories).toMatchObject({
+      label: strings.price.sizeCaloriesLabel,
+      suffix: strings.price.labelFor,
+    });
+    expect(notSavedSentence(sizes, "calories", "Cup")).toBe(
+      "The calories for Cup were not saved.",
+    );
+    const entry: DishUndo = {
+      kind: "own",
+      field: "calories",
+      id: "d1",
+      name: dish,
+      from: "",
+      to: "760",
+    };
+    expect(undoLabel(strings, entry)).toBe(
+      `Undo: changed the calories of ${dish}`,
+    );
+    expect(undoneSentence(strings, entry)).toBe(
+      `Undone. The calories of ${dish} are as they were.`,
+    );
+    const size: DishUndo = {
+      kind: "size-text",
+      field: "calories",
+      id: "z1",
+      size: "Cup",
+      from: "",
+      to: "180",
+    };
+    expect(undoLabel(strings, size)).toBe("Undo: changed the calories for Cup");
+    expect(undoneSentence(strings, size)).toBe(
+      "Undone. The calories for Cup are as they were.",
+    );
+  });
+
+  // D-167: the Cooked to order mark, under its own heading after Schedule.
+  it("names the Cooked to order mark's changes and its failure", () => {
+    const on: DishUndo = {
+      kind: "cooked-to-order",
+      id: "d1",
+      name: dish,
+      on: true,
+    };
+    expect(dishUndoSchema.parse(JSON.parse(JSON.stringify(on)))).toEqual(on);
+    expect(undoLabel(strings, on)).toBe(
+      `Undo: ticked Cooked to order for ${dish}`,
+    );
+    expect(undoLabel(strings, { ...on, on: false })).toBe(
+      `Undo: unticked Cooked to order for ${dish}`,
+    );
+    expect(cookedToOrderUndoneSentence(strings, on)).toBe(
+      `Undone. ${dish} is not marked cooked to order.`,
+    );
+    expect(cookedToOrderUndoneSentence(strings, { ...on, on: false })).toBe(
+      `Undone. ${dish} is marked cooked to order again.`,
+    );
+    expect(fill(strings.cookedToOrder.notSaved, { dish })).toBe(
+      `The Cooked to order mark for ${dish} was not saved.`,
+    );
+    expect(
+      dishUndoSchema.parse({
+        kind: "choice-list",
+        entry: { kind: "add", id: "l1", name: "Add on" },
+      }),
+      "a choice list's entry sits on the dish page's stack (D-166)",
+    ).toEqual({
+      kind: "choice-list",
+      entry: { kind: "add", id: "l1", name: "Add on" },
+    });
   });
 });
 
@@ -144,12 +230,16 @@ describe("the words a size's texts are said in", () => {
   });
 
   it("names a size by its name, or by its place while it has none", () => {
-    expect(sizeLabel(strings, { id: "z", name: "Cup", price: "5.00" }, 1)).toBe(
-      "Cup",
-    );
-    expect(sizeLabel(strings, { id: "z", name: "", price: "" }, 2)).toBe(
-      "size 2",
-    );
+    expect(
+      sizeLabel(
+        strings,
+        { id: "z", name: "Cup", price: "5.00", calories: "" },
+        1,
+      ),
+    ).toBe("Cup");
+    expect(
+      sizeLabel(strings, { id: "z", name: "", price: "", calories: "" }, 2),
+    ).toBe("size 2");
     expect(sizeAction(strings, strings.price.removeSize, "Cup")).toBe(
       "Remove, Cup",
     );

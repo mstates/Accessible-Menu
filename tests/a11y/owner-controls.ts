@@ -10,6 +10,7 @@ import {
   sizeAction,
   sizeLabel,
 } from "../../src/features/owner/dish/dish-words";
+import { CHOICE_LISTS_HEADING_ID } from "../../src/features/owner/choices/useChoiceListRows";
 import type { Control, Mark } from "./checks";
 import { listRows } from "./owner-lists";
 
@@ -158,38 +159,37 @@ export async function menuControls(page: Page): Promise<Control[]> {
 // and, while the line shown with every dish has words, its allergen group's
 // buttons (D-152): each other allergen's two, named by the row as the page
 // shows it, and Add another allergen.
+// The choice lists on a dish's or a section's page (D-166): each row's
+// link and three buttons, named by the list's lead as its heading shows
+// it, and Add choice list.
+async function choiceListControls(page: Page): Promise<Control[]> {
+  const choices = en.owner.choices.lists;
+  const leads = await page
+    .locator(`main ol[aria-labelledby="${CHOICE_LISTS_HEADING_ID}"] > li h3`)
+    .evaluateAll((all) => all.map((h3) => (h3.textContent ?? "").trim()));
+  const named = (action: string, list: string) =>
+    fill(choices.rowAction, { action, list });
+  return [
+    ...leads.flatMap((lead) => [
+      link(named(choices.edit, lead)),
+      button(named(choices.moveUp, lead)),
+      button(named(choices.moveDown, lead)),
+      button(named(choices.remove, lead)),
+    ]),
+    button(choices.add),
+  ];
+}
+
 export async function sectionControls(
   page: Page,
   menu: string,
 ): Promise<Control[]> {
   const words = en.owner.dishes;
-  const allergens = en.owner.dish.allergens;
-  const hasGroup =
-    (await page
-      .getByRole("checkbox", { name: allergens.checkLabel, exact: true })
-      .count()) > 0;
-  const otherNames = await page
-    .locator(`main ol[aria-label="${allergens.othersLabel}"] > li`)
-    .evaluateAll((rows) =>
-      rows.map(
-        (row) =>
-          row.querySelector<HTMLInputElement>('input[id$="-name"]')?.value ??
-          "",
-      ),
-    );
-  const others = otherNames.flatMap((name, index) => {
-    const label = otherLabel(allergens, name, index + 1);
-    return [
-      button(otherAction(allergens, allergens.showOtherNames, label)),
-      button(otherAction(allergens, allergens.removeOther, label)),
-    ];
-  });
   return [
     site,
     ...nav,
     link(menu),
-    ...others,
-    ...(hasGroup ? [button(allergens.addOther)] : []),
+    ...(await choiceListControls(page)),
     ...(await rowControls(page, words, "dish", words.editDish)),
     button(words.move.submit),
   ];
@@ -199,9 +199,10 @@ export async function sectionControls(
 // size's two buttons when the dish is priced by size, named by the size as
 // the page shows it, Add a size, each other allergen's two buttons, named
 // by the row as the page shows it, Add another allergen, each same-named
-// dish's Apply button, Undo, the link to the next dish when there is one,
-// Today only (task 5), and the move's button; the move's Select is named
-// by its label and its value, so the sweep checks it.
+// dish's or option's Apply button, Today only (task 5), the choice lists'
+// controls (task 7), Undo, the link to the next dish when there is one,
+// and the move's button; the move's Select is named by its label and its
+// value, so the sweep checks it.
 export async function dishControls(
   page: Page,
   menu: string,
@@ -218,7 +219,11 @@ export async function dishControls(
       ),
     );
   const sizes = sizeNames.flatMap((name, index) => {
-    const label = sizeLabel(words, { id: "", name, price: "" }, index + 1);
+    const label = sizeLabel(
+      words,
+      { id: "", name, price: "", calories: "" },
+      index + 1,
+    );
     return [
       button(sizeAction(words, words.price.showNames, label)),
       button(sizeAction(words, words.price.removeSize, label)),
@@ -264,8 +269,76 @@ export async function dishControls(
     button(words.allergens.addOther),
     ...applies.map((name) => button(name)),
     button(words.schedule.todayOnly),
+    ...(await choiceListControls(page)),
     button(editing.undo),
     ...nextName.map((text) => link(text)),
     button(words.move.submit),
+  ];
+}
+
+// A choice list's page (D-166): the breadcrumb's links, Show suggested
+// leads, each option's three buttons named by the option, each option's
+// other-allergen buttons and Add another allergen, each same-named Apply
+// button, Add option, and Undo.
+export async function choiceListPageControls(
+  page: Page,
+  trail: readonly string[],
+): Promise<Control[]> {
+  const words = en.owner.choices;
+  const allergens = en.owner.dish.allergens;
+  const names = await page
+    .locator("main ul > li")
+    .evaluateAll((rows) =>
+      rows.map(
+        (row) =>
+          row.querySelector<HTMLInputElement>('input[id$="-name"]')?.value ??
+          "",
+      ),
+    );
+  const named = (action: string, option: string) =>
+    fill(words.options.rowAction, { action, option });
+  const rows = await Promise.all(
+    names.map(async (name) => {
+      const li = page.locator("main ul > li").filter({
+        has: page.locator(`input[id$="-name"][value="${name}"]`),
+      });
+      const otherNames = await li
+        .locator(`ol[aria-label="${allergens.othersLabel}"] > li`)
+        .evaluateAll((all) =>
+          all.map(
+            (row) =>
+              row.querySelector<HTMLInputElement>('input[id$="-name"]')
+                ?.value ?? "",
+          ),
+        );
+      const applies = await li
+        .locator('button[id^="option-"][id*="-apply-"]')
+        .evaluateAll((buttons) =>
+          buttons.map((each) => each.getAttribute("aria-label") ?? ""),
+        );
+      return [
+        button(named(words.options.moveUp, name)),
+        button(named(words.options.moveDown, name)),
+        button(named(words.options.remove, name)),
+        ...otherNames.flatMap((other, index) => {
+          const label = otherLabel(allergens, other, index + 1);
+          return [
+            button(otherAction(allergens, allergens.showOtherNames, label)),
+            button(otherAction(allergens, allergens.removeOther, label)),
+          ];
+        }),
+        button(allergens.addOther),
+        ...applies.map((name) => button(name)),
+      ];
+    }),
+  );
+  return [
+    site,
+    ...nav,
+    ...trail.map((crumb) => link(crumb)),
+    button(words.page.showLeads),
+    button(editing.undo),
+    ...rows.flat(),
+    button(words.options.add),
   ];
 }

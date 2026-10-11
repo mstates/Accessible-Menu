@@ -60,7 +60,11 @@ function MenuRows({ strings, editing, code, menus }: Props) {
       restore: (id, order) => restoreMenu(code, id, order),
       order: (ids) => orderMenus(code, ids),
     },
-    held: (menu) => ({ sections: menu.sections, dishes: menu.dishes }),
+    held: (menu) => ({
+      sections: menu.sections,
+      dishes: menu.dishes,
+      options: 0,
+    }),
     link: {
       label: strings.editSections,
       href: (menu) => restaurantMenuPath(code, menu.id),

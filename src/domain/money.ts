@@ -5,6 +5,8 @@ export type MoneyCopy = {
   cent: { one: string; other: string };
   and: string;
   to: string;
+  plus: string;
+  noExtraCharge: string;
 };
 
 export type PriceText = { display: string; spoken: string };
@@ -117,8 +119,24 @@ export function formatPrice(price: Price, copy: MoneyCopy): PriceText {
   }
 }
 
+// An option's added price (D-166): what it adds to the dish's price, as
+// print writes it beside the option, "+$2.00", and spoken as "plus two
+// dollars". Zero reads as no extra charge in both forms, since an owner
+// who typed it meant to say so. Every added price comes through here, as
+// every price comes through formatPrice.
+export function addedPrice(cents: number, copy: MoneyCopy): PriceText {
+  if (cents === 0) {
+    return { display: copy.noExtraCharge, spoken: copy.noExtraCharge };
+  }
+  return {
+    display: `+${displayAmount(cents)}`,
+    spoken: `${copy.plus} ${spokenAmount(cents, copy)}`,
+  };
+}
+
 // The cap on any price, in cents: $99,999.99. Also a table constraint
-// (migration 6), which is the boundary; this exists to name the rule.
+// (migrations 6 and 11), which is the boundary; this exists to name the
+// rule.
 export const PRICE_LIMITS = { cents: 9_999_999 } as const;
 
 // The rules a typed price can break, which are also the keys of their

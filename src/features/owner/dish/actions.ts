@@ -5,6 +5,8 @@ import { z } from "zod";
 import {
   listOwnerDishes,
   moveOwnerDish,
+  setOwnerDishCalories,
+  setOwnerDishCookedToOrder,
   setOwnerDishOrder,
   setOwnerDishPrice,
   setOwnerDishPriceKind,
@@ -14,8 +16,10 @@ import {
   type DishWriteError,
 } from "@/core/supabase/dishes";
 import { AVAILABILITY } from "@/domain/availability";
+import { parseCalories, type Calories } from "@/domain/calories";
 import {
   addOwnerSize,
+  setOwnerSizeCalories,
   setOwnerSizeDeleted,
   setOwnerSizeName,
   setOwnerSizePrice,
@@ -42,8 +46,9 @@ import { dishScope } from "../owner-scope";
 import type { DishMoveProblem } from "./dish-words";
 
 // A dish's own page saves through these (D-111, D-128): its description,
-// its price choice, its one price, and its note (D-139), its sizes, its
-// availability (D-160), and its move to another section (D-129). Nothing here redirects: a missing
+// its price choice, its one price, and its note (D-139), its calories and
+// its Cooked to order mark (D-167), its sizes, its availability (D-160),
+// and its move to another section (D-129). Nothing here redirects: a missing
 // session comes back as a result and the typed text stays on screen. Every
 // call that reached the database with a live session ends with refresh(),
 // so its own response carries the re-rendered page. The code, the dish, and
@@ -88,11 +93,16 @@ const failed = refuse({ kind: "failed" });
 
 // The dish's texts as the page's fields show them.
 function textsOf(dish: OwnerDishDetail): Record<DishText, string> {
-  return { description: dish.description, price: dish.price, note: dish.note };
+  return {
+    description: dish.description,
+    price: dish.price,
+    calories: dish.calories,
+    note: dish.note,
+  };
 }
 
 function sizeTexts(size: OwnerSize): Record<SizeText, string> {
-  return { name: size.name, price: size.price };
+  return { name: size.name, price: size.price, calories: size.calories };
 }
 
 // A dish that is not there is the page's own parent gone for an ordinary
@@ -129,10 +139,21 @@ function readPrice(
   return price.ok ? { cents: price.cents } : { rule: price.rule };
 }
 
-// Writes the dish's description, note, or one price (D-139). With expected,
-// the write is an Undo: it happens only if the text is still the one the
-// change wrote, and never writes over a newer change. The price travels as
-// the field's text and is read into cents here, on both sides.
+// Typed calories, or the field's blank, as the pair or null (D-167).
+function readCalories(
+  raw: string,
+): { calories: Calories | null } | { rule: string } {
+  const calories = parseCalories(raw);
+  return calories.ok
+    ? { calories: calories.calories }
+    : { rule: calories.rule };
+}
+
+// Writes the dish's description, note, one price (D-139), or calories
+// (D-167). With expected, the write is an Undo: it happens only if the
+// text is still the one the change wrote, and never writes over a newer
+// change. A price or calories travel as the field's text and are read
+// here, on both sides.
 export async function setDishText(
   rawCode: string,
   rawDish: string,
@@ -160,6 +181,19 @@ export async function setDishText(
       scope.dishId,
       price.cents,
       wasPrice?.cents,
+    );
+  } else if (field.data === "calories") {
+    const calories = readCalories(value);
+    const wasCalories = was === undefined ? undefined : readCalories(was);
+    if ("rule" in calories || (wasCalories && "rule" in wasCalories)) {
+      return failed;
+    }
+    result = await setOwnerDishCalories(
+      scope.client,
+      scope.sectionId,
+      scope.dishId,
+      calories.calories,
+      wasCalories?.calories,
     );
   } else {
     result = await setOwnerDishText(
@@ -217,6 +251,44 @@ export async function setDishPriceKind(
     );
   }
   return { ok: true, value: { priceKind: result.value.priceKind } };
+}
+
+// The Cooked to order mark (D-167): on or off, saved at once. With
+// expected, the write is an Undo: it lands only while the mark is still
+// the one the change left.
+export async function setDishCookedToOrder(
+  rawCode: string,
+  rawDish: string,
+  rawOn: unknown,
+  rawExpected?: unknown,
+): Promise<DishPageResult<{ cookedToOrder: boolean }>> {
+  const scope = await dishScope(rawCode, rawDish);
+  if (!scope.ok) return scope;
+  const on = z.boolean().safeParse(rawOn);
+  if (!on.success) return failed;
+  let expected: boolean | undefined;
+  if (rawExpected !== undefined) {
+    const was = z.boolean().safeParse(rawExpected);
+    if (!was.success) return failed;
+    expected = was.data;
+  }
+  const result = await setOwnerDishCookedToOrder(
+    scope.client,
+    scope.sectionId,
+    scope.dishId,
+    on.data,
+    expected,
+  );
+  refresh();
+  if (!result.ok) {
+    return refuse(
+      fromDishWrite(
+        result.error,
+        expected === undefined ? "parent-gone" : "changed",
+      ),
+    );
+  }
+  return { ok: true, value: { cookedToOrder: result.value.cookedToOrder } };
 }
 
 // How the dish stands (D-160): available, sold out today, or off the menu
@@ -295,7 +367,8 @@ export async function addSize(
   return { ok: true, value: result.value };
 }
 
-// Writes a size's name or price. With expected, the write is an Undo.
+// Writes a size's name, price, or calories. With expected, the write is an
+// Undo.
 export async function setSizeText(
   rawCode: string,
   rawDish: string,
@@ -326,6 +399,19 @@ export async function setSizeText(
       price.cents,
       wasPrice?.cents,
     );
+  } else if (field.data === "calories") {
+    const calories = readCalories(value);
+    const wasCalories = was === undefined ? undefined : readCalories(was);
+    if ("rule" in calories || (wasCalories && "rule" in wasCalories)) {
+      return failed;
+    }
+    result = await setOwnerSizeCalories(
+      scope.client,
+      scope.dishId,
+      id.data,
+      calories.calories,
+      wasCalories?.calories,
+    );
   } else {
     result = await setOwnerSizeName(
       scope.client,
@@ -346,7 +432,7 @@ export async function setSizeText(
 
 // Marks a size removed. The row stays, so Undo can bring it back. With
 // onlyIfBlank, which an Undo of an add sends, the size goes only while it
-// has no name and no price (D-119).
+// has no name, no price, and no calories (D-119).
 export async function removeSize(
   rawCode: string,
   rawDish: string,

@@ -13,8 +13,11 @@ import { ComboBox } from "@/ui/ComboBox";
 import { PageLink } from "@/ui/PageLink";
 import { Radio, RadioGroup } from "@/ui/RadioGroup";
 import type { SelectGroup } from "@/ui/Select";
+import type { OwnerChoiceList } from "@/domain/choices";
 import { AllergenGroup } from "../allergens/AllergenGroup";
 import type { SameNamedPlace } from "../allergens/allergen-words";
+import type { ChoiceStrings } from "../choices/choice-words";
+import { ChoiceListRows } from "../choices/ChoiceListRows";
 import { AutosaveTextField } from "../editing/AutosaveTextField";
 import type { EditingStrings } from "../editing/list-words";
 import { SavedStatus } from "../editing/SavedStatus";
@@ -27,6 +30,7 @@ import {
   type DishStrings,
 } from "./dish-words";
 import { DishAvailability } from "./DishAvailability";
+import { DishCookedToOrder } from "./DishCookedToOrder";
 import { DishSchedule } from "./DishSchedule";
 import { DishTags } from "./DishTags";
 import { MoveDish } from "./MoveDish";
@@ -35,6 +39,7 @@ import { ADD_SIZE_ID, KIND_ID, sizeButtonId, useDishPage } from "./useDishPage";
 
 type Props = {
   strings: DishStrings;
+  choiceStrings: ChoiceStrings;
   editing: EditingStrings;
   code: string;
   dish: OwnerDishDetail;
@@ -42,6 +47,9 @@ type Props = {
   menu: { id: string; name: string };
   // The dish's sizes, in price order, as the server holds them.
   sizes: OwnerSize[];
+  // The dish's choice lists, in order, with how many options each holds
+  // (D-166).
+  lists: OwnerChoiceList[];
   // The size names the restaurant's dishes already use, most used first.
   sizeNames: string[];
   // The dish after this one in its section, or null at the last.
@@ -50,10 +58,10 @@ type Props = {
   targets: SelectGroup[];
   // The diner-facing allergen words, for the sentence diners will read.
   allergenCopy: AllergenCopy;
-  // The other allergens the restaurant's dishes and lines already name,
+  // The other allergens the restaurant's dishes and options already name,
   // most used first.
   otherNames: string[];
-  // The same-named dishes the allergen check names (D-129).
+  // The same-named dishes and options the allergen check names (D-129).
   sameNamed: SameNamedPlace[];
   // The restaurant's time zone, which a check's date is read in, and the
   // page's language.
@@ -78,12 +86,13 @@ const AFTER_THE_TITLE_MS = 100;
 
 const PRICE_HEADING_ID = "dish-price-heading";
 
-// A dish's own page (D-128, D-139, D-148, D-159, D-160): the lead, the
-// description, the price group under its heading, the note, the allergen
-// group under its heading, the dietary tags, availability, and the schedule
-// each under theirs, the saved status and Undo, the link to the next dish,
-// and the move to another section (D-129). Everything on it shares one queue, one
-// status, and one Undo (D-111).
+// A dish's own page (D-128, D-139, D-148, D-159, D-160, D-166, D-167): the
+// lead, the description, the price group under its heading with calories
+// beside each price, the note, the allergen group under its heading, the
+// dietary tags, availability, the schedule, the Cooked to order box, and
+// the choice lists each under theirs, the saved status and Undo, the link
+// to the next dish, and the move to another section (D-129). Everything on
+// it shares one queue, one status, and one Undo (D-111).
 export function DishPage(props: Props) {
   return (
     <Announcer>
@@ -94,12 +103,14 @@ export function DishPage(props: Props) {
 
 function DishEditor({
   strings,
+  choiceStrings,
   editing,
   code,
   dish,
   section,
   menu,
   sizes,
+  lists,
   sizeNames,
   next,
   targets,
@@ -138,9 +149,11 @@ function DishEditor({
 
   const page = useDishPage({
     strings,
+    choiceStrings,
     editing,
     code,
     dish,
+    lists,
     sizes,
     sameNamed,
     sayOnceIn,
@@ -180,7 +193,17 @@ function DishEditor({
 
   const description = page.own.fieldOf("description");
   const price = page.own.fieldOf("price");
+  const calories = page.own.fieldOf("calories");
   const note = page.own.fieldOf("note");
+  // The dish's own calories sit beside its one price, or alone under
+  // Market price; with prices by size each size has its own (D-167).
+  const ownCalories = (
+    <AutosaveTextField
+      {...calories}
+      label={strings.price.caloriesLabel}
+      description={strings.price.caloriesHint}
+    />
+  );
 
   return (
     <>
@@ -235,14 +258,18 @@ function DishEditor({
           </RadioGroup>
         </div>
         {page.kind.value === "one" ? (
-          <AutosaveTextField
-            {...price}
-            label={strings.price.amountLabel}
-            description={strings.price.amountHint}
-            inputMode="decimal"
-            prefix={strings.price.currency}
-          />
+          <>
+            <AutosaveTextField
+              {...price}
+              label={strings.price.amountLabel}
+              description={strings.price.amountHint}
+              inputMode="decimal"
+              prefix={strings.price.currency}
+            />
+            {ownCalories}
+          </>
         ) : null}
+        {page.kind.value === "market" ? ownCalories : null}
         {page.kind.value === "sizes" ? (
           <>
             {page.sizes.shown.length > 0 ? (
@@ -254,6 +281,11 @@ function DishEditor({
                   const label = page.sizes.labelOf(size, index);
                   const name = page.sizes.fieldOf(size, index, "name");
                   const amount = page.sizes.fieldOf(size, index, "price");
+                  const sizeCalories = page.sizes.fieldOf(
+                    size,
+                    index,
+                    "calories",
+                  );
                   return (
                     <li
                       key={size.id}
@@ -283,6 +315,12 @@ function DishEditor({
                         description={strings.price.amountHint}
                         inputMode="decimal"
                         prefix={strings.price.currency}
+                      />
+                      <AutosaveTextField
+                        {...sizeCalories}
+                        label={strings.price.sizeCaloriesLabel}
+                        labelSuffix={sizeSuffix(strings, label)}
+                        description={strings.price.caloriesHint}
                       />
                       <div>
                         <Button
@@ -343,6 +381,13 @@ function DishEditor({
         lang={lang}
         schedule={page.schedule}
       />
+
+      <DishCookedToOrder
+        strings={strings.cookedToOrder}
+        cookedToOrder={page.cookedToOrder}
+      />
+
+      <ChoiceListRows rows={page.choices} />
 
       <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
         <SavedStatus

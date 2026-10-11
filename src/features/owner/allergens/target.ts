@@ -9,12 +9,12 @@ import type {
 import type { GroupChange, UndoLists } from "./group-undo";
 
 // What an allergen group writes to and speaks for: a dish (D-148, D-149) or
-// a section's line shown with every dish (D-152, D-153). The group itself is
-// one hook and one component; a target gives it the element ids, the
+// an option of a choice list (D-166). The group itself is one hook and one
+// component; a target gives it the element ids and editing keys, the
 // subject its sentences name, the three writes, the Undo entries its page
-// keeps, and, on a dish's page, the same-named Apply (D-129). Every write
-// carries the lists the page showed, and a line's carries the line's words
-// too: what the server last confirmed, read when the queue sends it. Pure
+// keeps, and the same-named Apply (D-129). Every write carries the lists
+// the page showed, and an option's carries the option's name too (D-153):
+// what the server last confirmed, read when the queue sends it. Pure
 // types.
 
 type ServerProblem = Exclude<
@@ -27,7 +27,7 @@ type ServerProblem = Exclude<
 export type GroupProblem = ServerProblem | { kind: "lists-changed" };
 
 // What a write answers with: the lists and the check as the server holds
-// them now, and, for a line, its words.
+// them now, and, for an option, its name.
 export type GroupState = OwnerAllergens & { words?: string };
 
 export type GroupResult =
@@ -44,9 +44,11 @@ export type GroupApplyResult =
 
 // The element ids the group's controls carry, so a failed save can point
 // focus at its control and the tests can find them: "dish-allergen-check",
-// "line-other-2-name". fallbackFocus is where focus goes when the group
-// leaves the page with focus inside it (a line cleared from another tab).
+// "option-<id>-other-2-name"; and the keys its saves hold in the page's
+// editing state, which start with the same prefix, so a page that holds a
+// group per option row never mixes two groups' saves (D-166).
 export type GroupIds = {
+  prefix: string;
   heading: string;
   sentence: string;
   check: string;
@@ -55,14 +57,16 @@ export type GroupIds = {
   otherField: (key: number) => string;
   otherButton: (key: number) => string;
   apply: (id: string) => string;
-  fallbackFocus: string | null;
+  keys: {
+    allergen: (id: AllergenId) => string;
+    other: (key: number) => string;
+    check: string;
+  };
 };
 
-export function groupIds(
-  prefix: string,
-  fallbackFocus: string | null = null,
-): GroupIds {
+export function groupIds(prefix: string): GroupIds {
   return {
+    prefix,
     heading: `${prefix}-allergens-heading`,
     sentence: `${prefix}-allergen-sentence`,
     check: `${prefix}-allergen-check`,
@@ -71,7 +75,11 @@ export function groupIds(
     otherField: (key) => `${prefix}-other-${key}-name`,
     otherButton: (key) => `${prefix}-other-${key}-remove`,
     apply: (id) => `${prefix}-apply-${id}`,
-    fallbackFocus,
+    keys: {
+      allergen: (id) => `${prefix}:allergen:${id}`,
+      other: (key) => `${prefix}:other:${key}`,
+      check: `${prefix}:allergen-check`,
+    },
   };
 }
 
@@ -79,7 +87,7 @@ export type AllergenTarget<Entry> = {
   ids: GroupIds;
   subject: AllergenSubject;
   // The three writes. shown is the lists the page showed, and words the
-  // line's words the page showed, or null for a dish; each lands only if
+  // option's name the page showed, or null for a dish; each lands only if
   // the subject still holds them.
   writes: {
     allergens: (
@@ -107,7 +115,7 @@ export type AllergenTarget<Entry> = {
       entry: Entry,
     ) => { change: GroupChange; words: string | null } | null;
   };
-  // The same-named offer, a dish's alone (D-129).
+  // The same-named offer (D-129), grown to options (D-166).
   sameNamed?: {
     places: SameNamedPlace[];
     apply: (

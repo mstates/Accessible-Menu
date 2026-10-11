@@ -2,7 +2,9 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
 import { pageTitle } from "../../src/copy/title";
+import { CHOICE_LISTS_HEADING_ID } from "../../src/features/owner/choices/useChoiceListRows";
 import {
+  restaurantChoiceListPath,
   restaurantDishPath,
   restaurantMenuPath,
   restaurantMenusPath,
@@ -41,7 +43,10 @@ import { expectWrites, guardWrites } from "./write-guard";
 // in Mains for the same-named line (D-129); and showed one way each (task
 // 5): the first a special every day from 4 to 9 pm, the second tagged
 // vegetarian and made without gluten ingredients, the third off the menu
-// for now. The gate never writes and never types into
+// for now; and gave calories, the mark, and a choice list (task 7, D-166,
+// D-167): calories on the first's two sizes, on the second, and on the
+// third, the third cooked to order, and a dressing list with two options
+// on the second. The gate never writes and never types into
 // a field that saves when it is left (D-108, D-111, D-115): every test
 // here runs behind the write guard. The tests that press a control that
 // saves, a radio, Add a size, a box, say they expect a write; the guard
@@ -63,6 +68,8 @@ const nav = en.owner.restaurants.nav;
 const tags = strings.tags;
 const availability = strings.availability;
 const schedule = strings.schedule;
+const cookedToOrder = strings.cookedToOrder;
+const choiceCopy = en.owner.choices;
 const dayNames = en.owner.restaurants.days;
 
 guardWrites();
@@ -79,15 +86,11 @@ const controls = (page: Page) =>
     ownerFixture().withSections.name,
     ownerFixture().withDishes.name,
   );
+// Every dish's page draws a check mark: the first two are checked, and the
+// third is cooked to order (D-167).
 const checks = {
   controls,
   marks: [...breadcrumbMarks, ...formMarks, ...radioMarks, ...checkboxMarks],
-};
-// The market price dish has nothing ticked and is not checked, so no box
-// draws a mark there.
-const unchecked = {
-  controls,
-  marks: [...breadcrumbMarks, ...formMarks, ...radioMarks],
 };
 
 test.describe("a dish's page, priced by size", () => {
@@ -99,7 +102,7 @@ test.describe("a dish's page, at one price", () => {
 });
 
 test.describe("a dish's page, at market price", () => {
-  pageChecks(() => dishPath("market"), unchecked);
+  pageChecks(() => dishPath("market"), checks);
 });
 
 function savedStatus(page: Page) {
@@ -141,6 +144,46 @@ function noteField(page: Page) {
 function priceField(page: Page) {
   return page.getByRole("textbox", {
     name: strings.price.amountLabel,
+    exact: true,
+  });
+}
+
+// The dish's own calories field (D-167), beside its one price or alone
+// under Market price; a size's is named for its size.
+function caloriesField(page: Page) {
+  return page.getByRole("textbox", {
+    name: strings.price.caloriesLabel,
+    exact: true,
+  });
+}
+
+function sizeCaloriesField(page: Page, size: string) {
+  return page.getByRole("textbox", {
+    name: `${strings.price.sizeCaloriesLabel} ${fill(strings.price.labelFor, { size })}`,
+    exact: true,
+  });
+}
+
+// The Cooked to order box and the choice lists block (task 7).
+function cookedBox(page: Page) {
+  return page.getByRole("checkbox", { name: cookedToOrder.label, exact: true });
+}
+
+function choiceHeading(page: Page) {
+  return page
+    .locator("main")
+    .getByRole("heading", { level: 2, name: choiceCopy.heading });
+}
+
+function choiceRows(page: Page) {
+  return page.locator(
+    `main ol[aria-labelledby="${CHOICE_LISTS_HEADING_ID}"] > li`,
+  );
+}
+
+function newListField(page: Page) {
+  return page.getByRole("textbox", {
+    name: choiceCopy.lists.newLabel,
     exact: true,
   });
 }
@@ -405,12 +448,195 @@ test("the page reads in order: the lead, the description, the price group under 
       main.getByText(schedule.monthsLead, { exact: true }),
       boxGroup(page, schedule.monthsLabel),
       scheduleLine(page),
+      main.getByRole("heading", { level: 2, name: cookedToOrder.heading }),
+      cookedBox(page),
+      choiceHeading(page),
+      main.getByText(choiceCopy.leadDish, { exact: true }),
+      newListField(page),
       savedStatus(page),
       main.locator('a[href*="/dishes/"]'),
       main.getByRole("heading", { level: 2, name: strings.move.heading }),
     ],
-    "the h1, the lead, the description, the price heading, its group, the sizes, Add a size, the note, the allergen heading, the nine, the other allergens, Add another allergen, the check, its sentence, the tags under their heading, availability under its, the schedule under its with its lead, days, hours, Today only, the two days, the weeks with their lead, the months with theirs, and its sentence, the status, the next dish, then the move, in that order",
+    "the h1, the lead, the description, the price heading, its group, the sizes, Add a size, the note, the allergen heading, the nine, the other allergens, Add another allergen, the check, its sentence, the tags under their heading, availability under its, the schedule under its with its lead, days, hours, Today only, the two days, the weeks with their lead, the months with theirs, and its sentence, Cooked to order under its heading, the choice lists under theirs with their lead and add field, the status, the next dish, then the move, in that order",
   );
+  // Each size's row holds its name, its price, and its calories, in that
+  // order (D-167).
+  const first = sizeRows(page).first();
+  await expectInOrder(
+    [
+      first.getByRole("combobox"),
+      first.getByRole("textbox", {
+        name: new RegExp(`^${strings.price.sizePriceLabel} `),
+      }),
+      first.getByRole("textbox", {
+        name: new RegExp(`^${strings.price.sizeCaloriesLabel} `),
+      }),
+    ],
+    "a size's name, then its price, then its calories",
+  );
+});
+
+// Task 7, D-167: calories one field a place, as the data file gives them:
+// on each size of the soup, beside the salad's one price, and alone under
+// the bread's market price, each described by the one hint.
+test("calories read beside each price: one field a size, one after the one price, and one alone under Market price", async ({
+  page,
+}) => {
+  await openDish(page, "sizes");
+  await expect(caloriesField(page), "no dish-level field by size").toHaveCount(
+    0,
+  );
+  await expect(sizeCaloriesField(page, "Cup")).toHaveValue("180");
+  await expect(sizeCaloriesField(page, "Bowl")).toHaveValue("290");
+  await expect(sizeCaloriesField(page, "Cup")).toHaveAccessibleDescription(
+    strings.price.caloriesHint,
+  );
+
+  await openDish(page, "one");
+  const calories = caloriesField(page);
+  await expect(calories).toHaveCount(1);
+  await expect(calories).toHaveValue("320");
+  await expect(calories).toHaveAccessibleDescription(
+    strings.price.caloriesHint,
+  );
+  await expect(calories).not.toHaveAttribute("inputmode", "decimal");
+  await expectInOrder(
+    [priceField(page), calories, noteField(page)],
+    "the price, then its calories, then the note",
+  );
+
+  await openDish(page, "market");
+  await expect(priceField(page)).toHaveCount(0);
+  await expect(caloriesField(page)).toHaveValue("410");
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+// Task 7, D-167: the box under its own heading after Schedule, with its
+// hint, ticked on the bread alone.
+test("Cooked to order reads as one box under its heading with its hint, ticked on the dish the data file marked", async ({
+  page,
+}) => {
+  await openDish(page, "market");
+  const box = cookedBox(page);
+  await expect(box).toHaveCount(1);
+  await expect(box).toBeChecked();
+  await expect(box).toHaveAccessibleDescription(cookedToOrder.hint);
+  await expect(
+    page
+      .locator("main")
+      .getByRole("heading", { level: 2, name: cookedToOrder.heading }),
+  ).toHaveCount(1);
+  await openDish(page, "one");
+  await expect(cookedBox(page)).not.toBeChecked();
+  await openDish(page, "sizes");
+  await expect(cookedBox(page)).not.toBeChecked();
+});
+
+// Task 7, D-166: the dish's choice lists as rows under their heading, the
+// salad with its dressing list and the others with none.
+test("the choice lists block shows the salad's dressing list as a row with its link and buttons, and none on the other dishes", async ({
+  page,
+}) => {
+  const { lists } = ownerFixture();
+  const lead = lists.dish.lead;
+  await openDish(page, "one");
+  await expect(choiceHeading(page)).toHaveCount(1);
+  await expect(choiceRows(page)).toHaveCount(1);
+  await expect(
+    choiceRows(page).first().getByRole("heading", { level: 3 }),
+  ).toHaveText(lead);
+  const link = page.getByRole("link", {
+    name: fill(choiceCopy.lists.rowAction, {
+      action: choiceCopy.lists.edit,
+      list: lead,
+    }),
+    exact: true,
+  });
+  await expect(link).toHaveAttribute(
+    "href",
+    restaurantChoiceListPath(code, lists.dish.id),
+  );
+  for (const action of [
+    choiceCopy.lists.moveUp,
+    choiceCopy.lists.moveDown,
+    choiceCopy.lists.remove,
+  ]) {
+    await expect(
+      page.getByRole("button", {
+        name: fill(choiceCopy.lists.rowAction, { action, list: lead }),
+        exact: true,
+      }),
+    ).toHaveCount(1);
+  }
+  await expect(newListField(page)).toHaveAccessibleDescription(
+    choiceCopy.lists.newHint,
+  );
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+
+  for (const which of ["sizes", "market"] as const) {
+    await openDish(page, which);
+    await expect(choiceHeading(page)).toHaveCount(1);
+    await expect(choiceRows(page)).toHaveCount(0);
+    await expect(
+      page.locator("main").getByText(choiceCopy.lists.none, { exact: true }),
+    ).toHaveCount(1);
+  }
+});
+
+// The box saves at once, as a tag does: it shows at once while its save
+// waits, and goes back when the guard answers it.
+test("a Cooked to order tick shows at once, is refused once when it cannot land, and goes back", async ({
+  page,
+}) => {
+  const writes = expectWrites(page, { hold: true });
+  const { dishes } = ownerFixture();
+  await openDish(page, "one");
+  await page
+    .locator("#dish-cooked-to-order")
+    .getByText(cookedToOrder.label, { exact: true })
+    .click();
+  await expect(cookedBox(page)).toBeChecked();
+  await expectNoMissingIds(page);
+
+  writes.release();
+  const failure = `${fill(cookedToOrder.notSaved, { dish: dishes.one.name })} ${editing.problems.outOfDate}`;
+  await expect(savedStatus(page)).toHaveText(failure);
+  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
+  await expect(cookedBox(page), "the box is back").not.toBeChecked();
+  await expect(cookedBox(page)).toHaveAttribute("aria-invalid", "true");
+  expect(writes.answered.length).toBeGreaterThan(0);
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+// Calories in the wrong shape are refused before anything is sent: no
+// expectWrites, so the guard is the proof (D-167).
+test("calories in the wrong shape are refused in the field with nothing sent, said once, with Try again", async ({
+  page,
+}) => {
+  const { dishes } = ownerFixture();
+  await openDish(page, "one");
+  const calories = caloriesField(page);
+  await calories.fill("lots");
+  await page.keyboard.press("Enter");
+  const refused = `${fill(strings.notSaved.calories, { dish: dishes.one.name })} ${strings.errors.caloriesFormat}`;
+  await expect(calories).toHaveAttribute("aria-invalid", "true");
+  await expect(calories).toHaveAccessibleDescription(
+    `${strings.price.caloriesHint} ${strings.errors.caloriesFormat}`,
+  );
+  await expect(savedStatus(page)).toHaveText(refused);
+  await expect(log(page).getByText(refused, { exact: true })).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: editing.tryAgain, exact: true }),
+  ).toHaveCount(1);
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+  // Back as saved: nothing is sent, and the failure ends.
+  await calories.fill("320");
+  await page.keyboard.press("Enter");
+  await expect(savedStatus(page)).toHaveText(editing.saved);
 });
 
 // Task 5, D-66: the three tags named by the words diners read, each with
@@ -1076,10 +1302,10 @@ test("the sizes read in price order, each with a name field that suggests names,
 });
 
 // It types nothing, so nothing may be sent or said; the write guard is the
-// proof that nothing was sent (D-118). Enter commits the price and the
-// note, which are one line; in the description Enter is a line break, so
-// it is only left, with Tab.
-test("Tab through the unchanged description, Enter in the unchanged price and note send nothing and say nothing", async ({
+// proof that nothing was sent (D-118). Enter commits the price, the
+// calories (D-167), and the note, which are one line; in the description
+// Enter is a line break, so it is only left, with Tab.
+test("Tab through the unchanged description, Enter in the unchanged price, calories, and note send nothing and say nothing", async ({
   page,
 }) => {
   await openDish(page, "one");
@@ -1093,6 +1319,10 @@ test("Tab through the unchanged description, Enter in the unchanged price and no
   await expect(priceField(page)).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(priceField(page)).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(caloriesField(page), "the calories come next").toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(caloriesField(page)).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(noteField(page)).toBeFocused();
   await page.keyboard.press("Enter");

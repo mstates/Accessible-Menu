@@ -3,9 +3,10 @@ import { PageNav, type PageNavLink } from "@/ui/PageNav";
 import { restaurantDetailsPath, restaurantMenusPath } from "./paths";
 
 // The page that renders the nav says where it is: on Details, on Menus, or
-// on one menu's own page, one section's, or one dish's, which all sit
-// inside Menus.
-export type RestaurantPage = "details" | "menus" | "menu" | "section" | "dish";
+// on one menu's own page, one section's, one dish's, or one choice list's,
+// which all sit inside Menus.
+export type RestaurantPage =
+  "details" | "menus" | "menu" | "section" | "dish" | "list";
 
 type Props = {
   copy: Copy;

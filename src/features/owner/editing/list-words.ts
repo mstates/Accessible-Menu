@@ -15,8 +15,10 @@ export type EditingStrings = Copy["owner"]["editing"];
 // The placeholder a list's sentences carry: "{menu} moved up." A size is
 // not a list of its own, but its texts on the dish page are said with the
 // same placeholder: "Price for {size} was not saved."; so is another
-// allergen's row: "{other} was not saved."
-export type ListNoun = "menu" | "section" | "dish" | "size" | "other";
+// allergen's row: "{other} was not saved." A choice list and its options
+// are lists of their own (D-166).
+export type ListNoun =
+  "menu" | "section" | "dish" | "size" | "other" | "list" | "option";
 
 type Counted = { one: string; other: string };
 
@@ -28,6 +30,9 @@ export type ListStrings = {
   remove: string;
   rowAction: string;
   newLabel: string;
+  // A hint under the add field, for a list whose rows are added by a text
+  // that needs one: a choice list's lead (D-166).
+  newHint?: string;
   add: string;
   count: Counted;
   added: string;
@@ -70,6 +75,7 @@ export type ListStrings = {
   deleteAskBoth?: string;
   sectionCount?: Counted;
   dishCount?: Counted;
+  optionCount?: Counted;
 };
 
 // One text field of a row. Its label is followed in hidden text by the
@@ -80,6 +86,10 @@ export type FieldWords = {
   hint?: string;
   // A field that takes several lines.
   multiline?: boolean;
+  // A price field asks a phone for its number keypad and shows the dollar
+  // sign beside it (D-139).
+  inputMode?: "decimal";
+  prefix?: string;
   // "Note for {section} was not saved."
   notSaved: string;
   // For a text that is not the name: the Undo control's words for a change
@@ -297,7 +307,8 @@ export function notSavedSentence(
 // What a delete asks before it takes content with it (D-119), which is also
 // the confirmation's name: "Delete Lunch, with its 4 sections?", "Delete
 // Lunch, with its 4 sections and 12 dishes?", "Delete Starters, with its 3
-// dishes?". Dishes are named only when there are some.
+// dishes?", "Delete Choose one side, with its 3 options?" (D-166). Dishes
+// are named only when there are some.
 export function deleteQuestion(
   words: ListWords,
   name: string,
@@ -310,10 +321,17 @@ export function deleteQuestion(
   const sections = strings.sectionCount
     ? counted(strings.sectionCount, held.sections)
     : "";
+  const options = strings.optionCount
+    ? counted(strings.optionCount, held.options)
+    : "";
   if (held.sections > 0 && held.dishes > 0 && strings.deleteAskBoth) {
     return named(words, strings.deleteAskBoth, name, { sections, dishes });
   }
-  return named(words, strings.deleteAsk ?? "", name, { sections, dishes });
+  return named(words, strings.deleteAsk ?? "", name, {
+    sections,
+    dishes,
+    options,
+  });
 }
 
 // What went wrong, in words. The name is the one the owner typed or the row

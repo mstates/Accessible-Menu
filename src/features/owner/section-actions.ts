@@ -45,6 +45,7 @@ const orderSchema = z.array(z.uuid()).min(1).max(500);
 const toldSchema = z.object({
   sections: z.number().int().min(0),
   dishes: z.number().int().min(0),
+  options: z.number().int().min(0),
 });
 
 function refuse(problem: ServerProblem): { ok: false; problem: ServerProblem } {

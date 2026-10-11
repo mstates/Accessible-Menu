@@ -62,7 +62,7 @@ function SectionRows({ strings, editing, code, menuId, sections }: Props) {
       restore: (id, order) => restoreSection(code, menuId, id, order),
       order: (ids) => orderSections(code, menuId, ids),
     },
-    held: (section) => ({ sections: 0, dishes: section.dishes }),
+    held: (section) => ({ sections: 0, dishes: section.dishes, options: 0 }),
     link: {
       label: strings.editDishes,
       href: (section) => restaurantSectionPath(code, section.id),

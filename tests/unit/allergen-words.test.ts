@@ -44,6 +44,7 @@ const others = otherWords(strings, editing, en.owner.dish.errors.parentGone);
 const dish = "Soup of the day";
 const lists = { allergens: ["milk", "wheat"] as const, others: ["celery"] };
 const place: SameNamedPlace = {
+  kind: "dish",
   id: "d2",
   name: dish,
   section: "Mains",

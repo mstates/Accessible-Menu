@@ -17,9 +17,13 @@ import {
   type AllergenLists,
 } from "@/domain/allergens";
 import type { OwnerDishAllergens, OwnerDishDetail } from "@/domain/dish";
-import { nameKey } from "@/domain/menu";
-import { ALLERGEN_IDS, type AllergenId } from "@/domain/types";
+import { ALLERGEN_IDS } from "@/domain/types";
 import { majorRuleOf } from "../allergens/allergen-words";
+import {
+  applyListsTo,
+  inFixedOrder,
+  undoApplyTo,
+} from "../allergens/apply-server";
 import type {
   GroupApplyResult,
   GroupProblem,
@@ -29,7 +33,7 @@ import { dishScope } from "../owner-scope";
 
 // A dish's allergens save through these (D-148): the major allergens
 // ticked, the other allergens typed, the check, and D-129's apply to a
-// same-named dish. Every write that changes or checks a list carries the
+// same-named dish or option (D-166). Every write that changes or checks a list carries the
 // two lists the page showed and lands only if the dish still holds them
 // (Michael, October 8, 2026), so a stale tab never drops an allergen
 // another tab added, and no one checks a list they never saw; a miss comes
@@ -50,7 +54,6 @@ export type AllergenResult = GroupResult;
 export type ApplyResult = GroupApplyResult;
 type ServerApplyProblem = Extract<ApplyResult, { ok: false }>["problem"];
 
-const idSchema = z.uuid();
 const listsSchema = z.object({
   allergens: z.array(z.enum(ALLERGEN_IDS)).max(ALLERGEN_IDS.length),
   others: z.array(z.string().max(200)).max(OTHER_ALLERGEN_LIMITS.count),
@@ -63,6 +66,10 @@ const othersSchema = z
   .array(z.string().max(1000))
   .max(OTHER_ALLERGEN_LIMITS.count + 1);
 const applyShownSchema = z.object({ source: listsSchema, target: listsSchema });
+const targetSchema = z.object({
+  kind: z.enum(["dish", "option"]),
+  id: z.uuid(),
+});
 
 function refuse(problem: AllergenProblem): AllergenResult {
   return { ok: false, problem };
@@ -86,13 +93,6 @@ function allergensOf(dish: OwnerDishDetail): OwnerDishAllergens {
 
 function listsOf(dish: OwnerDishDetail): AllergenLists {
   return { allergens: dish.allergens, others: dish.otherAllergens };
-}
-
-// The major allergens in the order the boxes show and the database keeps,
-// each once: the order the enum declares.
-function inFixedOrder(allergens: readonly AllergenId[]): AllergenId[] {
-  const set = new Set(allergens);
-  return ALLERGEN_IDS.filter((id) => set.has(id));
 }
 
 // What the database refused, as the page's problems: a miss means the lists
@@ -214,23 +214,20 @@ export async function setDishAllergenCheck(
   return { ok: true, value: allergensOf(result.value) };
 }
 
-// Gives a same-named dish this dish's lists and the check (D-129): two
-// statements, the lists and then the check, since one statement that
-// changes a list and checks it ends unchecked (migration 7), and a failure
-// between the two leaves that dish with the new lists and unchecked, a safe
-// state. This dish must still be checked and hold the lists the page
-// showed; the other dish must still have the name, and hold the lists its
-// line showed. The lists are written whenever they differ as stored, so the
-// check that follows never refuses itself over their order.
+// Gives a same-named dish or option this dish's lists and the check
+// (D-129, D-166): two statements, the lists and then the check, through
+// the apply's shared server side. This dish must still be checked and hold
+// the lists the page showed; the other side must still have the name, and
+// hold the lists its line showed.
 export async function applyDishAllergens(
   rawCode: string,
   rawDish: string,
-  rawTarget: string,
+  rawTarget: unknown,
   rawShown: unknown,
 ): Promise<ApplyResult> {
   const scope = await dishScope(rawCode, rawDish);
   if (!scope.ok) return scope;
-  // Whatever the outcome, the page then shows both dishes as they are now.
+  // Whatever the outcome, the page then shows both sides as they are now.
   const result = await applyAs(scope, rawCode, rawTarget, rawShown);
   refresh();
   return result;
@@ -239,14 +236,15 @@ export async function applyDishAllergens(
 async function applyAs(
   scope: Extract<Awaited<ReturnType<typeof dishScope>>, { ok: true }>,
   rawCode: string,
-  rawTarget: string,
+  rawTarget: unknown,
   rawShown: unknown,
 ): Promise<ApplyResult> {
-  const targetId = idSchema.safeParse(rawTarget);
+  const target = targetSchema.safeParse(rawTarget);
   const shown = applyShownSchema.safeParse(rawShown);
-  if (!targetId.success || !shown.success) return applyFailed;
-  if (targetId.data === scope.dishId)
+  if (!target.success || !shown.success) return applyFailed;
+  if (target.data.kind === "dish" && target.data.id === scope.dishId) {
     return refuseApply({ kind: "target-gone" });
+  }
 
   const source = await findOwnerDish(
     scope.client,
@@ -260,106 +258,42 @@ async function applyAs(
   if (!sameListsAsStored(listsOf(source), shown.data.source)) {
     return refuseApply({ kind: "source-changed" });
   }
-
-  const targetScope = await dishScope(rawCode, targetId.data);
-  if (!targetScope.ok) {
-    return targetScope.problem.kind === "signed-out" ||
-      targetScope.problem.kind === "failed"
-      ? { ok: false, problem: targetScope.problem }
-      : refuseApply({ kind: "target-gone" });
-  }
-  const target = await findOwnerDish(
-    targetScope.client,
-    targetScope.restaurantId,
-    targetScope.dishId,
+  return applyListsTo(
+    rawCode,
+    target.data,
+    {
+      name: source.name,
+      allergens: source.allergens,
+      others: source.otherAllergens,
+    },
+    shown.data.target,
     scope.userId,
   );
-  if (target === "failed") return applyFailed;
-  if (target === "not-found") return refuseApply({ kind: "target-gone" });
-  if (nameKey(target.name) !== nameKey(source.name)) {
-    return refuseApply({ kind: "target-changed" });
-  }
-  if (!sameListsAsStored(listsOf(target), shown.data.target)) {
-    return refuseApply({ kind: "target-changed" });
-  }
-
-  let lists = listsOf(target);
-  if (!sameListsAsStored(lists, listsOf(source))) {
-    const written = await writeOwnerDishAllergens(
-      targetScope.client,
-      targetScope.sectionId,
-      target.id,
-      scope.userId,
-      {
-        allergens: source.allergens,
-        custom_allergens: source.otherAllergens,
-      },
-      { lists },
-    );
-    if (!written.ok) {
-      return refuseApply({
-        kind: written.error.kind === "not-found" ? "target-changed" : "failed",
-      });
-    }
-    lists = listsOf(written.value);
-  }
-  const checked = await writeOwnerDishAllergens(
-    targetScope.client,
-    targetScope.sectionId,
-    target.id,
-    scope.userId,
-    { allergens_reviewed: true },
-    { lists },
-  );
-  if (!checked.ok) {
-    return refuseApply({
-      kind: checked.error.kind === "not-found" ? "target-changed" : "failed",
-    });
-  }
-  return { ok: true, value: allergensOf(checked.value) };
 }
 
-// Undo of an apply: the other dish gets its old lists back and is left
+// Undo of an apply: the other side gets its old lists back and is left
 // unchecked, since the stamp it had before cannot be restored, and only
 // while it still holds the stamp the apply made.
 export async function undoDishAllergensApply(
   rawCode: string,
   rawDish: string,
-  rawTarget: string,
+  rawTarget: unknown,
   rawBefore: unknown,
   rawAt: unknown,
 ): Promise<ApplyResult> {
   const scope = await dishScope(rawCode, rawDish);
   if (!scope.ok) return scope;
-  const targetId = idSchema.safeParse(rawTarget);
+  const target = targetSchema.safeParse(rawTarget);
   const before = listsSchema.safeParse(rawBefore);
   const at = z.string().min(1).safeParse(rawAt);
-  if (!targetId.success || !before.success || !at.success) return applyFailed;
-  const targetScope = await dishScope(rawCode, targetId.data);
-  if (!targetScope.ok) {
-    refresh();
-    return targetScope.problem.kind === "signed-out" ||
-      targetScope.problem.kind === "failed"
-      ? { ok: false, problem: targetScope.problem }
-      : refuseApply({ kind: "target-gone" });
-  }
-  const result = await writeOwnerDishAllergens(
-    targetScope.client,
-    targetScope.sectionId,
-    targetScope.dishId,
+  if (!target.success || !before.success || !at.success) return applyFailed;
+  const result = await undoApplyTo(
+    rawCode,
+    target.data,
+    before.data,
+    at.data,
     scope.userId,
-    {
-      allergens: inFixedOrder(before.data.allergens),
-      custom_allergens: before.data.others,
-      allergens_reviewed: false,
-    },
-    { allergens_reviewed_at: at.data },
   );
   refresh();
-  if (!result.ok) {
-    return refuseApply({
-      kind: result.error.kind === "not-found" ? "target-changed" : "failed",
-    });
-  }
-  return { ok: true, value: allergensOf(result.value) };
+  return result;
 }

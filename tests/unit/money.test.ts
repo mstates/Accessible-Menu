@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { en } from "../../src/copy";
 import {
+  addedPrice,
   formatPrice,
   numberToWords,
   parsePrice,
@@ -49,6 +50,22 @@ describe("prices in numerals and in words (Q-6, D-20)", () => {
     expect(formatPrice({ kind: "text", text: "Market price" }, copy)).toEqual({
       display: "Market price",
       spoken: "Market price",
+    });
+  });
+
+  // D-166: an option's added price.
+  it.each([
+    [200, "+$2", "plus two dollars"],
+    [150, "+$1.50", "plus one dollar and fifty cents"],
+    [50, "+$0.50", "plus fifty cents"],
+  ])("%i cents added shows %s and says %s", (cents, display, spoken) => {
+    expect(addedPrice(cents, copy)).toEqual({ display, spoken });
+  });
+
+  it("reads an added price of zero as no extra charge", () => {
+    expect(addedPrice(0, copy)).toEqual({
+      display: copy.noExtraCharge,
+      spoken: copy.noExtraCharge,
     });
   });
 });

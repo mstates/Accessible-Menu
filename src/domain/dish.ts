@@ -1,4 +1,5 @@
 import type { AllergenCheck, OwnerAllergens } from "./allergens";
+import { parseCalories, type CalorieRule } from "./calories";
 import { cleanMenuName } from "./menu";
 import { parsePrice, type PriceRule } from "./money";
 import type { Schedule } from "./schedule";
@@ -9,8 +10,9 @@ import type { DietaryTagId } from "./types";
 // name, and the dish as its own page reads it (D-128), with everything an
 // owner writes there: the description, the price choice, the one price, the
 // note, and the sizes (task 3b), its allergens with their check (task 4,
-// D-148), and its tags, its availability with the moment of a sold-out
-// mark, and its schedule (task 5, D-159, D-160). The photo joins in task 6.
+// D-148), its tags, its availability with the moment of a sold-out mark,
+// and its schedule (task 5, D-159, D-160), and its calories and Cooked to
+// order mark (task 7, D-167). Dish photos are parked (D-165).
 // The diner-side Item in types.ts is the published view model and stays
 // separate until the diner page reads real data (D-78). The table is called
 // items; everything above it says dish. Pure: no React, no network.
@@ -29,15 +31,18 @@ export type { AllergenCheck };
 export type OwnerDishAllergens = OwnerAllergens;
 
 // A dish on its own page. price is the one price as its field shows it, two
-// decimals or blank for none; the sizes are read beside it. The mark is the
-// row's as stored: what it means now is decided by domain/availability.ts
-// and nowhere else (D-160).
+// decimals or blank for none, and calories as their field shows them, a
+// number or a range (D-167); the sizes are read beside them. The mark is
+// the row's as stored: what it means now is decided by
+// domain/availability.ts and nowhere else (D-160).
 export type OwnerDishDetail = OwnerDish &
   OwnerDishAllergens & {
     description: string;
     note: string;
     priceKind: PriceKind;
     price: string;
+    calories: string;
+    cookedToOrder: boolean;
     tags: DietaryTagId[];
     available: boolean;
     soldOutAt: string | null;
@@ -45,7 +50,7 @@ export type OwnerDishDetail = OwnerDish &
   };
 
 // The texts of a dish an owner writes on its page, in the page's order.
-export const DISH_TEXTS = ["description", "price", "note"] as const;
+export const DISH_TEXTS = ["description", "price", "calories", "note"] as const;
 export type DishText = (typeof DISH_TEXTS)[number];
 
 // Also table constraints in the database (migrations 5 and 6), which is the
@@ -60,7 +65,8 @@ export type DishRule =
   | "nameLength"
   | "descriptionLength"
   | "noteLength"
-  | PriceRule;
+  | PriceRule
+  | CalorieRule;
 
 // A name is one line, cleaned the way a menu's name is: a pasted tab or line
 // break becomes a space, and the outer space goes.
@@ -75,8 +81,9 @@ export function dishNameProblem(value: string): DishRule | null {
 }
 
 // A description may run over several lines, cleaned the way a section's
-// note is; a note is one line, cleaned the way a name is; a typed price
-// loses only its outer space, so what the owner typed is what is read.
+// note is; a note is one line, cleaned the way a name is; a typed price or
+// typed calories lose only their outer space, so what the owner typed is
+// what is read.
 export function cleanDishText(field: DishText, value: string): string {
   switch (field) {
     case "description":
@@ -84,13 +91,14 @@ export function cleanDishText(field: DishText, value: string): string {
     case "note":
       return cleanMenuName(value);
     case "price":
+    case "calories":
       return value.trim();
   }
 }
 
 // The rule a cleaned text breaks, or null when it can be saved. A
 // description and a note may be blank, which means none; a blank price
-// means no price shown (D-139).
+// means no price shown (D-139); blank calories mean none shown (D-167).
 export function dishTextProblem(
   field: DishText,
   value: string,
@@ -106,22 +114,32 @@ export function dishTextProblem(
       const price = parsePrice(value);
       return price.ok ? null : price.rule;
     }
+    case "calories": {
+      const calories = parseCalories(value);
+      return calories.ok ? null : calories.rule;
+    }
   }
 }
 
 // A size of a dish (D-139): a name and a price, each blank while the owner
-// has not typed one. The table holds null for either; a draft may, and
-// Publish refuses one (D-82).
-export type OwnerSize = { id: string; name: string; price: string };
+// has not typed one, and its calories (D-167), blank for none. The table
+// holds null for each; a draft may hold a blank name or price, and Publish
+// refuses one (D-82).
+export type OwnerSize = {
+  id: string;
+  name: string;
+  price: string;
+  calories: string;
+};
 
-export const SIZE_TEXTS = ["name", "price"] as const;
+export const SIZE_TEXTS = ["name", "price", "calories"] as const;
 export type SizeText = (typeof SIZE_TEXTS)[number];
 
 // Also a table constraint (migration 6). A size name is short: Cup, Bowl,
 // Half, 6 wings.
 export const SIZE_LIMITS = { name: 40 } as const;
 
-export type SizeRule = "sizeNameLength" | PriceRule;
+export type SizeRule = "sizeNameLength" | PriceRule | CalorieRule;
 
 export function cleanSizeText(field: SizeText, value: string): string {
   return field === "name" ? cleanMenuName(value) : value.trim();
@@ -133,6 +151,10 @@ export function sizeTextProblem(
 ): SizeRule | null {
   if (field === "name") {
     return value.length > SIZE_LIMITS.name ? "sizeNameLength" : null;
+  }
+  if (field === "calories") {
+    const calories = parseCalories(value);
+    return calories.ok ? null : calories.rule;
   }
   const price = parsePrice(value);
   return price.ok ? null : price.rule;

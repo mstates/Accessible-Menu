@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { caloriesInputText, type Calories } from "@/domain/calories";
 import type { OwnerSize } from "@/domain/dish";
 import { priceInputText } from "@/domain/money";
 import { shaped } from "./log";
@@ -12,15 +13,17 @@ import { shaped } from "./log";
 // price is null in the table and "" to a feature. Sizes are read in price
 // order, a size with no price last, then the order added. A delete marks
 // the row and keeps it, so Undo can bring it back; reads leave marked rows
-// out. Owners write name, price_cents, and deleted_at and nothing else.
-// Nothing here can publish.
+// out. Owners write name, price_cents, the two calorie columns (D-167),
+// and deleted_at and nothing else. Nothing here can publish.
 
-const columns = "id, name, price_cents";
+const columns = "id, name, price_cents, calories_low, calories_high";
 
 const rowSchema = z.object({
   id: z.string(),
   name: z.string().nullable(),
   price_cents: z.number().nullable(),
+  calories_low: z.number().nullable(),
+  calories_high: z.number().nullable(),
 });
 
 function toSize(row: z.infer<typeof rowSchema>): OwnerSize {
@@ -28,6 +31,7 @@ function toSize(row: z.infer<typeof rowSchema>): OwnerSize {
     id: row.id,
     name: row.name ?? "",
     price: priceInputText(row.price_cents),
+    calories: caloriesInputText(row.calories_low, row.calories_high),
   };
 }
 
@@ -158,15 +162,33 @@ async function writeSize(
   value: string | number | null,
   expected: string | number | null | undefined,
 ): Promise<SizeWriteResult<OwnerSize>> {
+  return writeSizeColumns(
+    client,
+    itemId,
+    id,
+    { [column]: value },
+    expected === undefined ? {} : { [column]: expected },
+  );
+}
+
+// The same, for a write of more than one column at once, each with what it
+// must still hold: a pair of calories (D-167).
+async function writeSizeColumns(
+  client: SupabaseClient,
+  itemId: string,
+  id: string,
+  values: Record<string, unknown>,
+  expected: Record<string, string | number | null>,
+): Promise<SizeWriteResult<OwnerSize>> {
   let update = client
     .from("item_sizes")
-    .update({ [column]: value })
+    .update(values)
     .eq("id", id)
     .eq("item_id", itemId)
     .is("deleted_at", null);
-  if (expected !== undefined) {
+  for (const [column, value] of Object.entries(expected)) {
     update =
-      expected === null ? update.is(column, null) : update.eq(column, expected);
+      value === null ? update.is(column, null) : update.eq(column, value);
   }
   const { data, error } = await update.select(columns).maybeSingle();
   if (error) return refused(error.code);
@@ -195,9 +217,31 @@ export function setOwnerSizePrice(
   return writeSize(client, itemId, id, "price_cents", cents, expected);
 }
 
+// A size's calories, both columns in one statement, or none (D-167).
+export function setOwnerSizeCalories(
+  client: SupabaseClient,
+  itemId: string,
+  id: string,
+  calories: Calories | null,
+  expected?: Calories | null,
+): Promise<SizeWriteResult<OwnerSize>> {
+  const columnsOf = (pair: Calories | null) => ({
+    calories_low: pair?.low ?? null,
+    calories_high: pair?.high ?? null,
+  });
+  return writeSizeColumns(
+    client,
+    itemId,
+    id,
+    columnsOf(calories),
+    expected === undefined ? {} : columnsOf(expected),
+  );
+}
+
 // Marks a size removed, or brings it back. With onlyIfBlank the mark happens
-// only while the size has no name and no price: an Undo of an add never
-// deletes content (D-119), so a size that gained either since is "grew".
+// only while the size has no name, no price, and no calories: an Undo of an
+// add never deletes content (D-119), so a size that gained any since is
+// "grew".
 // Bringing a size back fails with name-taken while another size of the dish
 // has its name.
 export async function setOwnerSizeDeleted(
@@ -216,7 +260,10 @@ export async function setOwnerSizeDeleted(
     ? update.is("deleted_at", null)
     : update.not("deleted_at", "is", null);
   if (deleted && onlyIfBlank) {
-    update = update.is("name", null).is("price_cents", null);
+    update = update
+      .is("name", null)
+      .is("price_cents", null)
+      .is("calories_low", null);
   }
   const { data, error } = await update.select(columns).maybeSingle();
   if (error) return refused(error.code);

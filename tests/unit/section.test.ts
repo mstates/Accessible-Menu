@@ -81,39 +81,14 @@ describe("a section's note (migration 4)", () => {
   });
 });
 
-describe("the line shown with every dish (D-120, migration 4)", () => {
-  it("is one line: a line break becomes a space", () => {
-    expect(
-      saved("everyItem", " Add spaghetti to any dish\nfor 3 dollars. "),
-    ).toEqual({
-      value: "Add spaghetti to any dish for 3 dollars.",
-      rule: null,
-    });
-  });
-
-  it("may be blank, which means none", () => {
-    expect(saved("everyItem", "   ")).toEqual({ value: "", rule: null });
-  });
-
-  it("takes 120 characters and refuses one more", () => {
-    expect(
-      saved("everyItem", "x".repeat(SECTION_LIMITS.everyItem)).rule,
-    ).toBeNull();
-    expect(
-      saved("everyItem", "x".repeat(SECTION_LIMITS.everyItem + 1)).rule,
-    ).toBe("everyItemLength");
-  });
-});
-
 describe("the caps and their messages", () => {
   it("match the table constraints", () => {
-    expect(SECTION_LIMITS).toEqual({ name: 60, note: 500, everyItem: 120 });
+    expect(SECTION_LIMITS).toEqual({ name: 60, note: 500 });
   });
 
   it("are named in the message each one shows", () => {
     expect(errors.nameLength).toContain(String(SECTION_LIMITS.name));
     expect(errors.noteLength).toContain(String(SECTION_LIMITS.note));
-    expect(errors.everyItemLength).toContain(String(SECTION_LIMITS.everyItem));
   });
 
   it("have a message for every rule a text can break", () => {
@@ -121,7 +96,6 @@ describe("the caps and their messages", () => {
       sectionTextProblem("name", ""),
       sectionTextProblem("name", "x".repeat(61)),
       sectionTextProblem("note", "x".repeat(501)),
-      sectionTextProblem("everyItem", "x".repeat(121)),
     ];
     for (const rule of rules) {
       expect(rule).not.toBeNull();
@@ -134,9 +108,9 @@ describe("the caps and their messages", () => {
 // else, so a menu's sections use them as they are.
 describe("sections in a list", () => {
   const sections: OwnerSection[] = [
-    { id: "a", name: "Starters", note: "", everyItem: "" },
-    { id: "b", name: "Mains", note: "Served with rice.", everyItem: "" },
-    { id: "c", name: "Desserts", note: "", everyItem: "Add ice cream." },
+    { id: "a", name: "Starters", note: "" },
+    { id: "b", name: "Mains", note: "Served with rice." },
+    { id: "c", name: "Desserts", note: "" },
   ];
 
   it("finds a name in use whatever the case or outer spaces", () => {

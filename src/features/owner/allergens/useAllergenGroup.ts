@@ -57,16 +57,16 @@ import {
 import type { GroupChange, UndoLists } from "./group-undo";
 import type { AllergenTarget, GroupProblem, GroupState } from "./target";
 
-// The allergen group (D-148, D-152): the state and the handlers behind the
-// nine boxes, the other-allergen rows, the check, and, on a dish's page, the
-// same-named offer (D-129). It composes the page's one editing state and
-// one Undo stack, handed in by the page, so the page keeps one queue, one
-// status, and one Undo whatever it holds. What it writes to is its target:
-// a dish, or a section's line shown with every dish.
+// The allergen group (D-148, D-166): the state and the handlers behind the
+// nine boxes, the other-allergen rows, the check, and the same-named offer
+// (D-129). It composes the page's one editing state and one Undo stack,
+// handed in by the page, so the page keeps one queue, one status, and one
+// Undo whatever it holds. What it writes to is its target: a dish, or an
+// option of a choice list.
 //
 // Every write that changes or checks a list carries the lists the page
-// showed, and a line's carries the line's words too, and lands only if the
-// target still holds them (Michael, October 8, 2026; D-153). What it
+// showed, and an option's carries the option's name too, and lands only if
+// the target still holds them (Michael, October 8, 2026; D-153). What it
 // carries is the last state the server confirmed, read at the moment the
 // queue sends it, so two quick ticks in one tab never refuse each other;
 // and a write that finds other lists or other words writes nothing, says
@@ -91,16 +91,13 @@ type Props<Entry> = {
   announce: (text: string) => void;
   // Where focus belongs after the page next changes, shared with the page.
   focusNextRef: RefObject<{ id: string; force: boolean } | null>;
-  // The lists and the check as the server holds them, and, for a line, its
-  // words. Every save ends with a refresh, so these are always the truth.
+  // The lists and the check as the server holds them, and, for an option,
+  // its name. Every save ends with a refresh, so these are always the
+  // truth.
   state: OwnerAllergens;
   stateWords?: string | null;
   target: AllergenTarget<Entry>;
 };
-
-const allergenKey = (id: AllergenId) => `allergen:${id}`;
-const otherKey = (key: number) => `other:${key}`;
-const CHECK_KEY = "allergen-check";
 
 // The last lists, check, and words the server confirmed: every save ends
 // with a refresh, whose state replaces them, and the page may hand the
@@ -196,6 +193,9 @@ export function useAllergenGroup<Entry>({
   target,
 }: Props<Entry>) {
   const { ids, subject } = target;
+  const allergenKey = ids.keys.allergen;
+  const otherKey = ids.keys.other;
+  const CHECK_KEY = ids.keys.check;
   const otherTextWords = useMemo(
     () => otherWords(copy, editingStrings, gone),
     [copy, editingStrings, gone],
@@ -300,16 +300,6 @@ export function useAllergenGroup<Entry>({
   function listsMoved(key: string, sentence: string) {
     editing.dropField(key);
     editing.failChange(sentence);
-  }
-
-  // The group is leaving the page with focus inside it: a line cleared, here
-  // or elsewhere, takes its group with it. Focus goes to the page's
-  // fallback, the line's field, once the page has changed; asked for with
-  // force, since the control that had focus is gone.
-  function leaving() {
-    if (ids.fallbackFocus) {
-      focusNextRef.current = { id: ids.fallbackFocus, force: true };
-    }
   }
 
   function setAllergen(id: UsMajorAllergen, on: boolean, force = false) {
@@ -630,11 +620,11 @@ export function useAllergenGroup<Entry>({
     });
   }
 
-  // D-129: the other dish gets this dish's lists and the check, stamped
-  // with this person and now. Once its line goes, focus moves to the next
-  // Apply button, or to the check box when it was the last (Michael, at
-  // approval). Nothing is said as a failure with Try again: the button is
-  // still there to press.
+  // D-129: the other dish or option gets this subject's lists and the
+  // check, stamped with this person and now. Once its line goes, focus
+  // moves to the next Apply button, or to the check box when it was the
+  // last (Michael, at approval). Nothing is said as a failure with Try
+  // again: the button is still there to press.
   function apply(place: SameNamedPlace) {
     const offer = target.sameNamed;
     if (!offer) return;
@@ -669,6 +659,7 @@ export function useAllergenGroup<Entry>({
           target.entries.make(
             {
               kind: "apply",
+              target: place.kind,
               id: place.id,
               dish: place.name,
               section: place.section,
@@ -802,7 +793,7 @@ export function useAllergenGroup<Entry>({
   }
 
   // The page hands the group a state the server confirmed outside the
-  // group's own writes: a landed save of the line's words (D-153). What
+  // group's own writes: a landed save of an option's name (D-153). What
   // the next write carries is replaced; whether a check stood and went is
   // answered, so the page can say so.
   function confirm(next: {
@@ -823,17 +814,20 @@ export function useAllergenGroup<Entry>({
   }
 
   // Sends a failed save of the group's again, with the value that failed.
+  // The keys start with this group's prefix, so a page with a group per row
+  // asks each in turn and only the owner answers (D-166).
   function tryAgain(key: string, failedValue: string): boolean {
     if (key === CHECK_KEY) {
       setCheck(failedValue === "on", true);
       return true;
     }
-    if (key.startsWith("allergen:")) {
-      const id = key.slice("allergen:".length);
+    const allergenPrefix = `${ids.prefix}:allergen:`;
+    if (key.startsWith(allergenPrefix)) {
+      const id = key.slice(allergenPrefix.length);
       if (isMajor(id)) setAllergen(id, failedValue === "on", true);
       return true;
     }
-    if (key.startsWith("other:")) {
+    if (key.startsWith(`${ids.prefix}:other:`)) {
       const row = rowsRef.current.list.find(
         (each) => otherKey(each.key) === key,
       );
@@ -900,7 +894,6 @@ export function useAllergenGroup<Entry>({
     reverse,
     tryAgain,
     confirm,
-    leaving,
     // The state the next write carries, for a handler that runs after a
     // render.
     peek: (): Confirmed => confirmed.current,

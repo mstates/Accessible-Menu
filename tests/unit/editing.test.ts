@@ -33,6 +33,7 @@ import {
   type ListProblem,
   type ListUndo,
 } from "../../src/features/owner/editing/list-words";
+import { choiceListWords } from "../../src/features/owner/choices/choice-words";
 import {
   dishList,
   menuList,
@@ -55,6 +56,7 @@ const strings = en.owner.menus;
 const editing = en.owner.editing;
 const sections = en.owner.sections;
 const dishes = en.owner.dishes;
+const choices = en.owner.choices;
 
 // Each list's words, as its screen builds them.
 const menuWords = menuList.words(strings, editing);
@@ -473,30 +475,65 @@ describe("what becomes of an Undo that could not be applied", () => {
 
 describe("what a delete asks and when it is refused (D-119)", () => {
   it("names the menu and its sections when they hold no dishes", () => {
-    expect(deleteQuestion(menuWords, "Lunch", { sections: 4, dishes: 0 })).toBe(
-      "Delete Lunch, with its 4 sections?",
-    );
-    expect(deleteQuestion(menuWords, "Kids", { sections: 1, dishes: 0 })).toBe(
-      "Delete Kids, with its 1 section?",
-    );
+    expect(
+      deleteQuestion(menuWords, "Lunch", {
+        sections: 4,
+        dishes: 0,
+        options: 0,
+      }),
+    ).toBe("Delete Lunch, with its 4 sections?");
+    expect(
+      deleteQuestion(menuWords, "Kids", { sections: 1, dishes: 0, options: 0 }),
+    ).toBe("Delete Kids, with its 1 section?");
   });
 
   it("names the menu's dishes too, once its sections hold any", () => {
     expect(
-      deleteQuestion(menuWords, "Dinner", { sections: 3, dishes: 14 }),
+      deleteQuestion(menuWords, "Dinner", {
+        sections: 3,
+        dishes: 14,
+        options: 0,
+      }),
     ).toBe("Delete Dinner, with its 3 sections and 14 dishes?");
-    expect(deleteQuestion(menuWords, "Kids", { sections: 1, dishes: 1 })).toBe(
-      "Delete Kids, with its 1 section and 1 dish?",
-    );
+    expect(
+      deleteQuestion(menuWords, "Kids", { sections: 1, dishes: 1, options: 0 }),
+    ).toBe("Delete Kids, with its 1 section and 1 dish?");
   });
 
   it("names the section and its dishes", () => {
     expect(
-      deleteQuestion(sectionWords, "Starters", { sections: 0, dishes: 4 }),
+      deleteQuestion(sectionWords, "Starters", {
+        sections: 0,
+        dishes: 4,
+        options: 0,
+      }),
     ).toBe("Delete Starters, with its 4 dishes?");
     expect(
-      deleteQuestion(sectionWords, "Sides", { sections: 0, dishes: 1 }),
+      deleteQuestion(sectionWords, "Sides", {
+        sections: 0,
+        dishes: 1,
+        options: 0,
+      }),
     ).toBe("Delete Sides, with its 1 dish?");
+  });
+
+  // D-166: a choice list with options asks the same way.
+  it("names the choice list and its options", () => {
+    const listWords = choiceListWords(choices, editing, "dish");
+    expect(
+      deleteQuestion(listWords, "Choose one side", {
+        sections: 0,
+        dishes: 0,
+        options: 3,
+      }),
+    ).toBe("Delete Choose one side, with its 3 options?");
+    expect(
+      deleteQuestion(listWords, "Add on", {
+        sections: 0,
+        dishes: 0,
+        options: 1,
+      }),
+    ).toBe("Delete Add on, with its 1 option?");
   });
 
   it("says why a delete from a page that is out of date did not happen", () => {
@@ -594,14 +631,6 @@ const sectionNoted: ListUndo = {
   name: "Starters",
   from: "",
   to: "Fried in peanut oil.",
-};
-const sectionLined: ListUndo = {
-  kind: "own",
-  field: "everyItem",
-  id: "a",
-  name: "Starters",
-  from: "Add spaghetti for 3 dollars.",
-  to: "",
 };
 const sectionAdded: ListUndo = {
   kind: "add",
@@ -751,31 +780,24 @@ describe("what the sections list says", () => {
   });
 });
 
-// A section's note and its every-dish line, at the top of its own page
-// (D-120, D-135). Their labels are the page's and do not name the section;
-// every sentence the log says still does.
-describe("what a section's own texts say on its page", () => {
-  it("are labelled plainly, with their hints and no hidden suffix", () => {
+// A section's note, at the top of its own page (D-120, D-135). Its label
+// is the page's and does not name the section; every sentence the log says
+// still does. What a section offered with every dish is a choice list now
+// (D-166), so the note is the section's one own text.
+describe("what a section's own text says on its page", () => {
+  it("is the note alone, labelled plainly, with its hint and no hidden suffix", () => {
+    expect(SECTION_OWN_TEXTS).toEqual(["note"]);
     expect(ownWords.fields.note).toMatchObject({
       label: "Note",
       suffix: "",
       hint: dishes.section.noteHint,
       multiline: true,
     });
-    expect(ownWords.fields.everyItem).toMatchObject({
-      label: "Shown with every dish",
-      suffix: "",
-      hint: dishes.section.everyItemHint,
-    });
-    expect(ownWords.fields.everyItem.multiline).toBeUndefined();
   });
 
-  it("names each change on the Undo control", () => {
+  it("names the change on the Undo control", () => {
     expect(undoLabel(ownWords, sectionNoted)).toBe(
       "Undo: changed the note for Starters",
-    );
-    expect(undoLabel(ownWords, sectionLined)).toBe(
-      "Undo: changed the line for every dish in Starters",
     );
   });
 
@@ -786,14 +808,6 @@ describe("what a section's own texts say on its page", () => {
         problemText(ownWords, { kind: "invalid", rule: "noteLength" }, ""),
       ),
     ).toBe("Note for Starters was not saved. Keep the note to 500 characters.");
-    expect(
-      failureSentence(
-        notSavedSentence(ownWords, "everyItem", "Starters"),
-        problemText(ownWords, { kind: "invalid", rule: "everyItemLength" }, ""),
-      ),
-    ).toBe(
-      "The line for every dish in Starters was not saved. Keep this line to 120 characters.",
-    );
   });
 
   it("says a section that is gone in the page's own words", () => {
@@ -809,17 +823,12 @@ describe("what a section's own texts say on its page", () => {
     expect(undoneSentence(ownWords, sectionNoted, 0, 0)).toBe(
       "Undone. The note for Starters is as it was.",
     );
-    expect(undoneSentence(ownWords, sectionLined, 0, 0)).toBe(
-      "Undone. The line for every dish in Starters is as it was.",
-    );
   });
 
   it("says when a text was changed again since, so nothing is written over", () => {
-    for (const entry of [sectionNoted, sectionLined]) {
-      expect(notUndoneSentence(ownWords, entry, { kind: "changed" })).toBe(
-        sections.undo.textChanged,
-      );
-    }
+    expect(notUndoneSentence(ownWords, sectionNoted, { kind: "changed" })).toBe(
+      sections.undo.textChanged,
+    );
   });
 
   it("are kept on the section's page's Undo stack with its dishes' changes", () => {
@@ -827,7 +836,6 @@ describe("what a section's own texts say on its page", () => {
       { kind: "rename", id: "d", from: "Soup", to: "Soup of the day" },
       sectionNoted,
       { kind: "add", id: "e", name: "House salad" },
-      sectionLined,
     ];
     expect(readUndo(JSON.stringify(stack), sectionPageUndoSchema)).toEqual(
       stack,

@@ -30,9 +30,9 @@ import { sectionScope } from "./owner-scope";
 import type { MoveProblem } from "./section-move";
 
 // A section's own page saves through these (D-111, D-128): its dishes, the
-// same way the menus and the sections lists save, the section's note and
-// its every-dish line (D-135), and the section's move to another menu
-// (D-129). Nothing here redirects: a missing session comes
+// same way the menus and the sections lists save, the section's note
+// (D-135), and the section's move to another menu (D-129); its choice
+// lists save through choices/choice-actions.ts (D-166). Nothing here redirects: a missing session comes
 // back as a result and the typed text stays on screen. Every call that
 // reached the database with a live session ends with refresh(), so its own
 // response carries the re-rendered page. The code, the section, and the ids
@@ -112,8 +112,7 @@ export async function addDish(
   };
 }
 
-// Writes the section's note or its every-dish line, from the top of its own
-// page (D-120, D-135). The section is read through sectionScope like every
+// Writes the section's note, from the top of its own page (D-120, D-135). The section is read through sectionScope like every
 // save here, so the write follows it to whatever menu it is in now, and a
 // section that is gone says so in this page's words. With expected, the
 // write is an Undo: it happens only if the text is still the one the change

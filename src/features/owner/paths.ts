@@ -44,6 +44,13 @@ export function restaurantDishPath(code: string, dishId: string): string {
   return `/app/restaurants/${code}/dishes/${dishId}`;
 }
 
+// One choice list's own page (D-166). The list is named by its id, and the
+// address names neither its dish or section nor the menu, as the dish
+// page's does not.
+export function restaurantChoiceListPath(code: string, listId: string): string {
+  return `/app/restaurants/${code}/choices/${listId}`;
+}
+
 // The id an error summary links to for a field name. Dots become dashes so
 // hours.mon.0.open stays a valid id.
 export function fieldId(name: string): string {

@@ -4,13 +4,13 @@ import { ALLERGEN_IDS } from "@/domain/types";
 
 // The changes an allergen group leaves on its page's Undo stack (D-149): a
 // major allergen ticked or unticked, the other allergens changed, the list
-// checked or unchecked, and, on a dish's page, this dish's lists applied to
-// a same-named dish (D-129). A change to a list is taken back only while
-// the subject still holds the lists that change left, and a check is put
-// back only on the lists it covered; each remembers the subject's id and
-// name for its sentences. A page wraps these in its own entry kinds: the
-// dish page as they are, a section's page with the line's words beside
-// them (D-153). Pure: no React, no network.
+// checked or unchecked, and this subject's lists applied to a same-named
+// dish or option (D-129, D-166). A change to a list is taken back only
+// while the subject still holds the lists that change left, and a check is
+// put back only on the lists it covered; each remembers the subject's id
+// and name for its sentences. A page wraps these in its own entry kinds:
+// the dish page as they are, a choice list's page with the option's name
+// beside them (D-153). Pure: no React, no network.
 
 export const undoListsSchema = z.object({
   allergens: z.array(z.enum(ALLERGEN_IDS)),
@@ -47,7 +47,9 @@ export const checkChangeSchema = z.object({
 
 export const applyChangeSchema = z.object({
   kind: z.literal("apply"),
-  // The other dish, and where it is.
+  // The other dish or option (D-166), and where it is; an entry written
+  // before options names a dish.
+  target: z.enum(["dish", "option"]).optional(),
   id: z.string(),
   dish: z.string(),
   section: z.string(),
@@ -66,5 +68,5 @@ export const groupChangeSchema = z.discriminatedUnion("kind", [
 
 export type GroupChange = z.infer<typeof groupChangeSchema>;
 
-// The three changes every group leaves; the apply is the dish page's alone.
+// The three changes to the subject's own lists; the apply writes elsewhere.
 export type ListChange = Exclude<GroupChange, { kind: "apply" }>;

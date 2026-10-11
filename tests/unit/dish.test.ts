@@ -5,11 +5,13 @@ import {
   cleanDishText,
   cleanSizeText,
   DISH_LIMITS,
+  DISH_TEXTS,
   dishNameProblem,
   dishTextProblem,
   holdSizeOrder,
   nextDish,
   SIZE_LIMITS,
+  SIZE_TEXTS,
   sizeTextProblem,
 } from "../../src/domain/dish";
 import { inOrder, nameTaken } from "../../src/domain/menu";
@@ -123,6 +125,25 @@ describe("a dish's description, price, and note", () => {
     expect(dishTextProblem("price", "twelve")).toBe("priceFormat");
     expect(dishTextProblem("price", "100000")).toBe("priceRange");
   });
+
+  // D-167: calories are a dish text, read by the one parser.
+  it("trims typed calories and names the rule they break", () => {
+    expect(DISH_TEXTS).toEqual(["description", "price", "calories", "note"]);
+    expect(cleanDishText("calories", " 760 to 860 ")).toBe("760 to 860");
+    expect(dishTextProblem("calories", "760")).toBeNull();
+    expect(dishTextProblem("calories", "760 to 860")).toBeNull();
+    expect(dishTextProblem("calories", "")).toBeNull();
+    expect(dishTextProblem("calories", "lots")).toBe("caloriesFormat");
+    expect(dishTextProblem("calories", "100000")).toBe("caloriesRange");
+    expect(dishTextProblem("calories", "860 to 760")).toBe("caloriesOrder");
+    for (const rule of [
+      "caloriesFormat",
+      "caloriesRange",
+      "caloriesOrder",
+    ] as const) {
+      expect(pageErrors[rule]).not.toBe("");
+    }
+  });
 });
 
 describe("a size's name and price (D-139)", () => {
@@ -141,6 +162,14 @@ describe("a size's name and price (D-139)", () => {
     expect(sizeTextProblem("price", "")).toBeNull();
     expect(sizeTextProblem("price", "five")).toBe("priceFormat");
     expect(sizeTextProblem("price", "123456")).toBe("priceRange");
+  });
+
+  it("reads calories the way the dish's are read (D-167)", () => {
+    expect(SIZE_TEXTS).toEqual(["name", "price", "calories"]);
+    expect(cleanSizeText("calories", " 180 ")).toBe("180");
+    expect(sizeTextProblem("calories", "180")).toBeNull();
+    expect(sizeTextProblem("calories", "")).toBeNull();
+    expect(sizeTextProblem("calories", "some")).toBe("caloriesFormat");
   });
 });
 

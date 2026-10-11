@@ -27,13 +27,13 @@ import type { GroupChange, UndoLists } from "./group-undo";
 // who checked it and when, and, on a dish's page, the same-named offer
 // (D-129). The sentence diners read comes from the domain builder, the one
 // place it lives (module rule 8). A sentence that names its subject names
-// a dish or a section, through the placeholder each slice of copy carries
-// ("{dish}", "{section}"), since a sentence is heard on its own (D-135).
+// a dish or an option, through the placeholder each slice of copy carries
+// ("{dish}", "{option}"), since a sentence is heard on its own (D-135).
 // Pure: no React, no network.
 
 // The slice of copy the group speaks with, as plain strings: the dish
-// page's as it is, or a line's, which is the dish page's with the line's
-// own sentences over it (line-words.ts).
+// page's as it is, or an option's, which is the dish page's with the
+// option's own sentences over it (choices/option-words.ts).
 type Plain<T> = T extends string
   ? string
   : T extends readonly (infer Item)[]
@@ -42,11 +42,11 @@ type Plain<T> = T extends string
 
 export type AllergenStrings = Plain<Copy["owner"]["dish"]["allergens"]>;
 
-// What the group speaks for: the dish, or the section whose line it is,
-// and the placeholder its sentences fill with the name.
+// What the group speaks for: the dish, or the option, and the placeholder
+// its sentences fill with the name.
 export type AllergenSubject = {
   id: string;
-  noun: "dish" | "section";
+  noun: "dish" | "option";
   name: string;
 };
 
@@ -255,8 +255,12 @@ export function stampLine(
   return strings.notChecked;
 }
 
-// Where a same-named dish is, for its line and its button (D-129).
+// Where a same-named dish or option is, for its line and its button
+// (D-129, grown to options by D-166). For a dish, section is its section's
+// name; for an option, the list it is in and the list's home ("Choose one
+// side for Kids burger"), so the sentences read the same way.
 export type SameNamedPlace = {
+  kind: "dish" | "option";
   id: string;
   name: string;
   section: string;

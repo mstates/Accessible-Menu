@@ -15,8 +15,9 @@ import {
 // any page loads: the user must hold exactly one membership, that
 // restaurant's code must be the configured one (D-100), and it must have
 // the menus the menus checks read, the sections the sections checks read,
-// the dishes the dishes checks read, and one dish priced each way for the
-// dish page checks (D-139). Messages name counts, codes, and
+// the dishes the dishes checks read, one dish priced each way for the
+// dish page checks (D-139), and the two choice lists the choices checks
+// read (D-166). Messages name counts, codes, and
 // the test menus' and sections' names, never a token, and say how to fix
 // the data: one file, run by hand in the SQL editor, since the gate never
 // writes (D-126). A failure after sign-in signs out first, since the
@@ -40,6 +41,16 @@ const heldDishes = z.array(
     price_kind: z.enum(["one", "sizes", "market"]),
   }),
 );
+
+const listedLists = z.array(
+  z.object({
+    id: z.string(),
+    lead: z.string(),
+    item_id: z.string().nullable(),
+    section_id: z.string().nullable(),
+  }),
+);
+const listedOptions = z.array(z.object({ choice_list_id: z.string() }));
 
 const memberships = z.array(
   z.object({
@@ -188,6 +199,47 @@ setup(
             .join(", ")}. ${FIX_DATA}`,
         );
       }
+      // The choices checks read one list on the section with dishes and
+      // one on its one-price dish (D-166), which the data file sets, each
+      // with its live options counted.
+      const listRows = await supabase
+        .from("choice_lists")
+        .select("id, lead, item_id, section_id")
+        .is("deleted_at", null)
+        .order("sort")
+        .order("created_at")
+        .order("id");
+      if (listRows.error) {
+        throw new Error(
+          `could not read choice lists: ${listRows.error.message}`,
+        );
+      }
+      const optionRows = await supabase
+        .from("choice_options")
+        .select("choice_list_id")
+        .is("deleted_at", null);
+      if (optionRows.error) {
+        throw new Error(`could not read options: ${optionRows.error.message}`);
+      }
+      const optionsIn = new Map<string, number>();
+      for (const row of listedOptions.parse(optionRows.data)) {
+        optionsIn.set(
+          row.choice_list_id,
+          (optionsIn.get(row.choice_list_id) ?? 0) + 1,
+        );
+      }
+      const allLists = listedLists.parse(listRows.data);
+      const sectionList = withDishes
+        ? allLists.find((list) => list.section_id === withDishes.id)
+        : undefined;
+      const dishList = atOne
+        ? allLists.find((list) => list.item_id === atOne.id)
+        : undefined;
+      if (withDishes && atOne && (!sectionList || !dishList)) {
+        throw new Error(
+          `the test restaurant (${env.code}) needs a choice list on the section ${withDishes.name} and one on the dish ${atOne.name}; found ${allLists.length} lists. ${FIX_DATA}`,
+        );
+      }
       if (
         !withSections ||
         !empty ||
@@ -195,7 +247,9 @@ setup(
         !emptySection ||
         !bySize ||
         !atOne ||
-        !atMarket
+        !atMarket ||
+        !sectionList ||
+        !dishList
       ) {
         const found = listed
           .map(
@@ -230,6 +284,18 @@ setup(
           sizes: { id: bySize.id, name: bySize.name },
           one: { id: atOne.id, name: atOne.name },
           market: { id: atMarket.id, name: atMarket.name },
+        },
+        lists: {
+          section: {
+            id: sectionList.id,
+            lead: sectionList.lead,
+            options: optionsIn.get(sectionList.id) ?? 0,
+          },
+          dish: {
+            id: dishList.id,
+            lead: dishList.lead,
+            options: optionsIn.get(dishList.id) ?? 0,
+          },
         },
       };
       writeFileSync(ownerFixturePath, JSON.stringify(fixture), { mode: 0o600 });

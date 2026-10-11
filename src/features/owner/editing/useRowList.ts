@@ -2,7 +2,6 @@
 
 import {
   startTransition,
-  useLayoutEffect,
   useMemo,
   useOptimistic,
   useRef,
@@ -62,6 +61,7 @@ import {
 } from "./texts";
 import { afterUndo, newestUndo, pushUndo, type UndoOutcome } from "./undo";
 import { useEditing, type Editing } from "./useEditing";
+import { useFocusNext } from "./useFocusNext";
 import { useUndoStack } from "./useUndoStack";
 
 // A row and a save's answer are texts.ts's, where every text's commit path
@@ -69,8 +69,15 @@ import { useUndoStack } from "./useUndoStack";
 export type { ListResult, ListRow } from "./texts";
 
 // One editing list (D-111, D-128): the menus of a restaurant, the sections
-// of a menu, or the dishes of a section. This is the state and the handlers
-// all three share, their third use (module rule 12); RowList.tsx draws them.
+// of a menu, the dishes of a section, the options of a choice list, and the
+// choice lists of a dish or a section (D-166). This is the state and the
+// handlers they share (module rule 12); RowList.tsx draws them. A list page
+// owns its editing state and its Undo (useRowList); a list that sits on a
+// page which already has both, the choice lists on a dish's or a section's
+// page, shares the page's (useSharedRowList), so a screen keeps one queue,
+// one status, and one Undo whatever it holds (D-111, D-145). Every editing
+// key a list uses starts with its id prefix, so two lists in one editor
+// never share a key.
 //
 // Each text of a row is a real field that saves when it is committed, and
 // only if it changed. Move up and Move down are buttons in every row
@@ -137,6 +144,9 @@ export type OwnTexts<OwnField extends string, Other = never> = {
   valueOf: (field: OwnField) => string;
   clean: (field: OwnField, value: string) => string;
   rule: (field: OwnField, value: string) => string | null;
+  // The record that already has this value, when one of these texts must
+  // be unique among its kind: a choice list's lead on its home (D-166).
+  taken?: (field: OwnField, value: string) => ListRow | null;
   // With expected, the write is an Undo, as for a row's text.
   setText: (
     field: OwnField,
@@ -180,9 +190,49 @@ export type RowListConfig<
   other?: OtherUndo<Other>;
   own?: OwnTexts<OwnField, Other>;
   // Sends a failed save of something else on the page again, when the key
-  // is its: a section's line's allergen group (D-152). Asked first.
+  // is its: a shared list's, or an option's allergen group (D-166). Asked
+  // first.
   tryAgain?: (key: string, value: string) => boolean;
+  // A save of a row's text landed, or an Undo of one, with the server's
+  // answer: for a row that carries more than its texts, what else that
+  // answer holds (an option's allergen check, cleared by a rename, D-166).
+  // After a save it is called before the entry is pushed; after an Undo
+  // the sentence it hands back, if any, is said after the Undo's own.
+  rowLanded?: (
+    row: Row,
+    field: Field,
+    value: Record<Field, string>,
+    how: "saved" | "undone",
+  ) => string | null | undefined;
 };
+
+// What a list that shares its page's editor is handed (D-145): the page's
+// one editing state and one Undo, and how the list's entries sit on the
+// page's stack: make wraps one, read gives one back or null for an entry
+// that is not the list's.
+export type SharedEditor<Entry extends { kind: string }> = {
+  editor: {
+    editing: Editing;
+    undo: {
+      stack: Entry[];
+      peek: () => Entry[];
+      replace: (next: readonly Entry[]) => void;
+    };
+  };
+  entries: {
+    make: (entry: ListUndo) => Entry;
+    read: (entry: Entry) => ListUndo | null;
+  };
+};
+
+// A shared list's config: a list page's without the stack key and the
+// page's other entries, which the page keeps itself.
+export type SharedRowListConfig<
+  Row extends ListRow,
+  Field extends string,
+  Entry extends { kind: string },
+  OwnField extends string = never,
+> = Omit<RowListConfig<Row, Field, Entry, OwnField>, "undoKey" | "other">;
 
 type Direction = "up" | "down";
 
@@ -205,17 +255,29 @@ function applyChange<Row extends ListRow>(
 type Asking = { id: string; name: string; held: Held };
 
 const NAME = "name";
-const ADD_KEY = "add";
 
+// The pieces a list runs on: its page's editing state and Undo, how its
+// entries sit on that stack, and the page's other entries when the list
+// keeps the stack itself.
+type Parts<Entry extends { kind: string }> = {
+  editing: Editing;
+  undo: SharedEditor<Entry>["editor"]["undo"];
+  make: (entry: ListUndo) => Entry;
+  read: (entry: Entry) => ListUndo | null;
+  other?: OtherUndo<Entry>;
+};
+
+// A list page's list: it owns the page's editing state and Undo stack, and
+// the page's other changes (a section's move) sit on that stack beside its
+// own.
 export function useRowList<
   Row extends ListRow,
   Field extends string,
   Other extends { kind: string } = never,
   OwnField extends string = never,
 >(config: RowListConfig<Row, Field, Other, OwnField>) {
-  const { words, idPrefix, rows, fields, actions, other, own } = config;
-  const announce = useAnnounce();
-  const editing = useEditing(words.editing);
+  const { fields, other, own } = config;
+  const editing = useEditing(config.words.editing);
   const otherSchema = other?.schema;
   const ownFields = own?.fields;
   const schema = useMemo(() => {
@@ -228,9 +290,55 @@ export function useRowList<
     >;
   }, [fields, ownFields, otherSchema]);
   const undo = useUndoStack(config.undoKey, schema);
+  return useRows<Row, Field, ListUndo | Other, OwnField>(config, {
+    editing,
+    undo,
+    make: (entry) => entry,
+    read: (entry) => (isListUndo(entry) ? entry : null),
+    // The page's other entries are the ones read gives nothing back for,
+    // so the page's handlers only ever see their own.
+    other: other as OtherUndo<ListUndo | Other> | undefined,
+  });
+}
+
+// A list on a page that already has an editing state and an Undo: it takes
+// the page's, wraps its entries as the page keeps them, and hands the page
+// what it needs to take one back (undoShared, labelShared) and to send a
+// failed save again (tryAgainKey).
+export function useSharedRowList<
+  Row extends ListRow,
+  Field extends string,
+  Entry extends { kind: string },
+  OwnField extends string = never,
+>(
+  config: SharedRowListConfig<Row, Field, Entry, OwnField>,
+  shared: SharedEditor<Entry>,
+) {
+  return useRows<Row, Field, Entry, OwnField>(config, {
+    editing: shared.editor.editing,
+    undo: shared.editor.undo,
+    make: shared.entries.make,
+    read: shared.entries.read,
+  });
+}
+
+function useRows<
+  Row extends ListRow,
+  Field extends string,
+  Entry extends { kind: string },
+  OwnField extends string,
+>(
+  config: SharedRowListConfig<Row, Field, Entry, OwnField>,
+  { editing, undo, make, read, other }: Parts<Entry>,
+) {
+  const { words, idPrefix, rows, fields, actions, own } = config;
+  const announce = useAnnounce();
   // The page's one editing state and one Undo, which every text's commit
-  // path takes (texts.ts).
-  const editor: TextEditor<ListUndo | Other> = { editing, undo };
+  // path takes (texts.ts), and which another list on the same page shares
+  // (D-145).
+  const shared: SharedEditor<Entry>["editor"] = { editing, undo };
+  const editor: TextEditor<Entry> = shared;
+  const ADD_KEY = `${idPrefix}:add`;
   const [shown, change] = useOptimistic(rows, applyChange<Row>);
   const [newName, setNewName] = useState("");
   const [blankAdd, setBlankAdd] = useState<string | null>(null);
@@ -248,40 +356,24 @@ export function useRowList<
   const lastAdd = useRef(0);
 
   const addFieldId = `${idPrefix}-new-name`;
-  const fieldKey = (field: Field, id: string) => `${field}:${id}`;
+  const fieldKey = (field: Field, id: string) => `${idPrefix}:${field}:${id}`;
   const fieldId = (field: Field, id: string) => `${idPrefix}-${id}-${field}`;
   const buttonId = (id: string, action: Direction | "delete") =>
     `${idPrefix}-${id}-${action}`;
   const nameField = NAME as Field;
 
-  // Where focus belongs after the list next changes. React moves a row's
-  // node when the row travels down, and the browser drops focus when it
-  // does; a deleted row takes its button with it. A move keeps focus on the
-  // button that was pressed, unless the owner has moved on. A delete sends
-  // focus to a field, never to another Delete.
-  const focusNext = useRef<{ id: string; force: boolean } | null>(null);
-  useLayoutEffect(() => {
-    const wanted = focusNext.current;
-    if (!wanted) return;
-    const element = document.getElementById(wanted.id);
-    const active = document.activeElement;
-    if (wanted.force) {
-      if (!element) return;
-      focusNext.current = null;
-      if (active !== element) element.focus();
-      return;
-    }
-    if (active === element) return;
-    if (active === null || active === document.body) element?.focus();
-    else focusNext.current = null;
-  });
+  // Where focus belongs after the list next changes. A move keeps focus on
+  // the button that was pressed, unless the owner has moved on. A delete
+  // sends focus to a field, never to another Delete.
+  const focusNextRef = useFocusNext();
 
   function describe(problem: ListProblem, name: string): string {
     return problemText(words, problem, name);
   }
 
   // A row's texts live in the row, and save through the list's own action.
-  function rowHome(row: Row): TextHome<Field, ListUndo | Other> {
+  function rowHome(row: Row): TextHome<Field, Entry> {
+    const rowLanded = config.rowLanded;
     return {
       row,
       words,
@@ -294,38 +386,51 @@ export function useRowList<
         field === NAME ? nameTaken(shown, row.id, value) : null,
       send: (field, value) => actions.setText(row.id, field, value),
       entry: (field, from, to) =>
-        field === NAME
-          ? { kind: "rename", id: row.id, from, to }
-          : { kind: "text", field, id: row.id, name: row.name, from, to },
+        make(
+          field === NAME
+            ? { kind: "rename", id: row.id, from, to }
+            : { kind: "text", field, id: row.id, name: row.name, from, to },
+        ),
+      landed: rowLanded
+        ? (field, value) => {
+            rowLanded(row, field, value, "saved");
+          }
+        : undefined,
     };
   }
 
   // The page's own texts live on the page, above the list, and save
   // through their own action.
   function ownHome(
-    texts: OwnTexts<OwnField, Other>,
-  ): TextHome<OwnField, ListUndo | Other> {
+    texts: OwnTexts<OwnField, Entry>,
+  ): TextHome<OwnField, Entry> {
     return {
       row: texts.row,
       words: texts.words,
-      key: (field) => `own:${field}`,
+      key: (field) => `${idPrefix}:own:${field}`,
       id: (field) => `${idPrefix}-own-${field}`,
       saved: texts.valueOf,
       clean: texts.clean,
       rule: texts.rule,
-      taken: () => null,
+      taken: (field, value) => texts.taken?.(field, value) ?? null,
       send: (field, value) => texts.setText(field, value),
       entry: (field, from, to) =>
-        texts.entry?.(field, from, to) ?? {
+        texts.entry?.(field, from, to) ??
+        make({
           kind: "own",
           field,
           id: texts.row.id,
           name: texts.row.name,
           from,
           to,
-        },
+        }),
       landed: texts.landed,
     };
+  }
+
+  // Puts one of the list's own changes on the page's stack.
+  function push(entry: ListUndo) {
+    undo.replace(pushUndo(undo.peek(), make(entry)));
   }
 
   function move(row: Row, direction: Direction) {
@@ -335,7 +440,7 @@ export function useRowList<
       announce(edgeSentence(words, direction, row.name));
       return;
     }
-    focusNext.current = { id: buttonId(row.id, direction), force: false };
+    focusNextRef.current = { id: buttonId(row.id, direction), force: false };
     announce(
       movedSentence(
         words,
@@ -359,14 +464,7 @@ export function useRowList<
           return;
         }
         editing.landed();
-        undo.replace(
-          pushUndo<ListUndo | Other>(undo.peek(), {
-            kind: "move",
-            id: row.id,
-            name: row.name,
-            order: ids,
-          }),
-        );
+        push({ kind: "move", id: row.id, name: row.name, order: ids });
       });
     });
   }
@@ -384,14 +482,17 @@ export function useRowList<
   // a delete that would take more (D-119).
   function remove(row: Row, index: number, told: Held) {
     const ids = shown.map((entry) => entry.id);
-    focusNext.current = { id: afterDelete(index), force: true };
+    focusNextRef.current = { id: afterDelete(index), force: true };
     announce(deletedSentence(words, row.name));
     startTransition(async () => {
       change({ kind: "remove", id: row.id });
       await editing.run(async () => {
         const result = await editing.call(() => actions.remove(row.id, told));
         if (!result.ok) {
-          focusNext.current = { id: buttonId(row.id, "delete"), force: true };
+          focusNextRef.current = {
+            id: buttonId(row.id, "delete"),
+            force: true,
+          };
           editing.failChange(
             failureSentence(
               notDone(words, "notDeleted", row.name),
@@ -404,14 +505,7 @@ export function useRowList<
           editing.dropField(fieldKey(field, row.id));
         }
         editing.landed();
-        undo.replace(
-          pushUndo<ListUndo | Other>(undo.peek(), {
-            kind: "delete",
-            id: row.id,
-            name: row.name,
-            order: ids,
-          }),
-        );
+        push({ kind: "delete", id: row.id, name: row.name, order: ids });
       });
     });
   }
@@ -478,11 +572,23 @@ export function useRowList<
     return entry.kind === "own" && own ? own.words : words;
   }
 
+  // A row's text put back by Undo: the row learns the server's answer as it
+  // does after a save, and may have a sentence to add.
+  function rowUndone(
+    id: string,
+    field: Field,
+    value: Record<Field, string>,
+  ): string | null {
+    const row = shown.find((each) => each.id === id);
+    if (!row || !config.rowLanded) return null;
+    return config.rowLanded(row, field, value, "undone") ?? null;
+  }
+
   // The inverse of one change, and where it left the row in the list.
   async function reverse(
     entry: ListUndo,
   ): Promise<
-    | { ok: true; position: number; total: number }
+    | { ok: true; position: number; total: number; more?: string | null }
     | { ok: false; problem: ListProblem }
   > {
     // A text and an add say nothing about a place in the list.
@@ -493,14 +599,24 @@ export function useRowList<
         const result = await editing.call(() =>
           actions.setText(entry.id, nameField, entry.from, entry.to),
         );
-        return result.ok ? { ok: true, ...nowhere } : result;
+        if (!result.ok) return result;
+        return {
+          ok: true,
+          ...nowhere,
+          more: rowUndone(entry.id, nameField, result.value),
+        };
       }
       case "text": {
         // Only if the field still holds what that change wrote.
         const result = await editing.call(() =>
           actions.setText(entry.id, entry.field as Field, entry.from, entry.to),
         );
-        return result.ok ? { ok: true, ...nowhere } : result;
+        if (!result.ok) return result;
+        return {
+          ok: true,
+          ...nowhere,
+          more: rowUndone(entry.id, entry.field as Field, result.value),
+        };
       }
       case "own": {
         // The same, for a text of the page's own record.
@@ -542,12 +658,39 @@ export function useRowList<
     }
   }
 
+  type Undone =
+    | { outcome: "applied"; sentence: string | null }
+    | { outcome: Exclude<UndoOutcome, "applied">; sentence: string };
+
+  // One of the list's own changes taken back, with what becomes of its
+  // entry and the sentence to say. A change that no longer stands is
+  // dropped, and so is an added row that holds content by now; one blocked
+  // by a taken name keeps its entry.
+  async function undoOne(entry: ListUndo): Promise<Undone> {
+    const said = wordsOf(entry);
+    const result = await reverse(entry);
+    if (result.ok) {
+      const sentence = undoneSentence(
+        said,
+        entry,
+        result.position,
+        result.total,
+      );
+      return {
+        outcome: "applied",
+        sentence: result.more ? `${sentence} ${result.more}` : sentence,
+      };
+    }
+    return {
+      outcome: undoOutcome(result.problem),
+      sentence: notUndoneSentence(said, entry, result.problem),
+    };
+  }
+
   // Undo waits for saves on their way, then takes back the newest change:
   // it runs in the same queue as every save, so the entry it reads is the
-  // newest once the saves before it have recorded theirs. A change that no
-  // longer stands is dropped, and so is an added row that holds content by
-  // now; one blocked by a taken name keeps its entry; either way it says
-  // so.
+  // newest once the saves before it have recorded theirs. Either way it
+  // says so.
   function undoNewest() {
     if (editing.peek().inFlight === 0 && !newestUndo(undo.peek())) {
       announce(words.editing.nothingToUndo);
@@ -560,30 +703,38 @@ export function useRowList<
           announce(words.editing.nothingToUndo);
           return;
         }
-        if (!isListUndo(entry)) {
+        const mine = read(entry);
+        let result: Undone;
+        if (mine) {
+          result = await undoOne(mine);
+        } else {
           if (!other) return;
-          const result = await other.undo(entry, editing.call);
-          undo.replace(afterUndo(undo.peek(), result.outcome));
-          if (result.outcome === "applied") {
-            editing.landed();
-            if (result.sentence !== null) announce(result.sentence);
-          } else {
-            editing.failChange(result.sentence);
-          }
-          return;
+          result = await other.undo(entry, editing.call);
         }
-        const said = wordsOf(entry);
-        const result = await reverse(entry);
-        if (result.ok) {
-          undo.replace(afterUndo(undo.peek(), "applied"));
+        undo.replace(afterUndo(undo.peek(), result.outcome));
+        if (result.outcome === "applied") {
           editing.landed();
-          announce(undoneSentence(said, entry, result.position, result.total));
-          return;
+          if (result.sentence !== null) announce(result.sentence);
+        } else {
+          editing.failChange(result.sentence);
         }
-        undo.replace(afterUndo(undo.peek(), undoOutcome(result.problem)));
-        editing.failChange(notUndoneSentence(said, entry, result.problem));
       });
     });
+  }
+
+  // For a page that keeps the stack: takes back one of this list's entries,
+  // in the shape the page's other changes answer with, or null for an entry
+  // that is not the list's. The page runs it in its own queue.
+  function undoShared(entry: Entry): Promise<Undone> | null {
+    const mine = read(entry);
+    return mine ? undoOne(mine) : null;
+  }
+
+  // For a page that keeps the stack: the Undo control's words for one of
+  // this list's entries, or null for an entry that is not the list's.
+  function labelShared(entry: Entry): string | null {
+    const mine = read(entry);
+    return mine ? undoLabel(wordsOf(mine), mine) : null;
   }
 
   // The add form is an explicit submit, Enter or the button. A name that was
@@ -620,7 +771,7 @@ export function useRowList<
       return;
     }
     lastAdd.current += 1;
-    const key = String(lastAdd.current);
+    const key = `${idPrefix}-${lastAdd.current}`;
     setNewName("");
     editing.reset(ADD_KEY);
     setAdds((current) => enterAdd(current, key, value));
@@ -649,13 +800,7 @@ export function useRowList<
         setAdds((current) => addLanded(current, key, row.id));
         editing.reset(failureKeyOf(key));
         editing.landed();
-        undo.replace(
-          pushUndo<ListUndo | Other>(undo.peek(), {
-            kind: "add",
-            id: row.id,
-            name: row.name,
-          }),
-        );
+        push({ kind: "add", id: row.id, name: row.name });
         announce(addedSentence(words, row.name, total));
       });
     });
@@ -671,41 +816,55 @@ export function useRowList<
     announce(removedSentence(words, entry.name));
   }
 
-  // Focus goes to the first failed field, so it never rests on a control
-  // that is about to leave the page, and every failed field is sent again.
-  // Failed adds go first, in the order they were added, each from its own
-  // place in the list.
-  function tryAgain() {
-    editing.focusFirstFailed();
-    for (const entry of adds) {
-      if (entry.phase !== "failed") continue;
+  // Sends the list's own failed saves again, by key: a failed add, from its
+  // own place in the list; the add field's refused name; one of the page's
+  // own texts; a row's text. True when the key was this list's.
+  function tryAgainKey(key: string, failedValue: string): boolean {
+    if (isAddFailure(key)) {
+      const entry = adds.find(
+        (each) => failureKeyOf(each.key) === key && each.phase === "failed",
+      );
+      if (!entry) return false;
       setAdds((current) => addSentAgain(current, entry.key));
       send(entry.key, entry.name);
+      return true;
     }
+    if (key === ADD_KEY) {
+      add();
+      return true;
+    }
+    if (own) {
+      const home = ownHome(own);
+      const field = own.fields.find((candidate) => home.key(candidate) === key);
+      if (field) {
+        commitText(editor, home, field, true);
+        return true;
+      }
+    }
+    for (const row of shown) {
+      const field = fields.find(
+        (candidate) => fieldKey(candidate, row.id) === key,
+      );
+      if (field) {
+        commitText(editor, rowHome(row), field, true);
+        return true;
+      }
+    }
+    void failedValue;
+    return false;
+  }
+
+  // Focus goes to the first failed field, so it never rests on a control
+  // that is about to leave the page, and every failed field is sent again:
+  // the page's other failures first, when the page asked to be asked, then
+  // the list's own.
+  function tryAgain() {
+    editing.focusFirstFailed();
     const { failures } = editing.peek();
     for (const key of Object.keys(failures)) {
-      if (isAddFailure(key)) continue;
-      if (config.tryAgain?.(key, failures[key]?.value ?? "")) continue;
-      if (key === ADD_KEY) {
-        add();
-        continue;
-      }
-      if (own) {
-        const home = ownHome(own);
-        const field = own.fields.find(
-          (candidate) => home.key(candidate) === key,
-        );
-        if (field) {
-          commitText(editor, home, field, true);
-          continue;
-        }
-      }
-      for (const row of shown) {
-        const field = fields.find(
-          (candidate) => fieldKey(candidate, row.id) === key,
-        );
-        if (field) commitText(editor, rowHome(row), field, true);
-      }
+      const value = failures[key]?.value ?? "";
+      if (config.tryAgain?.(key, value)) continue;
+      tryAgainKey(key, value);
     }
   }
 
@@ -733,8 +892,8 @@ export function useRowList<
 
   // A change the screen made that is not the list's own goes on the same
   // Undo stack.
-  function record(entry: Other) {
-    undo.replace(pushUndo<ListUndo | Other>(undo.peek(), entry));
+  function record(entry: Entry) {
+    undo.replace(pushUndo(undo.peek(), entry));
   }
 
   const newest = newestUndo(undo.stack);
@@ -744,14 +903,15 @@ export function useRowList<
     fields,
     link: config.link,
     editing,
+    // The page's one editing state and one Undo, for another list or group
+    // on the same page to share (D-145).
+    editor: shared,
     shown,
     // The rows not saved yet, after the saved ones (D-125).
     unsaved: addsShown(adds, new Set(shown.map((row) => row.id))),
     // The Undo control's whole name, or null when there is nothing to undo.
     undoText: newest
-      ? isListUndo(newest)
-        ? undoLabel(wordsOf(newest), newest)
-        : (other?.label(newest) ?? null)
+      ? (labelShared(newest) ?? other?.label(newest) ?? null)
       : null,
     addFieldId,
     newName,
@@ -774,11 +934,14 @@ export function useRowList<
     confirmDelete,
     removeUnsaved,
     tryAgain,
+    tryAgainKey,
     undoNewest,
+    undoShared,
+    labelShared,
     record,
     // Where focus belongs after the page next changes, for something else
     // on the page that moves focus the way the list does.
-    focusNextRef: focusNext,
+    focusNextRef,
   };
 }
 
@@ -788,3 +951,10 @@ export type RowListState<
   Other extends { kind: string } = never,
   OwnField extends string = never,
 > = ReturnType<typeof useRowList<Row, Field, Other, OwnField>>;
+
+export type SharedRowListState<
+  Row extends ListRow,
+  Field extends string,
+  Entry extends { kind: string },
+  OwnField extends string = never,
+> = ReturnType<typeof useSharedRowList<Row, Field, Entry, OwnField>>;
