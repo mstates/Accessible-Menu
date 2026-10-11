@@ -4,11 +4,13 @@
 // migration four's for sections, migration five's for items and its four
 // functions, migration six's for a dish's own texts and price, its sizes,
 // and move_item(), migration seven's for a dish's allergen lists and their
-// check, migration eight's for a section's line shown with every dish
-// and its own lists and check, and migration nine's for a dish's tags,
-// availability with its sold-out mark, and schedule. It lets saves land on
-// this machine, which the gate can never do (D-115): `npm run local` starts it, builds and serves the app
-// against it, and runs the checks in tests/local (D-142). It holds no key
+// check, migration nine's for a dish's tags, availability with its
+// sold-out mark, and schedule, and migration eleven's for choice lists and
+// their options, calories on a dish, a size, and an option, and the Cooked
+// to order mark (D-166, D-167); migration eight's line shown with every
+// dish left with eleven. It lets saves land on this machine, which the
+// gate can never do (D-115): `npm run local` starts it, builds and serves
+// the app against it, and runs the checks in tests/local (D-142). It holds no key
 // and names no real project: the session it hands out is an unsigned
 // token, and the restaurant is a stand-in, not CI Diner. It is not a copy
 // of Supabase; a rule the screens rely on is added here when a task needs
@@ -50,6 +52,8 @@ let menus = [];
 let sections = [];
 let items = [];
 let sizes = [];
+let lists = [];
+let options = [];
 function seed(withDishes = true) {
   menus = ["Lunch", "Dinner", "Drinks"].map((name, index) => ({
     id: randomUUID(),
@@ -61,11 +65,6 @@ function seed(withDishes = true) {
     created_at: stamp(),
   }));
   const dinner = menus[1];
-  // Starters' line shown with every dish, as CI Diner's data file gives it
-  // (D-152): checked with milk and wheat; Mains and Desserts keep no line.
-  const line = {
-    Starters: "Add a buttered roll to any dish for 2 dollars.",
-  };
   sections = ["Starters", "Mains", "Desserts"].map((name, index) => ({
     id: randomUUID(),
     menu_id: dinner.id,
@@ -73,12 +72,6 @@ function seed(withDishes = true) {
     name,
     sort: index + 1,
     note: null,
-    every_item: line[name] ?? null,
-    every_item_allergens: line[name] ? ["milk", "wheat"] : [],
-    every_item_custom_allergens: [],
-    every_item_allergens_reviewed: Boolean(line[name]),
-    every_item_allergens_reviewed_by: line[name] ? user.id : null,
-    every_item_allergens_reviewed_at: line[name] ? stamp() : null,
     deleted_at: null,
     created_at: stamp(),
   }));
@@ -104,6 +97,7 @@ function seed(withDishes = true) {
       name: "House salad",
       price_kind: "one",
       price_cents: 900,
+      calories: 320,
       allergens: [],
       custom_allergens: [],
       checked: true,
@@ -113,15 +107,18 @@ function seed(withDishes = true) {
       name: "Garlic bread",
       price_kind: "market",
       price_cents: null,
+      calories: 410,
+      cooked: true,
       allergens: [],
       custom_allergens: [],
       checked: false,
       available: false,
     },
   ];
-  // As CI Diner's data file leaves Starters (migration 9, task 5): House
-  // salad tagged, Garlic bread off the menu for now, Soup of the day a
-  // special every day from 4 to 9 pm.
+  // As CI Diner's data file leaves Starters (migrations 9 and 11, tasks 5
+  // and 7): House salad tagged with 320 calories, Garlic bread off the menu
+  // for now with 410 calories and cooked to order, Soup of the day a
+  // special every day from 4 to 9 pm with calories on each size.
   items = (withDishes ? priced : []).map((dish, index) => ({
     id: randomUUID(),
     section_id: starters.id,
@@ -130,6 +127,9 @@ function seed(withDishes = true) {
     description: null,
     price_kind: dish.price_kind,
     price_cents: dish.price_cents,
+    calories_low: dish.calories ?? null,
+    calories_high: null,
+    cooked_to_order: dish.cooked ?? false,
     note: null,
     allergens: dish.allergens,
     custom_allergens: dish.custom_allergens,
@@ -153,6 +153,9 @@ function seed(withDishes = true) {
       description: null,
       price_kind: "one",
       price_cents: null,
+      calories_low: null,
+      calories_high: null,
+      cooked_to_order: false,
       note: null,
       allergens: [],
       custom_allergens: [],
@@ -169,11 +172,12 @@ function seed(withDishes = true) {
     });
   }
   const soup = items[0];
+  const salad = items[1];
   sizes = (
     withDishes
       ? [
-          { name: "Cup", price_cents: 500 },
-          { name: "Bowl", price_cents: 800 },
+          { name: "Cup", price_cents: 500, calories: 180 },
+          { name: "Bowl", price_cents: 800, calories: 290 },
         ]
       : []
   ).map((size) => ({
@@ -182,9 +186,77 @@ function seed(withDishes = true) {
     restaurant_id: restaurant.id,
     name: size.name,
     price_cents: size.price_cents,
+    calories_low: size.calories,
+    calories_high: null,
     deleted_at: null,
     created_at: stamp(),
   }));
+  // The choice lists, as CI Diner's data file gives them (D-166): Starters'
+  // roll list with its one option, checked with milk and wheat, and House
+  // salad's dressing list with Ranch and Vinaigrette, each checked; Mains,
+  // Desserts, and the other dishes keep none.
+  lists = [];
+  options = [];
+  const roll = listRow(
+    { section_id: starters.id },
+    "Add a buttered roll to any dish",
+  );
+  lists.push(roll);
+  options.push(
+    optionRow(roll, "Buttered roll", 1, {
+      added_price_cents: 200,
+      allergens: ["milk", "wheat"],
+      checked: true,
+    }),
+  );
+  if (withDishes) {
+    const dressing = listRow({ item_id: salad.id }, "Choose a dressing");
+    lists.push(dressing);
+    options.push(
+      optionRow(dressing, "Ranch", 1, {
+        calories_low: 150,
+        allergens: ["milk", "eggs"],
+        checked: true,
+      }),
+      optionRow(dressing, "Vinaigrette", 2, {
+        calories_low: 90,
+        checked: true,
+      }),
+    );
+  }
+}
+
+function listRow(home, lead, sort = 1) {
+  return {
+    id: randomUUID(),
+    restaurant_id: restaurant.id,
+    item_id: home.item_id ?? null,
+    section_id: home.section_id ?? null,
+    lead,
+    sort,
+    deleted_at: null,
+    created_at: stamp(),
+  };
+}
+
+function optionRow(list, name, sort, given = {}) {
+  return {
+    id: randomUUID(),
+    choice_list_id: list.id,
+    restaurant_id: list.restaurant_id,
+    name,
+    added_price_cents: given.added_price_cents ?? null,
+    calories_low: given.calories_low ?? null,
+    calories_high: given.calories_high ?? null,
+    allergens: given.allergens ?? [],
+    custom_allergens: given.custom_allergens ?? [],
+    allergens_reviewed: Boolean(given.checked),
+    allergens_reviewed_by: given.checked ? user.id : null,
+    allergens_reviewed_at: given.checked ? stamp() : null,
+    sort,
+    deleted_at: null,
+    created_at: stamp(),
+  };
 }
 seed();
 // Knobs a test can turn: delay every Data API write, or fail the next one.
@@ -263,7 +335,7 @@ function menuProblem(name, exceptId) {
 
 // Migration four's rules for one section row, as it would be after a write.
 function sectionProblem(row) {
-  const { name, note, every_item: line } = row;
+  const { name, note } = row;
   if (
     typeof name !== "string" ||
     !/\S/.test(name) ||
@@ -280,31 +352,6 @@ function sectionProblem(row) {
       note.length > 500)
   ) {
     return check("sections", "sections_note_text");
-  }
-  if (
-    line !== null &&
-    (typeof line !== "string" ||
-      !/\S/.test(line) ||
-      /\p{Cc}/u.test(line) ||
-      line.length > 120)
-  ) {
-    return check("sections", "sections_every_item_text");
-  }
-  const lists = allergenListsProblem(
-    row.every_item_allergens,
-    row.every_item_custom_allergens,
-    "sections",
-    "sections_line_allergens_offered",
-    "sections_line_other_allergens_count",
-  );
-  if (lists) return lists;
-  if (
-    line === null &&
-    (row.every_item_allergens.length > 0 ||
-      row.every_item_custom_allergens.length > 0 ||
-      row.every_item_allergens_reviewed)
-  ) {
-    return check("sections", "sections_line_blank_holds_nothing");
   }
   if (row.deleted_at === null) {
     const taken = sections.some(
@@ -371,8 +418,8 @@ const MAJOR_WORDS = [
 // fullwidth, ideographic.
 const COMMA = /[,\uFF0C\u3001]/u;
 
-// Migration eight's one rule for a pair of allergen lists, a dish's or a
-// line's (migration seven's rules, the comma among them): the nine the US
+// Migration eight's one rule for a pair of allergen lists, a dish's or an
+// option's (migration seven's rules, the comma among them): the nine the US
 // offers, each once; another allergen one line of 40 characters at most,
 // with no outer space, no comma, once whatever the case, never one of the
 // nine, and ten at most. The two constraints are named for the table.
@@ -408,10 +455,10 @@ function allergenListsProblem(allergens, others, table, offered, count) {
   return null;
 }
 
-// Migration seven's check trigger, and migration eight's for a line, whose
-// columns carry a prefix: any change to a list clears the check and its
-// stamp; a check that begins is stamped with the person and now; an uncheck
-// clears the stamp. The stamp is never what the caller wrote.
+// Migration seven's check trigger, and migration eleven's for an option:
+// any change to a list clears the check and its stamp; a check that begins
+// is stamped with the person and now; an uncheck clears the stamp. The
+// stamp is never what the caller wrote.
 function withAllergenCheck(row, next, prefix = "") {
   const lists = `${prefix}allergens`;
   const others = `${prefix}custom_allergens`;
@@ -435,30 +482,24 @@ function withAllergenCheck(row, next, prefix = "") {
   return out;
 }
 
-// Migration eight's rules for a section's line shown with every dish, as a
-// write would leave it: a change to the words clears the check; clearing
-// the line in a statement clears its lists and its check with it; lists or
-// a check written to a line that is already blank are refused. Answers
-// with the row, or with the problem.
-function withLineCheck(row, next) {
+// Migration eleven's check trigger for an option: a change to the name
+// clears the check too, since the name is all that names the food
+// (Michael, October 10, 2026), and then migration seven's rules apply.
+function withOptionCheck(row, next) {
   const out = { ...next };
-  const holds =
-    out.every_item_allergens.length > 0 ||
-    out.every_item_custom_allergens.length > 0 ||
-    out.every_item_allergens_reviewed;
-  if (out.every_item === null) {
-    if (row.every_item !== null) {
-      out.every_item_allergens = [];
-      out.every_item_custom_allergens = [];
-      out.every_item_allergens_reviewed = false;
-    } else if (holds) {
-      return { problem: named("line_blank_holds_nothing") };
-    }
-  }
-  if (out.every_item !== row.every_item) {
-    out.every_item_allergens_reviewed = false;
-  }
-  return { row: withAllergenCheck(row, out, "every_item_") };
+  if (out.name !== row.name) out.allergens_reviewed = false;
+  return withAllergenCheck(row, out);
+}
+
+// Migration eleven's calories shape, on a dish, a size, and an option: both
+// null, or the low one a whole number from 0 to 99,999 and the high one
+// null or at least the low and at most 99,999.
+function caloriesOk(low, high) {
+  if (low === null && high === null) return true;
+  if (low === null) return false;
+  if (!Number.isInteger(low) || low < 0 || low > 99999) return false;
+  if (high === null) return true;
+  return Number.isInteger(high) && high >= low && high <= 99999;
 }
 
 // Migration five's rules for one item row, migration six's for its texts
@@ -499,6 +540,12 @@ function itemProblem(row) {
     return check("items", "items_price_cents_range");
   }
   if (!PRICE_KINDS.includes(kind)) return badEnum(kind);
+  if (!caloriesOk(row.calories_low, row.calories_high)) {
+    return check("items", "items_calories_shape");
+  }
+  if (typeof row.cooked_to_order !== "boolean") {
+    return check("items", "items_cooked_to_order_not_null");
+  }
   const lists = allergenListsProblem(
     row.allergens,
     row.custom_allergens,
@@ -649,6 +696,9 @@ function sizeProblem(row) {
   ) {
     return check("item_sizes", "item_sizes_price_cents");
   }
+  if (!caloriesOk(row.calories_low, row.calories_high)) {
+    return check("item_sizes", "item_sizes_calories_shape");
+  }
   if (row.deleted_at === null && name !== null) {
     const taken = sizes.some(
       (z) =>
@@ -659,6 +709,84 @@ function sizeProblem(row) {
         nameKey(z.name) === nameKey(name),
     );
     if (taken) return unique("item_sizes_name_key");
+  }
+  return null;
+}
+
+// Migration eleven's rules for one choice list row, as it would be after a
+// write: one home, a lead of one line and 120 characters at most, and
+// leads that are not deleted differing within a home.
+function listProblem(row) {
+  const homes = [row.item_id, row.section_id].filter((id) => id !== null);
+  if (homes.length !== 1) return check("choice_lists", "choice_lists_one_home");
+  const { lead } = row;
+  if (
+    typeof lead !== "string" ||
+    !/\S/.test(lead) ||
+    /\p{Cc}/u.test(lead) ||
+    lead.length > 120
+  ) {
+    return check("choice_lists", "choice_lists_lead_text");
+  }
+  if (row.deleted_at === null) {
+    const taken = lists.some(
+      (l) =>
+        l.id !== row.id &&
+        l.deleted_at === null &&
+        homeOf(l) === homeOf(row) &&
+        nameKey(l.lead) === nameKey(lead),
+    );
+    if (taken) return unique("choice_lists_lead_key");
+  }
+  return null;
+}
+
+const homeOf = (list) => list.item_id ?? list.section_id;
+const liveListsOf = (homeId) =>
+  lists.filter((l) => homeOf(l) === homeId && l.deleted_at === null);
+const liveOptionsOf = (listId) =>
+  options.filter((o) => o.choice_list_id === listId && o.deleted_at === null);
+
+// Migration eleven's rules for one option row: a name of one line and 60
+// characters at most, names that are not deleted differing within a list,
+// an added price from 0 to 9,999,999 cents or none, the calories shape, and
+// migration seven's allergen lists under the option's constraint names.
+function optionProblem(row) {
+  const { name, added_price_cents: price } = row;
+  if (
+    typeof name !== "string" ||
+    !/\S/.test(name) ||
+    /\p{Cc}/u.test(name) ||
+    name.length > 60
+  ) {
+    return check("choice_options", "choice_options_name_text");
+  }
+  if (
+    price !== null &&
+    (!Number.isInteger(price) || price < 0 || price > PRICE_CAP)
+  ) {
+    return check("choice_options", "choice_options_added_price_cents");
+  }
+  if (!caloriesOk(row.calories_low, row.calories_high)) {
+    return check("choice_options", "choice_options_calories_shape");
+  }
+  const problem = allergenListsProblem(
+    row.allergens,
+    row.custom_allergens,
+    "choice_options",
+    "choice_options_allergens_offered",
+    "choice_options_other_allergens_count",
+  );
+  if (problem) return problem;
+  if (row.deleted_at === null) {
+    const taken = options.some(
+      (o) =>
+        o.id !== row.id &&
+        o.choice_list_id === row.choice_list_id &&
+        o.deleted_at === null &&
+        nameKey(o.name) === nameKey(name),
+    );
+    if (taken) return unique("choice_options_name_key");
   }
   return null;
 }
@@ -772,6 +900,10 @@ function matches(row, params) {
     } else if (raw.startsWith("ilike.")) {
       if (typeof value !== "string" || !likeToRegExp(raw.slice(6)).test(value))
         return false;
+    } else if (raw.startsWith("in.(") && raw.endsWith(")")) {
+      // in.(a,b,c): ids, which hold no comma or quote.
+      const wanted = raw.slice(4, -1).split(",").filter(Boolean);
+      if (!wanted.includes(String(value))) return false;
     } else {
       throw new Error(`filter not supported: ${key}=${raw}`);
     }
@@ -906,6 +1038,67 @@ const server = http.createServer(async (req, res) => {
     }
     if (path === "/__test/items") return send(res, 200, items);
     if (path === "/__test/sizes") return send(res, 200, sizes);
+    if (path === "/__test/lists") return send(res, 200, lists);
+    if (path === "/__test/options") return send(res, 200, options);
+    // A choice list added somewhere else, under a dish or a section named
+    // by id: another tab, another person.
+    if (path === "/__test/add-list") {
+      const kind = params.get("home");
+      const homeId = params.get("id");
+      const row = listRow(
+        kind === "dish" ? { item_id: homeId } : { section_id: homeId },
+        params.get("lead") ?? "",
+        liveListsOf(homeId).length + 1,
+      );
+      const problem = listProblem(row);
+      if (problem) return send(res, ...problem);
+      lists.push(row);
+      return send(res, 200, row);
+    }
+    // An option added somewhere else, to a list named by id.
+    if (path === "/__test/add-option") {
+      const list = lists.find((l) => l.id === params.get("list"));
+      if (!list) return send(res, 404, { message: "no such list" });
+      const row = optionRow(
+        list,
+        params.get("name") ?? "",
+        liveOptionsOf(list.id).length + 1,
+      );
+      const problem = optionProblem(row);
+      if (problem) return send(res, ...problem);
+      options.push(row);
+      return send(res, 200, row);
+    }
+    // An option's allergen lists changed somewhere else; the trigger's
+    // rules apply, so a check standing on the option clears.
+    if (path === "/__test/set-option-allergens") {
+      const option = options.find((o) => o.id === params.get("id"));
+      if (!option) return send(res, 404, { message: "no such option" });
+      const split = (text) => (text ? text.split(",").filter(Boolean) : []);
+      const next = withOptionCheck(option, {
+        ...option,
+        allergens: split(params.get("allergens")),
+        custom_allergens: split(params.get("others")),
+        allergens_reviewed: params.get("checked") === "1",
+      });
+      const problem = optionProblem(next);
+      if (problem) return send(res, ...problem);
+      Object.assign(option, next);
+      return send(res, 200, option);
+    }
+    // An option renamed somewhere else, which clears its check (D-166).
+    if (path === "/__test/rename-option") {
+      const option = options.find((o) => o.id === params.get("id"));
+      if (!option) return send(res, 404, { message: "no such option" });
+      const next = withOptionCheck(option, {
+        ...option,
+        name: params.get("name") ?? "",
+      });
+      const problem = optionProblem(next);
+      if (problem) return send(res, ...problem);
+      Object.assign(option, next);
+      return send(res, 200, option);
+    }
     // A dish added somewhere else: another tab, another person.
     if (path === "/__test/add-dish") {
       const section = sections.find((s) => s.name === params.get("section"));
@@ -918,6 +1111,9 @@ const server = http.createServer(async (req, res) => {
         description: null,
         price_kind: "one",
         price_cents: null,
+        calories_low: null,
+        calories_high: null,
+        cooked_to_order: false,
         note: null,
         allergens: [],
         custom_allergens: [],
@@ -1049,40 +1245,12 @@ const server = http.createServer(async (req, res) => {
         name: params.get("name"),
         sort: 99,
         note: null,
-        every_item: null,
-        every_item_allergens: [],
-        every_item_custom_allergens: [],
-        every_item_allergens_reviewed: false,
-        every_item_allergens_reviewed_by: null,
-        every_item_allergens_reviewed_at: null,
         deleted_at: null,
         created_at: stamp(),
       };
       sections.push(row);
       return send(res, 200, row);
     }
-    // A section's line changed somewhere else: another tab, another person.
-    // Migration eight's rules apply, so a check standing on the line clears
-    // (D-152). words empty means the line is cleared.
-    if (path === "/__test/set-line") {
-      const section = sections.find((s) => s.id === params.get("id"));
-      if (!section) return send(res, 404, { message: "no such section" });
-      const split = (text) => (text ? text.split(",").filter(Boolean) : []);
-      const words = params.get("words") ?? "";
-      const next = withLineCheck(section, {
-        ...section,
-        every_item: words === "" ? null : words,
-        every_item_allergens: split(params.get("allergens")),
-        every_item_custom_allergens: split(params.get("others")),
-        every_item_allergens_reviewed: params.get("checked") === "1",
-      });
-      if (next.problem) return send(res, ...next.problem);
-      const problem = sectionProblem(next.row);
-      if (problem) return send(res, ...problem);
-      Object.assign(section, next.row);
-      return send(res, 200, section);
-    }
-
     // Auth.
     if (path === "/auth/v1/token") return send(res, 200, session());
     if (path === "/auth/v1/user") return send(res, 200, user);
@@ -1244,12 +1412,6 @@ const server = http.createServer(async (req, res) => {
           name: payload.name,
           sort: payload.sort ?? 0,
           note: null,
-          every_item: null,
-          every_item_allergens: [],
-          every_item_custom_allergens: [],
-          every_item_allergens_reviewed: false,
-          every_item_allergens_reviewed_by: null,
-          every_item_allergens_reviewed_at: null,
           deleted_at: null,
           created_at: stamp(),
         };
@@ -1259,30 +1421,17 @@ const server = http.createServer(async (req, res) => {
         return respondRows(req, res, [row], params, 201);
       }
       if (req.method === "PATCH") {
-        const allowed = [
-          "name",
-          "note",
-          "every_item",
-          "sort",
-          "deleted_at",
-          "every_item_allergens",
-          "every_item_custom_allergens",
-          "every_item_allergens_reviewed",
-        ];
+        const allowed = ["name", "note", "sort", "deleted_at"];
         const extra = Object.keys(payload).filter(
           (key) => !allowed.includes(key),
         );
         if (extra.length) return denied(res, `column ${extra[0]}`);
         const targets = sections.filter((row) => matches(row, params));
-        const nexts = new Map();
         for (const row of targets) {
-          const next = withLineCheck(row, { ...row, ...payload });
-          if (next.problem) return send(res, ...next.problem);
-          const problem = sectionProblem(next.row);
+          const problem = sectionProblem({ ...row, ...payload });
           if (problem) return send(res, ...problem);
-          nexts.set(row, next.row);
         }
-        for (const row of targets) Object.assign(row, nexts.get(row));
+        for (const row of targets) Object.assign(row, payload);
         return respondRows(req, res, targets, params);
       }
       if (req.method === "DELETE") return denied(res, "table sections");
@@ -1352,6 +1501,9 @@ const server = http.createServer(async (req, res) => {
           description: null,
           price_kind: "one",
           price_cents: null,
+          calories_low: null,
+          calories_high: null,
+          cooked_to_order: false,
           note: null,
           allergens: [],
           custom_allergens: [],
@@ -1377,6 +1529,9 @@ const server = http.createServer(async (req, res) => {
           "description",
           "price_kind",
           "price_cents",
+          "calories_low",
+          "calories_high",
+          "cooked_to_order",
           "note",
           "allergens",
           "custom_allergens",
@@ -1438,6 +1593,8 @@ const server = http.createServer(async (req, res) => {
           restaurant_id: dish.restaurant_id,
           name: payload.name ?? null,
           price_cents: payload.price_cents ?? null,
+          calories_low: null,
+          calories_high: null,
           deleted_at: null,
           created_at: stamp(),
         };
@@ -1447,7 +1604,13 @@ const server = http.createServer(async (req, res) => {
         return respondRows(req, res, [row], params, 201);
       }
       if (req.method === "PATCH") {
-        const allowed = ["name", "price_cents", "deleted_at"];
+        const allowed = [
+          "name",
+          "price_cents",
+          "calories_low",
+          "calories_high",
+          "deleted_at",
+        ];
         const extra = Object.keys(payload).filter(
           (key) => !allowed.includes(key),
         );
@@ -1509,6 +1672,7 @@ const server = http.createServer(async (req, res) => {
       const { p_kind, p_parent, p_id } = payload;
       const sectionsTold = payload.p_sections ?? 0;
       const dishesTold = payload.p_dishes ?? 0;
+      const optionsTold = payload.p_options ?? 0;
       if (p_kind === "menu") {
         const menu = menus.find(
           (m) =>
@@ -1534,6 +1698,15 @@ const server = http.createServer(async (req, res) => {
         if (liveItemsOf(section.id).length > dishesTold)
           return raised(res, "delete_grew");
         section.deleted_at = stamp();
+      } else if (p_kind === "list") {
+        const list = lists.find(
+          (l) =>
+            l.id === p_id && homeOf(l) === p_parent && l.deleted_at === null,
+        );
+        if (!list) return raised(res, "delete_not_found");
+        if (liveOptionsOf(list.id).length > optionsTold)
+          return raised(res, "delete_grew");
+        list.deleted_at = stamp();
       } else {
         return raised(res, "delete_unknown_kind");
       }
@@ -1602,6 +1775,185 @@ const server = http.createServer(async (req, res) => {
       }
       found.section_id = target.id;
       found.sort = live.reduce((top, i) => Math.max(top, i.sort), 0) + 1;
+      res.writeHead(204);
+      return res.end();
+    }
+
+    // Choice lists and their options (migration 11, D-166): read, added,
+    // written, and marked deleted under the owner's column lists.
+    if (path === "/rest/v1/choice_lists") {
+      if (reading) {
+        const all = lists.filter((row) => matches(row, params));
+        return respondRows(
+          req,
+          res,
+          ordered(all, params),
+          params,
+          200,
+          all.length,
+        );
+      }
+      const payload = await body(req);
+      writes.push(`${req.method} choice_lists ${JSON.stringify(payload)}`);
+      if (await knobs(res)) return;
+      if (req.method === "POST" && failByName(res, payload.lead)) return;
+      if (req.method === "POST") {
+        const allowed = ["item_id", "section_id", "lead", "sort"];
+        const extra = Object.keys(payload).filter(
+          (key) => !allowed.includes(key),
+        );
+        if (extra.length) return denied(res, `column ${extra[0]}`);
+        // The copy trigger: the restaurant comes from the home, which the
+        // caller must be able to read.
+        const home = payload.item_id
+          ? items.find((i) => i.id === payload.item_id)
+          : sections.find((s) => s.id === payload.section_id);
+        if (!home) {
+          return raised(
+            res,
+            "A choice list needs an existing dish or section.",
+          );
+        }
+        const row = {
+          id: randomUUID(),
+          restaurant_id: home.restaurant_id,
+          item_id: payload.item_id ?? null,
+          section_id: payload.section_id ?? null,
+          lead: payload.lead,
+          sort: payload.sort ?? 0,
+          deleted_at: null,
+          created_at: stamp(),
+        };
+        const problem = listProblem(row);
+        if (problem) return send(res, ...problem);
+        lists.push(row);
+        return respondRows(req, res, [row], params, 201);
+      }
+      if (req.method === "PATCH") {
+        const allowed = ["lead", "sort", "deleted_at"];
+        const extra = Object.keys(payload).filter(
+          (key) => !allowed.includes(key),
+        );
+        if (extra.length) return denied(res, `column ${extra[0]}`);
+        const targets = lists.filter((row) => matches(row, params));
+        for (const row of targets) {
+          const problem = listProblem({ ...row, ...payload });
+          if (problem) return send(res, ...problem);
+        }
+        for (const row of targets) Object.assign(row, payload);
+        return respondRows(req, res, targets, params);
+      }
+      if (req.method === "DELETE") return denied(res, "table choice_lists");
+    }
+    if (path === "/rest/v1/choice_options") {
+      if (reading) {
+        const all = options.filter((row) => matches(row, params));
+        return respondRows(
+          req,
+          res,
+          ordered(all, params),
+          params,
+          200,
+          all.length,
+        );
+      }
+      const payload = await body(req);
+      writes.push(`${req.method} choice_options ${JSON.stringify(payload)}`);
+      if (await knobs(res)) return;
+      if (req.method === "POST" && failByName(res, payload.name)) return;
+      if (req.method === "POST") {
+        const allowed = ["choice_list_id", "name", "sort"];
+        const extra = Object.keys(payload).filter(
+          (key) => !allowed.includes(key),
+        );
+        if (extra.length) return denied(res, `column ${extra[0]}`);
+        const list = lists.find((l) => l.id === payload.choice_list_id);
+        if (!list)
+          return raised(res, "An option needs an existing choice list.");
+        const row = optionRow(list, payload.name, payload.sort ?? 0);
+        const problem = optionProblem(row);
+        if (problem) return send(res, ...problem);
+        options.push(row);
+        return respondRows(req, res, [row], params, 201);
+      }
+      if (req.method === "PATCH") {
+        const allowed = [
+          "name",
+          "added_price_cents",
+          "calories_low",
+          "calories_high",
+          "allergens",
+          "custom_allergens",
+          "allergens_reviewed",
+          "sort",
+          "deleted_at",
+        ];
+        const extra = Object.keys(payload).filter(
+          (key) => !allowed.includes(key),
+        );
+        if (extra.length) return denied(res, `column ${extra[0]}`);
+        const targets = options.filter((row) => matches(row, params));
+        const nexts = new Map();
+        for (const row of targets) {
+          const next = withOptionCheck(row, { ...row, ...payload });
+          const problem = optionProblem(next);
+          if (problem) return send(res, ...problem);
+          nexts.set(row, next);
+        }
+        for (const row of targets) Object.assign(row, nexts.get(row));
+        return respondRows(req, res, targets, params);
+      }
+      if (req.method === "DELETE") return denied(res, "table choice_options");
+    }
+    if (
+      path === "/rest/v1/rpc/set_choice_list_order" &&
+      req.method === "POST"
+    ) {
+      const { p_home, p_ids } = await body(req);
+      writes.push(`rpc set_choice_list_order ${JSON.stringify(p_ids)}`);
+      if (await knobs(res)) return;
+      const live = liveListsOf(p_home);
+      const ids = Array.isArray(p_ids) ? p_ids : [];
+      const distinct = new Set(
+        ids.filter((id) => live.some((l) => l.id === id)),
+      );
+      if (
+        live.length === 0 ||
+        ids.length !== live.length ||
+        distinct.size !== live.length
+      ) {
+        return raised(res, "order_mismatch");
+      }
+      ids.forEach((id, index) => {
+        const row = lists.find((l) => l.id === id);
+        row.sort = index + 1;
+      });
+      res.writeHead(204);
+      return res.end();
+    }
+    if (
+      path === "/rest/v1/rpc/set_choice_option_order" &&
+      req.method === "POST"
+    ) {
+      const { p_list, p_ids } = await body(req);
+      writes.push(`rpc set_choice_option_order ${JSON.stringify(p_ids)}`);
+      if (await knobs(res)) return;
+      const live = liveOptionsOf(p_list);
+      const ids = Array.isArray(p_ids) ? p_ids : [];
+      const distinct = new Set(
+        ids.filter((id) => live.some((o) => o.id === id)),
+      );
+      if (
+        live.length === 0 ||
+        ids.length !== live.length ||
+        distinct.size !== live.length
+      ) {
+        return raised(res, "order_mismatch");
+      }
+      ids.forEach((id, index) => {
+        const row = options.find((o) => o.id === id);
+        row.sort = index + 1;
+      });
       res.writeHead(204);
       return res.end();
     }

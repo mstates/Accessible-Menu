@@ -17,14 +17,18 @@
 -- with their allergens (Soup of the day checked with milk, wheat, and
 -- celery; House salad checked with none; Garlic bread not checked); a
 -- second Soup of the day in Mains, not checked, for the same-named line on
--- the first (D-129); Starters' line shown with every dish, "Add a buttered
--- roll to any dish for 2 dollars.", checked with milk and wheat, and
--- Desserts with no line (migration 8, task 4b); House salad tagged
--- vegetarian and made without gluten ingredients, Garlic bread off the menu
--- for now, and Soup of the day a special every day from 4 to 9 pm
--- (migration 9, task 5); at least one menu that holds no section; and at
--- least one section of Dinner that holds no dish. Nothing here can publish
--- (migration 3).
+-- the first (D-129); Starters' choice list "Add a buttered roll to any
+-- dish" with its one option, Buttered roll, at two dollars, checked with
+-- milk and wheat, and Desserts with no list (migration 11, task 7); House
+-- salad tagged vegetarian and made without gluten ingredients, Garlic bread
+-- off the menu for now, and Soup of the day a special every day from 4 to
+-- 9 pm (migration 9, task 5); House salad at 320 calories with the list
+-- "Choose a dressing" holding Ranch (150 calories, milk and eggs, checked)
+-- and Vinaigrette (90 calories, checked with none), Soup of the day's Cup
+-- at 180 and Bowl at 290 calories, and Garlic bread at 410 calories and
+-- cooked to order (migration 11, task 7); at least one menu that holds no
+-- section; and at least one section of Dinner that holds no dish. Nothing
+-- here can publish (migration 3).
 
 do $$
 declare
@@ -36,9 +40,17 @@ declare
   salad uuid;
   bread uuid;
   owner_uid uuid;
+  roll_list uuid;
+  roll uuid;
+  dressing uuid;
+  option_id uuid;
   wanted text;
   size_name text;
   size_price integer;
+  option_name text;
+  option_calories integer;
+  option_allergens public.allergen[];
+  option_place integer;
   placed integer;
 begin
   select r.id into diner from public.restaurants r where r.code = '56097672';
@@ -291,33 +303,51 @@ begin
     raise notice 'added the dish Soup of the day to Mains';
   end if;
 
-  -- 3d. Starters' line shown with every dish, with its own allergens and
-  -- its check (migration 8, task 4b, D-152): "Add a buttered roll to any
-  -- dish for 2 dollars." with milk and wheat, checked as CI Diner's owner,
-  -- in two statements, since one statement that changes the words or a
-  -- list and checks it ends unchecked; each written only when it differs.
-  -- The line names no dish in Starters, since the gate matches names by
-  -- substring. Desserts keeps no line, so the gate reads a page without
-  -- the group too.
-  update public.sections s
-  set every_item = 'Add a buttered roll to any dish for 2 dollars.',
-      every_item_allergens = '{milk,wheat}',
-      every_item_custom_allergens = '{}'
-  where s.id = starters
-    and (s.every_item is distinct from
-        'Add a buttered roll to any dish for 2 dollars.'
-      or s.every_item_allergens is distinct from '{milk,wheat}'::public.allergen[]
-      or s.every_item_custom_allergens is distinct from '{}'::text[]);
-  get diagnostics placed = row_count;
-  if placed > 0 then
-    raise notice 'gave Starters its line shown with every dish, with milk and wheat';
+  -- 3d. Starters' choice list, in place of the line shown with every dish
+  -- (migration 11, task 7, D-166): "Add a buttered roll to any dish" with
+  -- one option, Buttered roll, at two dollars with milk and wheat, checked
+  -- as CI Diner's owner, the check in its own statement, since one
+  -- statement that changes a list and checks it ends unchecked. The list
+  -- and the option are added only when missing, and each value is written
+  -- only when it differs. No lead or option names a dish in Starters, since
+  -- the gate matches names by substring. Desserts keeps no list, so the
+  -- gate reads a section page without one too.
+  select l.id into roll_list from public.choice_lists l
+  where l.section_id = starters
+    and l.deleted_at is null
+    and lower(btrim(l.lead)) = 'add a buttered roll to any dish';
+  if roll_list is null then
+    insert into public.choice_lists (section_id, lead, sort)
+    values (starters, 'Add a buttered roll to any dish', 1)
+    returning id into roll_list;
+    raise notice 'added the choice list Add a buttered roll to any dish to Starters';
   end if;
-  update public.sections s
-  set every_item_allergens_reviewed = true
-  where s.id = starters and not s.every_item_allergens_reviewed;
+  select o.id into roll from public.choice_options o
+  where o.choice_list_id = roll_list
+    and o.deleted_at is null
+    and lower(btrim(o.name)) = 'buttered roll';
+  if roll is null then
+    insert into public.choice_options (choice_list_id, name, sort)
+    values (roll_list, 'Buttered roll', 1) returning id into roll;
+    raise notice 'added the option Buttered roll to Add a buttered roll to any dish';
+  end if;
+  update public.choice_options o
+  set added_price_cents = 200, allergens = '{milk,wheat}',
+      custom_allergens = '{}'
+  where o.id = roll
+    and (o.added_price_cents is distinct from 200
+      or o.allergens is distinct from '{milk,wheat}'::public.allergen[]
+      or o.custom_allergens is distinct from '{}'::text[]);
   get diagnostics placed = row_count;
   if placed > 0 then
-    raise notice 'checked the allergens of Starters'' line';
+    raise notice 'priced Buttered roll at two dollars, with milk and wheat';
+  end if;
+  update public.choice_options o
+  set allergens_reviewed = true
+  where o.id = roll and not o.allergens_reviewed;
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'checked the allergens of Buttered roll';
   end if;
 
   -- 3e. Starters' dishes with their tags, availability, and schedule
@@ -352,11 +382,121 @@ begin
   if placed > 0 then
     raise notice 'made Soup of the day a special, every day from 4 to 9 pm';
   end if;
+
+  -- 3f. Calories, a dish's choice list, and the Cooked to order mark
+  -- (migration 11, task 7, D-166, D-167): House salad at 320 calories with
+  -- the list "Choose a dressing" holding Ranch (150 calories, milk and
+  -- eggs, checked) and Vinaigrette (90 calories, checked with none), in
+  -- that order, so the list page's Move up and Move down have two rows;
+  -- Soup of the day's Cup at 180 and Bowl at 290 calories, so the field in
+  -- a size's row reads a value back; Garlic bread at 410 calories and
+  -- cooked to order, so the market price branch carries the field and the
+  -- box reads ticked on one page. Each written only when it differs; the
+  -- list and its options added only when missing, each option checked in
+  -- its own statement, as CI Diner's owner.
+  update public.items i
+  set calories_low = 320, calories_high = null
+  where i.id = salad
+    and (i.calories_low is distinct from 320 or i.calories_high is not null);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'gave House salad 320 calories';
+  end if;
+
+  select l.id into dressing from public.choice_lists l
+  where l.item_id = salad
+    and l.deleted_at is null
+    and lower(btrim(l.lead)) = 'choose a dressing';
+  if dressing is null then
+    insert into public.choice_lists (item_id, lead, sort)
+    values (salad, 'Choose a dressing', 1) returning id into dressing;
+    raise notice 'added the choice list Choose a dressing to House salad';
+  end if;
+  for option_name, option_calories, option_allergens, option_place in
+    select v.n, v.c, v.a, v.p from (values
+      ('Ranch', 150, '{milk,eggs}'::public.allergen[], 1),
+      ('Vinaigrette', 90, '{}'::public.allergen[], 2)
+    ) as v (n, c, a, p)
+  loop
+    select o.id into option_id from public.choice_options o
+    where o.choice_list_id = dressing
+      and o.deleted_at is null
+      and lower(btrim(o.name)) = lower(option_name);
+    if option_id is null then
+      insert into public.choice_options (choice_list_id, name, sort)
+      values (dressing, option_name, option_place) returning id into option_id;
+      raise notice 'added the option % to Choose a dressing', option_name;
+    end if;
+    update public.choice_options o
+    set calories_low = option_calories, calories_high = null,
+        allergens = option_allergens, custom_allergens = '{}'
+    where o.id = option_id
+      and (o.calories_low is distinct from option_calories
+        or o.calories_high is not null
+        or o.allergens is distinct from option_allergens
+        or o.custom_allergens is distinct from '{}'::text[]);
+    get diagnostics placed = row_count;
+    if placed > 0 then
+      raise notice 'gave % its calories and allergens', option_name;
+    end if;
+    update public.choice_options o
+    set allergens_reviewed = true
+    where o.id = option_id and not o.allergens_reviewed;
+    get diagnostics placed = row_count;
+    if placed > 0 then
+      raise notice 'checked the allergens of %', option_name;
+    end if;
+  end loop;
+
+  -- Ranch first, then Vinaigrette, then anything else, in the order the
+  -- list page shows it. Only a place that is wrong is written.
+  update public.choice_options o
+  set sort = ranked.place
+  from (
+    select o2.id,
+      row_number() over (
+        order by
+          array_position(array['ranch', 'vinaigrette'],
+            lower(btrim(o2.name))) nulls last,
+          o2.sort, o2.created_at, o2.id
+      )::integer as place
+    from public.choice_options o2
+    where o2.choice_list_id = dressing and o2.deleted_at is null
+  ) ranked
+  where o.id = ranked.id and o.sort is distinct from ranked.place;
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'put % of Choose a dressing''s options in place', placed;
+  end if;
+
+  update public.item_sizes z
+  set calories_low = v.c, calories_high = null
+  from (values ('cup', 180), ('bowl', 290)) as v (n, c)
+  where z.item_id = soup
+    and z.deleted_at is null
+    and lower(btrim(z.name)) = v.n
+    and (z.calories_low is distinct from v.c or z.calories_high is not null);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'gave % of Soup of the day''s sizes their calories', placed;
+  end if;
+
+  update public.items i
+  set calories_low = 410, calories_high = null, cooked_to_order = true
+  where i.id = bread
+    and (i.calories_low is distinct from 410
+      or i.calories_high is not null
+      or not i.cooked_to_order);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'gave Garlic bread 410 calories and marked it cooked to order';
+  end if;
 end $$;
 
 -- 4. What CI Diner holds now, in the order its screens show it. The first
 -- row says whether the owner gate can run; every other row is a menu, a
--- section, a dish, or a size, marked needed or extra.
+-- section, a dish, a size, a choice list, or an option, marked needed or
+-- extra.
 with diner as (
   select r.id from public.restaurants r where r.code = '56097672'
 ),
@@ -368,8 +508,7 @@ live_menus as (
   where m.deleted_at is null
 ),
 live_sections as (
-  select s.id, s.menu_id, s.name, s.every_item, s.every_item_allergens,
-    s.every_item_custom_allergens, s.every_item_allergens_reviewed,
+  select s.id, s.menu_id, s.name,
     row_number() over (
       partition by s.menu_id order by s.sort, s.created_at, s.id
     ) as place
@@ -379,6 +518,7 @@ live_sections as (
 ),
 live_items as (
   select i.id, i.section_id, i.name, i.price_kind, i.price_cents,
+    i.calories_low, i.calories_high, i.cooked_to_order,
     i.allergens, i.custom_allergens, i.allergens_reviewed,
     i.dietary_tags, i.available, i.sold_out_at, i.special_schedule,
     row_number() over (
@@ -389,7 +529,7 @@ live_items as (
   where i.deleted_at is null
 ),
 live_sizes as (
-  select z.item_id, z.name, z.price_cents,
+  select z.item_id, z.name, z.price_cents, z.calories_low, z.calories_high,
     row_number() over (
       partition by z.item_id
       order by z.price_cents nulls last, z.created_at, z.id
@@ -397,6 +537,34 @@ live_sizes as (
   from public.item_sizes z
   join live_items on z.item_id = live_items.id
   where z.deleted_at is null
+),
+-- A list under a live dish or a live section, with the names of the
+-- levels above it; a list under a deleted home is absent.
+live_lists as (
+  select l.id, l.lead, l.item_id is null as on_section,
+    li.id as dish_id, li.name as dish_name, coalesce(li.place, 0) as dish_place,
+    ls.id as section_id, ls.name as section_name, ls.place as section_place,
+    lm.name as menu_name, lm.place as menu_place,
+    row_number() over (
+      partition by coalesce(l.item_id, l.section_id)
+      order by l.sort, l.created_at, l.id
+    ) as place
+  from public.choice_lists l
+  left join live_items li on li.id = l.item_id
+  join live_sections ls on ls.id = coalesce(li.section_id, l.section_id)
+  join live_menus lm on lm.id = ls.menu_id
+  where l.deleted_at is null
+),
+live_options as (
+  select o.id, o.choice_list_id, o.name, o.added_price_cents,
+    o.calories_low, o.calories_high,
+    o.allergens, o.custom_allergens, o.allergens_reviewed,
+    row_number() over (
+      partition by o.choice_list_id order by o.sort, o.created_at, o.id
+    ) as place
+  from public.choice_options o
+  join live_lists on o.choice_list_id = live_lists.id
+  where o.deleted_at is null
 ),
 dinner as (
   select lm.id from live_menus lm where lower(btrim(lm.name)) = 'dinner'
@@ -410,6 +578,22 @@ mains as (
   select ls.id from live_sections ls
   join dinner on ls.menu_id = dinner.id
   where lower(btrim(ls.name)) = 'mains'
+),
+salad as (
+  select li.id from live_items li
+  join starters on li.section_id = starters.id
+  where lower(btrim(li.name)) = 'house salad'
+),
+roll_list as (
+  select ll.id from live_lists ll
+  join starters on ll.section_id = starters.id
+  where ll.on_section and ll.place = 1
+    and lower(btrim(ll.lead)) = 'add a buttered roll to any dish'
+),
+dressing as (
+  select ll.id from live_lists ll
+  join salad on ll.dish_id = salad.id
+  where ll.place = 1 and lower(btrim(ll.lead)) = 'choose a dressing'
 ),
 verdict as (
   select
@@ -471,17 +655,55 @@ verdict as (
           and not li.allergens_reviewed),
       false) as allergens_ok,
     coalesce(
-      (select ls.every_item = 'Add a buttered roll to any dish for 2 dollars.'
-         and ls.every_item_allergens = '{milk,wheat}'::public.allergen[]
-         and ls.every_item_custom_allergens = '{}'::text[]
-         and ls.every_item_allergens_reviewed
-       from live_sections ls join starters on ls.id = starters.id)
+      exists (select 1 from roll_list)
+      and (select lo.name = 'Buttered roll' and lo.added_price_cents = 200
+         and lo.calories_low is null
+         and lo.allergens = '{milk,wheat}'::public.allergen[]
+         and lo.custom_allergens = '{}'::text[]
+         and lo.allergens_reviewed
+       from live_options lo join roll_list on lo.choice_list_id = roll_list.id
+       where lo.place = 1)
+      and exists (select 1 from dressing)
+      and (select coalesce(array_agg(lower(btrim(lo.name)) order by lo.place), '{}')
+         from live_options lo join dressing on lo.choice_list_id = dressing.id
+         where lo.place <= 2)
+        = array['ranch', 'vinaigrette']
+      and (select lo.calories_low = 150 and lo.calories_high is null
+         and lo.added_price_cents is null
+         and lo.allergens = '{milk,eggs}'::public.allergen[]
+         and lo.custom_allergens = '{}'::text[]
+         and lo.allergens_reviewed
+       from live_options lo join dressing on lo.choice_list_id = dressing.id
+       where lower(btrim(lo.name)) = 'ranch')
+      and (select lo.calories_low = 90 and lo.calories_high is null
+         and lo.added_price_cents is null
+         and cardinality(lo.allergens) = 0
+         and cardinality(lo.custom_allergens) = 0
+         and lo.allergens_reviewed
+       from live_options lo join dressing on lo.choice_list_id = dressing.id
+       where lower(btrim(lo.name)) = 'vinaigrette')
       and not exists (
-        select 1 from live_sections ls
+        select 1 from live_lists ll
+        join live_sections ls on ls.id = ll.section_id
         join dinner on ls.menu_id = dinner.id
-        where lower(btrim(ls.name)) = 'desserts'
-          and ls.every_item is not null),
-      false) as line_ok,
+        where ll.on_section and lower(btrim(ls.name)) = 'desserts'),
+      false) as lists_ok,
+    coalesce(
+      (select li.calories_low = 320 and li.calories_high is null
+         and not li.cooked_to_order
+       from live_items li join starters on li.section_id = starters.id
+       where lower(btrim(li.name)) = 'house salad')
+      and (select li.calories_low = 410 and li.calories_high is null
+         and li.cooked_to_order
+       from live_items li join starters on li.section_id = starters.id
+       where lower(btrim(li.name)) = 'garlic bread')
+      and (select li.calories_low is null and not li.cooked_to_order
+         and (select coalesce(array_agg(lz.calories_low order by lz.place), '{}')
+              from live_sizes lz where lz.item_id = li.id)
+           = array[180, 290]
+       from live_items li join starters on li.section_id = starters.id
+       where lower(btrim(li.name)) = 'soup of the day'),
+      false) as calories_ok,
     coalesce(
       (select li.dietary_tags
          = '{vegetarian,made-without-gluten}'::public.dietary_tag[]
@@ -499,7 +721,7 @@ verdict as (
 select item, status
 from (
   select 0 as menu_place, 0 as section_place, 0 as dish_place,
-    0 as size_place,
+    0 as size_place, 0 as list_place, 0 as option_place,
     'CI Diner (56097672)' as item,
     case
       when not v.menus_ok then
@@ -516,15 +738,17 @@ from (
         'not ready: Soup of the day is not priced by size with Cup and Bowl, House salad at one price, and Garlic bread at market price'
       when not v.allergens_ok then
         'not ready: Soup of the day is not checked with milk, wheat, and celery, House salad checked with none, Garlic bread not checked, or Mains has no unchecked Soup of the day'
-      when not v.line_ok then
-        'not ready: Starters'' line shown with every dish is not "Add a buttered roll to any dish for 2 dollars." checked with milk and wheat, or Desserts has a line'
+      when not v.lists_ok then
+        'not ready: Starters'' first choice list is not "Add a buttered roll to any dish" with Buttered roll at $2.00 checked with milk and wheat, House salad''s first list is not "Choose a dressing" with Ranch and Vinaigrette checked, or Desserts has a list'
+      when not v.calories_ok then
+        'not ready: House salad is not at 320 calories, Garlic bread at 410 and cooked to order, or Soup of the day''s Cup and Bowl at 180 and 290'
       when not v.showing_ok then
         'not ready: House salad is not tagged vegetarian and made without gluten ingredients, Garlic bread is not off the menu for now, or Soup of the day is not a special every day from 4 to 9 pm'
       else 'ready for the owner gate'
     end as status
   from verdict v
   union all
-  select lm.place, 0, 0, 0,
+  select lm.place, 0, 0, 0, 0, 0,
     'menu ' || lm.place || ': ' || lm.name,
     case
       when lm.place <= 3
@@ -534,13 +758,8 @@ from (
     end
   from live_menus lm
   union all
-  select lm.place, ls.place, 0, 0,
-    'section ' || ls.place || ' of ' || lm.name || ': ' || ls.name
-      || coalesce(', line: ' || ls.every_item || ', allergens '
-        || coalesce(nullif(array_to_string(ls.every_item_allergens, ' '), ''), 'none')
-        || coalesce(' and ' || nullif(array_to_string(ls.every_item_custom_allergens, ' '), ''), '')
-        || case when ls.every_item_allergens_reviewed then ', checked' else ', not checked' end,
-        ''),
+  select lm.place, ls.place, 0, 0, 0, 0,
+    'section ' || ls.place || ' of ' || lm.name || ': ' || ls.name,
     case
       when lower(btrim(lm.name)) = 'dinner'
         and ls.place <= 3
@@ -551,10 +770,13 @@ from (
   from live_sections ls
   join live_menus lm on lm.id = ls.menu_id
   union all
-  select lm.place, ls.place, li.place, 0,
+  select lm.place, ls.place, li.place, 0, 0, 0,
     'dish ' || li.place || ' of ' || ls.name || ', ' || lm.name || ': '
       || li.name || ', ' || li.price_kind
       || coalesce(', $' || round(li.price_cents::numeric / 100, 2)::text, '')
+      || coalesce(', ' || li.calories_low
+        || coalesce(' to ' || li.calories_high, '') || ' calories', '')
+      || case when li.cooked_to_order then ', cooked to order' else '' end
       || ', allergens '
       || coalesce(nullif(array_to_string(li.allergens, ' '), ''), 'none')
       || coalesce(' and ' || nullif(array_to_string(li.custom_allergens, ' '), ''), '')
@@ -583,10 +805,12 @@ from (
   join live_sections ls on ls.id = li.section_id
   join live_menus lm on lm.id = ls.menu_id
   union all
-  select lm.place, ls.place, li.place, lz.place,
+  select lm.place, ls.place, li.place, lz.place, 0, 0,
     'size ' || lz.place || ' of ' || li.name || ', ' || ls.name || ': '
       || coalesce(lz.name, '(no name yet)')
-      || coalesce(', $' || round(lz.price_cents::numeric / 100, 2)::text, ''),
+      || coalesce(', $' || round(lz.price_cents::numeric / 100, 2)::text, '')
+      || coalesce(', ' || lz.calories_low
+        || coalesce(' to ' || lz.calories_high, '') || ' calories', ''),
     case
       when lower(btrim(lm.name)) = 'dinner'
         and lower(btrim(ls.name)) = 'starters'
@@ -600,5 +824,39 @@ from (
   join live_items li on li.id = lz.item_id
   join live_sections ls on ls.id = li.section_id
   join live_menus lm on lm.id = ls.menu_id
+  union all
+  select ll.menu_place, ll.section_place, ll.dish_place, 0, ll.place, 0,
+    'list ' || ll.place || ' of '
+      || coalesce(ll.dish_name || ', ' || ll.section_name,
+           ll.section_name || ', ' || ll.menu_name)
+      || ': ' || ll.lead,
+    case
+      when ll.id in (select roll_list.id from roll_list) then 'needed'
+      when ll.id in (select dressing.id from dressing) then 'needed'
+      else 'extra, left as it is'
+    end
+  from live_lists ll
+  union all
+  select ll.menu_place, ll.section_place, ll.dish_place, 0, ll.place, lo.place,
+    'option ' || lo.place || ' of ' || ll.lead || ': ' || lo.name
+      || coalesce(', +$' || round(lo.added_price_cents::numeric / 100, 2)::text, '')
+      || coalesce(', ' || lo.calories_low
+        || coalesce(' to ' || lo.calories_high, '') || ' calories', '')
+      || ', allergens '
+      || coalesce(nullif(array_to_string(lo.allergens, ' '), ''), 'none')
+      || coalesce(' and ' || nullif(array_to_string(lo.custom_allergens, ' '), ''), '')
+      || case when lo.allergens_reviewed then ', checked' else ', not checked' end,
+    case
+      when ll.id in (select roll_list.id from roll_list)
+        and lo.place = 1 and lower(btrim(lo.name)) = 'buttered roll'
+        then 'needed'
+      when ll.id in (select dressing.id from dressing)
+        and lo.place <= 2 and lower(btrim(lo.name)) in ('ranch', 'vinaigrette')
+        then 'needed'
+      else 'extra, left as it is'
+    end
+  from live_options lo
+  join live_lists ll on ll.id = lo.choice_list_id
 ) report
-order by menu_place, section_place, dish_place, size_place;
+order by menu_place, section_place, dish_place, size_place, list_place,
+  option_place;

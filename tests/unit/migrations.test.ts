@@ -676,17 +676,19 @@ describe("the owner boundary on items (D-85, task 3a)", () => {
     );
   });
 
+  // delete_with_contents is made again with a sixth parameter in migration
+  // eleven, so it carries one grant per signature; the others one.
   it.each([
-    ["set_item_order", "uuid, uuid\\[\\]"],
-    ["section_dish_counts", "uuid"],
-    ["delete_with_contents", "\\s*text, uuid, uuid, integer, integer"],
-    ["move_section", "uuid, uuid"],
-  ])("opens %s to authenticated only", (name, parameters) => {
+    ["set_item_order", "uuid, uuid\\[\\]", 1],
+    ["section_dish_counts", "uuid", 1],
+    ["delete_with_contents", "\\s*text, uuid, uuid, integer, integer", 2],
+    ["move_section", "uuid, uuid", 1],
+  ])("opens %s to authenticated only", (name, parameters, signatures) => {
     const grants = [
       ...sql.matchAll(new RegExp(`grant [^;]*\\b${name}\\b[^;]*;`, "g")),
     ].map((match) => match[0]);
-    expect(grants).toHaveLength(1);
-    expect(grants[0]).toMatch(/to authenticated;$/);
+    expect(grants).toHaveLength(signatures);
+    for (const grant of grants) expect(grant).toMatch(/to authenticated;$/);
     expect(items).toMatch(
       new RegExp(
         `revoke all on function public\\.${name}\\(${parameters}\\) from public, anon;`,
@@ -1532,5 +1534,484 @@ describe("the Storage writes migration (D-85, D-165, the small task after task 5
     expect(sql).toMatch(/insert into storage\.buckets/);
     expect(sql).not.toMatch(/delete from storage\.buckets/);
     expect(sql).not.toMatch(/drop function public\.owns_object/);
+  });
+});
+
+describe("the choices migration (D-85, D-166, D-167, task 7)", () => {
+  const file = "20261011000001_choices.sql";
+  const text = readFileSync(join(dir, file), "utf8");
+  // Never written by an owner on either new table: the links, the stamp
+  // the database writes, and the timestamps.
+  const neverWritten = [
+    "id",
+    "restaurant_id",
+    "item_id",
+    "section_id",
+    "choice_list_id",
+    "allergens_reviewed_by",
+    "allergens_reviewed_at",
+    "created_at",
+    "updated_at",
+  ];
+  const caloriesShape =
+    /check \(\s+\(calories_low is null and calories_high is null\)\s+or \(calories_low is not null\s+and calories_low between 0 and 99999\s+and \(calories_high is null\s+or calories_high between calories_low and 99999\)\)\s+\)/;
+
+  function columnsOf(table: string, privilege: string): string[] {
+    const matches = [
+      ...text.matchAll(
+        new RegExp(
+          `grant ${privilege} \\(([^)]*)\\) on public\\.${table} to authenticated;`,
+          "g",
+        ),
+      ),
+    ];
+    expect(matches, `no ${privilege} column list on ${table}`).toHaveLength(1);
+    return (matches[0]?.[1] ?? "").split(",").map((column) => column.trim());
+  }
+
+  function bodyOf(name: string): string {
+    const from = text.indexOf(`create function public.${name}`);
+    expect(from, `${name} is not in ${file}`).toBeGreaterThan(-1);
+    return text.slice(from, text.indexOf("\n$$;", from));
+  }
+
+  function tableOf(name: string): string {
+    const from = text.indexOf(`create table public.${name}`);
+    expect(from, `${name} is not in ${file}`).toBeGreaterThan(-1);
+    return text.slice(from, text.indexOf("\n);", from));
+  }
+
+  it("stops while any section holds a line, deleted or not, before anything else, and moves no data", () => {
+    const stop = text.indexOf("raise exception 'migration 11:");
+    const firstDrop = text.indexOf("drop trigger");
+    expect(stop).toBeGreaterThan(-1);
+    expect(firstDrop).toBeGreaterThan(stop);
+    expect(text).toMatch(
+      /where s\.every_item is not null\s+or s\.every_item_allergens <> '\{\}'\s+or s\.every_item_custom_allergens <> '\{\}'\s+or s\.every_item_allergens_reviewed;/,
+    );
+    expect(text).not.toMatch(/update public\.\w+\s+set/);
+    expect(text).not.toMatch(/deleted_at is null/.source + "[^;]*every_item");
+  });
+
+  it("drops the line's two triggers, then their functions, then the five constraints and six columns by name, with plain drops", () => {
+    const order = [
+      "drop trigger sections_line_allergen_check on public.sections;",
+      "drop trigger sections_line_allergen_lists on public.sections;",
+      "drop function public.set_section_line_allergen_check();",
+      "drop function public.check_section_line_allergen_lists();",
+      "drop constraint sections_line_blank_holds_nothing,",
+      "drop constraint sections_line_other_allergens_count,",
+      "drop constraint sections_line_allergens_offered,",
+      "drop constraint sections_line_check_whole,",
+      "drop constraint sections_every_item_text,",
+      "drop column every_item_allergens_reviewed_at,",
+      "drop column every_item_allergens_reviewed_by,",
+      "drop column every_item_allergens_reviewed,",
+      "drop column every_item_custom_allergens,",
+      "drop column every_item_allergens,",
+      "drop column every_item;",
+    ];
+    let last = -1;
+    for (const statement of order) {
+      const at = text.indexOf(statement);
+      expect(at, statement).toBeGreaterThan(last);
+      last = at;
+    }
+    expect(text, "plain drops").not.toMatch(/drop [^;]*\bcascade\b/);
+    expect(text).not.toMatch(/if exists/);
+    expect(text, "the one lists rule stays (D-155)").not.toMatch(
+      /drop function public\.allergen_lists_problem/,
+    );
+    const dropped = [
+      ...text.matchAll(
+        /drop (trigger|function|constraint|column|view|policy)/g,
+      ),
+    ];
+    expect(dropped).toHaveLength(16);
+    expect(text).toMatch(
+      /drop function public\.delete_with_contents\(text, uuid, uuid, integer, integer\);/,
+    );
+  });
+
+  it("restates the sections grant without the line, and keeps the insert list", () => {
+    expect(text).toMatch(
+      /revoke update on public\.sections from authenticated;/,
+    );
+    expect(text).not.toMatch(/grant insert [^;]*public\.sections/);
+    expect(columnsOf("sections", "update")).toEqual([
+      "name",
+      "note",
+      "sort",
+      "deleted_at",
+    ]);
+  });
+
+  it("adds calories on dishes, sizes, and options with one shape that names the low number's presence, and the mark with no null", () => {
+    expect(text).toMatch(
+      /add column calories_low integer,\s+add column calories_high integer,\s+add column cooked_to_order boolean not null default false,/,
+    );
+    expect(text).toMatch(/add constraint items_calories_shape /);
+    expect(text).toMatch(/add constraint item_sizes_calories_shape /);
+    expect(tableOf("choice_options")).toMatch(
+      /constraint choice_options_calories_shape /,
+    );
+    expect(text.match(caloriesShape)).not.toBeNull();
+    expect(text.match(new RegExp(caloriesShape.source, "g"))).toHaveLength(3);
+    expect(text).toMatch(
+      /grant update \([^)]*\bcalories_low, calories_high, cooked_to_order\b[^)]*\) on public\.items to authenticated;/,
+    );
+  });
+
+  it("keeps the two tables in D-144's shape: one home exactly, the lead and name rules, leads and names that differ among live rows, the restaurant copied from the home, and timestamps", () => {
+    expect(tables).toContain("choice_lists");
+    expect(tables).toContain("choice_options");
+    const lists = tableOf("choice_lists");
+    expect(lists).toMatch(
+      /restaurant_id uuid not null references public\.restaurants \(id\) on delete cascade/,
+    );
+    expect(lists).toMatch(
+      /item_id uuid references public\.items \(id\) on delete cascade/,
+    );
+    expect(lists).toMatch(
+      /section_id uuid references public\.sections \(id\) on delete cascade/,
+    );
+    expect(lists).toMatch(/lead text not null/);
+    expect(lists).toMatch(
+      /choice_lists_one_home\s+check \(num_nonnulls\(item_id, section_id\) = 1\)/,
+    );
+    expect(lists).toMatch(
+      /choice_lists_lead_text\s+check \(lead ~ '\\S' and lead !~ '\[\[:cntrl:\]\]' and length\(lead\) <= 120\)/,
+    );
+    expect(lists).toMatch(/sort integer not null default 0/);
+    expect(lists).toMatch(/deleted_at timestamptz/);
+    expect(text).toMatch(
+      /create unique index choice_lists_lead_key\s+on public\.choice_lists \(coalesce\(item_id, section_id\), lower\(btrim\(lead\)\)\)\s+where deleted_at is null;/,
+    );
+    const options = tableOf("choice_options");
+    expect(options).toMatch(
+      /choice_list_id uuid not null references public\.choice_lists \(id\) on delete cascade/,
+    );
+    expect(options).toMatch(/name text not null/);
+    expect(options).toMatch(
+      /choice_options_name_text\s+check \(name ~ '\\S' and name !~ '\[\[:cntrl:\]\]' and length\(name\) <= 60\)/,
+    );
+    expect(options).toMatch(
+      /choice_options_added_price_cents\s+check \(added_price_cents >= 0 and added_price_cents <= 9999999\)/,
+    );
+    expect(options).toMatch(
+      /choice_options_allergens_offered check \(\s+allergens <@ '\{milk,eggs,fish,shellfish,tree-nuts,peanuts,wheat,soy,sesame\}'::public\.allergen\[\]\s+\)/,
+    );
+    expect(options).toMatch(
+      /choice_options_other_allergens_count check \(\s+cardinality\(custom_allergens\) <= 10\s+\)/,
+    );
+    expect(options).toMatch(
+      /choice_options_allergen_check_whole check \(\s+\(allergens_reviewed\s+and allergens_reviewed_by is not null\s+and allergens_reviewed_at is not null\)\s+or \(not allergens_reviewed\s+and allergens_reviewed_by is null\s+and allergens_reviewed_at is null\)\s+\)/,
+    );
+    expect(options).not.toMatch(/reviewed_by uuid references/);
+    expect(text).toMatch(
+      /create unique index choice_options_name_key\s+on public\.choice_options \(choice_list_id, lower\(btrim\(name\)\)\)\s+where deleted_at is null;/,
+    );
+    for (const table of ["choice_lists", "choice_options"]) {
+      expect(text).toMatch(
+        new RegExp(
+          `create trigger ${table}_updated_at before update on public\\.${table}\\s+for each row execute function public\\.set_updated_at\\(\\);`,
+        ),
+      );
+    }
+    expect(text).toMatch(
+      /create trigger choice_lists_restaurant\s+before insert or update of item_id, section_id on public\.choice_lists/,
+    );
+    expect(text).toMatch(
+      /create trigger choice_options_restaurant\s+before insert or update of choice_list_id on public\.choice_options/,
+    );
+    for (const name of [
+      "set_choice_list_restaurant",
+      "set_choice_option_restaurant",
+    ]) {
+      const body = bodyOf(name);
+      expect(body).toMatch(/returns trigger/);
+      expect(body).toMatch(/set search_path = ''/);
+      expect(body).not.toMatch(/security definer/);
+      expect(text).toMatch(
+        new RegExp(
+          `revoke all on function public\\.${name}\\(\\)\\s+from public, anon, authenticated;`,
+        ),
+      );
+    }
+    expect(bodyOf("set_choice_list_restaurant")).toContain(
+      "raise exception 'A choice list needs an existing dish or section.'",
+    );
+    expect(bodyOf("set_choice_option_restaurant")).toContain(
+      "raise exception 'An option needs an existing choice list.'",
+    );
+  });
+
+  it("gives owners column lists and no delete on both tables, and service_role every column", () => {
+    expect(columnsOf("choice_lists", "insert")).toEqual([
+      "item_id",
+      "section_id",
+      "lead",
+      "sort",
+    ]);
+    expect(columnsOf("choice_lists", "update")).toEqual([
+      "lead",
+      "sort",
+      "deleted_at",
+    ]);
+    expect(columnsOf("choice_options", "insert")).toEqual([
+      "choice_list_id",
+      "name",
+      "sort",
+    ]);
+    expect(columnsOf("choice_options", "update")).toEqual([
+      "name",
+      "added_price_cents",
+      "calories_low",
+      "calories_high",
+      "allergens",
+      "custom_allergens",
+      "allergens_reviewed",
+      "sort",
+      "deleted_at",
+    ]);
+    for (const table of ["choice_lists", "choice_options"]) {
+      for (const column of neverWritten) {
+        expect(columnsOf(table, "update")).not.toContain(column);
+      }
+      expect(columnsOf(table, "insert")).not.toContain("restaurant_id");
+      expect(text).not.toMatch(
+        new RegExp(
+          `grant [^;]*\\bdelete\\b[^;]*public\\.${table} to authenticated`,
+        ),
+      );
+      expect(text).toMatch(
+        new RegExp(`grant select on public\\.${table} to authenticated;`),
+      );
+      expect(text).toMatch(
+        new RegExp(
+          `grant select, insert, update, delete on public\\.${table} to service_role;`,
+        ),
+      );
+      expect(text).toMatch(
+        new RegExp(`alter table public\\.${table} enable row level security;`),
+      );
+    }
+    expect(text).toMatch(
+      /create policy "owners read choice lists" on public\.choice_lists\s+for select to authenticated using \(public\.is_owner\(restaurant_id\)\);/,
+    );
+    expect(text).toMatch(
+      /create policy "owners add choice lists" on public\.choice_lists/,
+    );
+    expect(text).toMatch(
+      /create policy "owners update choice lists" on public\.choice_lists/,
+    );
+    expect(text).toMatch(
+      /create policy "owners read options" on public\.choice_options\s+for select to authenticated using \(public\.is_owner\(restaurant_id\)\);/,
+    );
+    expect(text).toMatch(
+      /create policy "owners add options" on public\.choice_options/,
+    );
+    expect(text).toMatch(
+      /create policy "owners update options" on public\.choice_options/,
+    );
+    expect(text).not.toMatch(/for delete to authenticated/);
+  });
+
+  it("grows the sizes grant by calories and keeps the insert list", () => {
+    expect(text).toMatch(
+      /revoke update on public\.item_sizes from authenticated;/,
+    );
+    expect(text).not.toMatch(/grant insert [^;]*public\.item_sizes/);
+    expect(columnsOf("item_sizes", "update")).toEqual([
+      "name",
+      "price_cents",
+      "calories_low",
+      "calories_high",
+      "deleted_at",
+    ]);
+  });
+
+  it("opens calories and the mark on dishes to owners, and nothing else new", () => {
+    expect(text).toMatch(/revoke update on public\.items from authenticated;/);
+    expect(text).not.toMatch(/grant insert [^;]*public\.items/);
+    expect(columnsOf("items", "update")).toEqual([
+      "name",
+      "description",
+      "price_kind",
+      "price_cents",
+      "calories_low",
+      "calories_high",
+      "cooked_to_order",
+      "note",
+      "allergens",
+      "custom_allergens",
+      "allergens_reviewed",
+      "dietary_tags",
+      "available",
+      "sold_out_at",
+      "special_schedule",
+      "sort",
+      "deleted_at",
+    ]);
+  });
+
+  it("makes the option's lists trigger call the one rule as its owner, revoked by name, on the two list columns", () => {
+    const body = bodyOf("check_choice_option_allergen_lists");
+    expect(body).toMatch(/returns trigger/);
+    expect(body).toMatch(/security definer set search_path = ''/);
+    expect(body.replace(/\s+/g, " ").replace(/\( /g, "(")).toContain(
+      "public.allergen_lists_problem(new.allergens, new.custom_allergens)",
+    );
+    expect(body).toContain(
+      "raise exception '%', problem using errcode = 'P0001'",
+    );
+    expect(text).toMatch(
+      /revoke all on function public\.check_choice_option_allergen_lists\(\)\s+from public, anon, authenticated;/,
+    );
+    expect(text).toMatch(
+      /create trigger choice_options_allergen_lists\s+before insert or update of allergens, custom_allergens on public\.choice_options/,
+    );
+    expect(text, "the migration repeats no word list").not.toMatch(
+      /other_allergen_major/,
+    );
+  });
+
+  it("stamps and clears the option's check in a trigger that is revoked by name: a change to the name or a list clears it, a check needs a person, and an option is never born checked", () => {
+    const body = bodyOf("set_choice_option_allergen_check");
+    expect(body).toMatch(/returns trigger/);
+    expect(body).toMatch(/set search_path = ''/);
+    expect(body).not.toMatch(/security definer/);
+    expect(body).toMatch(/person uuid := auth\.uid\(\);/);
+    for (const name of [
+      "allergen_check_on_insert",
+      "allergen_check_needs_person",
+    ]) {
+      expect(body).toContain(
+        `raise exception '${name}' using errcode = 'P0001'`,
+      );
+    }
+    expect(body).toMatch(
+      /new\.allergens_reviewed_by := old\.allergens_reviewed_by;\s+new\.allergens_reviewed_at := old\.allergens_reviewed_at;/,
+    );
+    // D-152's reason, Michael at the plan's tabs: the name is all that
+    // names the food, so a rename clears the check as the line's words did.
+    expect(body).toMatch(
+      /if new\.name is distinct from old\.name\s+or new\.allergens is distinct from old\.allergens\s+or new\.custom_allergens is distinct from old\.custom_allergens then\s+new\.allergens_reviewed := false;/,
+    );
+    expect(body).toMatch(
+      /if new\.allergens_reviewed and not old\.allergens_reviewed then[\s\S]*?new\.allergens_reviewed_by := person;\s+new\.allergens_reviewed_at := now\(\);/,
+    );
+    expect(text).toMatch(
+      /revoke all on function public\.set_choice_option_allergen_check\(\)\s+from public, anon, authenticated;/,
+    );
+    expect(text).toMatch(
+      /create trigger choice_options_allergen_check\s+before insert or update on public\.choice_options/,
+    );
+  });
+
+  it("orders lists and options through two functions in set_item_order's shape, each open to authenticated only", () => {
+    for (const [name, table, column, alias] of [
+      [
+        "set_choice_list_order",
+        "choice_lists",
+        "coalesce\\(l\\.item_id, l\\.section_id\\) = p_home",
+        "l",
+      ],
+      [
+        "set_choice_option_order",
+        "choice_options",
+        "o\\.choice_list_id = p_list",
+        "o",
+      ],
+    ] as const) {
+      const grants = [
+        ...sql.matchAll(new RegExp(`grant [^;]*\\b${name}\\b[^;]*;`, "g")),
+      ].map((match) => match[0]);
+      expect(grants).toHaveLength(1);
+      expect(grants[0]).toMatch(/to authenticated;$/);
+      expect(text).toMatch(
+        new RegExp(
+          `revoke all on function public\\.${name}\\(uuid, uuid\\[\\]\\) from public, anon;`,
+        ),
+      );
+      const body = bodyOf(name);
+      expect(body).not.toMatch(/security definer/);
+      expect(body).toMatch(
+        new RegExp(
+          `from public\\.${table} ${alias}\\s+where ${column}\\s+order by ${alias}\\.id\\s+for update;`,
+        ),
+      );
+      expect(body).toMatch(/coalesce\(array_ndims\(p_ids\), 0\) <> 1/);
+      expect(body).toMatch(/cardinality\(p_ids\) <> live/);
+      expect(body).toMatch(/matched <> live/);
+      expect(body).toMatch(
+        /raise exception 'order_mismatch' using errcode = 'P0001'/,
+      );
+      expect(body).toMatch(new RegExp(`${alias}\\.deleted_at is null`));
+      expect(body).toMatch(/is distinct from \w+\.ord;/);
+    }
+  });
+
+  it("makes delete_with_contents again with a list branch and an options count, as the caller, under locks, with the old branches kept", () => {
+    const body = bodyOf("delete_with_contents");
+    expect(body).toMatch(
+      /p_kind text,\s+p_parent uuid,\s+p_id uuid,\s+p_sections integer,\s+p_dishes integer,\s+p_options integer\s+\) returns void/,
+    );
+    expect(body).not.toMatch(/security definer/);
+    expect(body).toMatch(/set search_path = ''/);
+    expect(body).toMatch(/if p_kind = 'menu' then/);
+    expect(body).toMatch(/elsif p_kind = 'section' then/);
+    expect(body).toMatch(/elsif p_kind = 'list' then/);
+    expect(body.match(/for update/g)).toHaveLength(7);
+    expect(body).toMatch(
+      /where l\.id = p_id and coalesce\(l\.item_id, l\.section_id\) = p_parent\s+for update;/,
+    );
+    expect(body).toMatch(
+      /\(\s+select count\(\*\) from public\.choice_options o\s+where o\.choice_list_id = l\.id and o\.deleted_at is null\s+\) <= coalesce\(p_options, 0\);/,
+    );
+    for (const name of [
+      "delete_grew",
+      "delete_not_found",
+      "delete_unknown_kind",
+    ]) {
+      expect(body).toContain(
+        `raise exception '${name}' using errcode = 'P0001'`,
+      );
+    }
+    expect(text).toMatch(
+      /revoke all on function public\.delete_with_contents\(\s+text, uuid, uuid, integer, integer, integer\) from public, anon;/,
+    );
+    expect(text).toMatch(
+      /grant execute on function public\.delete_with_contents\(\s+text, uuid, uuid, integer, integer, integer\) to authenticated;/,
+    );
+    const grants = [
+      ...sql.matchAll(/grant [^;]*\bdelete_with_contents\b[^;]*;/g),
+    ].map((match) => match[0]);
+    expect(grants, "one grant per signature, the old and the new").toHaveLength(
+      2,
+    );
+  });
+
+  it("touches no view, grants anon nothing, and adds three callable functions", () => {
+    expect(text).not.toMatch(/create (or replace )?view/);
+    expect(text).not.toMatch(/drop view/);
+    expect(text).not.toMatch(/to anon/);
+    const callable = [
+      ...text.matchAll(
+        /create (?:or replace )?function public\.(\w+)\s*\([\s\S]*?\)\s*returns\s+(\S+)/gi,
+      ),
+    ]
+      .filter((match) => (match[2] ?? "").toLowerCase() !== "trigger")
+      .map((match) => match[1]);
+    expect(callable).toEqual([
+      "set_choice_list_order",
+      "set_choice_option_order",
+      "delete_with_contents",
+    ]);
+    for (const view of views) {
+      expect(viewBody(view)).not.toMatch(
+        /\b(calories_low|calories_high|cooked_to_order|choice_lists|choice_options)\b/,
+      );
+    }
   });
 });

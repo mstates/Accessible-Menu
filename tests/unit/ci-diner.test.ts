@@ -33,7 +33,7 @@ describe("CI Diner's data file (D-126)", () => {
     expect(code).not.toMatch(/\b(create|alter|grant|revoke)\b/i);
   });
 
-  it("writes only through inserts, sort updates, the three dishes' prices, two dishes' allergens, Starters' line, and the three dishes' tags, availability, and schedule", () => {
+  it("writes only through inserts, sort updates, the three dishes' prices, two dishes' allergens, the roll's price, lists, and check, the three dishes' tags, availability, and schedule, and the calories, the dressing options, and the mark", () => {
     const updates = code.match(/\bupdate\s+public\.\w+\s+\w+\s+set\s+\w+/gi);
     expect(updates).toEqual([
       "update public.menus m\n  set sort",
@@ -46,11 +46,17 @@ describe("CI Diner's data file (D-126)", () => {
       "update public.items i\n  set allergens_reviewed",
       "update public.items i\n  set allergens",
       "update public.items i\n  set allergens_reviewed",
-      "update public.sections s\n  set every_item",
-      "update public.sections s\n  set every_item_allergens_reviewed",
+      "update public.choice_options o\n  set added_price_cents",
+      "update public.choice_options o\n  set allergens_reviewed",
       "update public.items i\n  set dietary_tags",
       "update public.items i\n  set available",
       "update public.items i\n  set special_schedule",
+      "update public.items i\n  set calories_low",
+      "update public.choice_options o\n    set calories_low",
+      "update public.choice_options o\n    set allergens_reviewed",
+      "update public.choice_options o\n  set sort",
+      "update public.item_sizes z\n  set calories_low",
+      "update public.items i\n  set calories_low",
     ]);
   });
 
@@ -120,34 +126,78 @@ describe("CI Diner's data file (D-126)", () => {
     );
   });
 
-  // Starters' line shown with every dish (migration 8, task 4b): its words
-  // and its two lists in one statement, then its check in its own, by id,
-  // as CI Diner's owner, and never the stamps. The line names no dish in
-  // Starters, since the gate matches names by substring.
-  it("gives Starters its line and checks it by id, the check in its own statement, naming no dish", () => {
-    const lines = [
-      ...code.matchAll(/update public\.sections s\n  set every_item =[^;]*;/g),
+  // The choice lists (migration 11, task 7): the roll list on Starters and
+  // the dressing list on House salad, each option's lists in one statement
+  // and its check in its own, by id, as CI Diner's owner, and never the
+  // stamps. No lead or option names a dish in Starters, since the gate
+  // matches names by substring.
+  it("gives Starters its roll list and House salad its dressing list, each option checked in its own statement by id, naming no dish", () => {
+    const lists = [
+      ...code.matchAll(
+        /update public\.choice_options o\n\s+set (added_price_cents|calories_low) =[^;]*;/g,
+      ),
     ].map((match) => match[0]);
     const checks = [
       ...code.matchAll(
-        /update public\.sections s\n  set every_item_allergens_reviewed = true[^;]*;/g,
+        /update public\.choice_options o\n\s+set allergens_reviewed = true[^;]*;/g,
       ),
     ].map((match) => match[0]);
-    expect(lines).toHaveLength(1);
-    expect(checks).toHaveLength(1);
-    for (const statement of [...lines, ...checks]) {
-      expect(statement).toMatch(/where s\.id = starters/);
+    expect(lists).toHaveLength(2);
+    expect(checks).toHaveLength(2);
+    for (const statement of [...lists, ...checks]) {
+      expect(statement).toMatch(/where o\.id = (roll|option_id)/);
       expect(statement).not.toMatch(
-        /\b(name|sort|note|deleted_at|every_item_allergens_reviewed_by|every_item_allergens_reviewed_at)\s*=/,
+        /\b(name|sort|deleted_at|allergens_reviewed_by|allergens_reviewed_at)\s*=/,
       );
     }
-    for (const statement of lines) {
-      expect(statement).not.toMatch(/every_item_allergens_reviewed\s*=/);
+    for (const statement of lists) {
+      expect(statement).not.toMatch(/allergens_reviewed\s*=/);
     }
-    const words = text.match(/set every_item = '([^']+)'/);
-    expect(words?.[1]).toBe("Add a buttered roll to any dish for 2 dollars.");
-    for (const dish of ["soup of the day", "house salad", "garlic bread"]) {
-      expect((words?.[1] ?? "").toLowerCase()).not.toContain(dish);
+    const inserts = [
+      ...text.matchAll(
+        /insert into public\.choice_(lists|options) \(([^)]*)\)/g,
+      ),
+    ].map((match) => `${match[1]}: ${match[2]}`);
+    expect(inserts).toEqual([
+      "lists: section_id, lead, sort",
+      "options: choice_list_id, name, sort",
+      "lists: item_id, lead, sort",
+      "options: choice_list_id, name, sort",
+    ]);
+    const leads = [
+      ...text.matchAll(/values \((?:starters|salad), '([^']+)', 1\)/g),
+    ].map((match) => match[1]);
+    expect(leads).toEqual([
+      "Add a buttered roll to any dish",
+      "Choose a dressing",
+    ]);
+    for (const words of [...leads, "Buttered roll", "Ranch", "Vinaigrette"]) {
+      for (const dish of ["soup of the day", "house salad", "garlic bread"]) {
+        expect((words ?? "").toLowerCase()).not.toContain(dish);
+      }
     }
+  });
+
+  // Calories and the mark (migration 11, task 7) touch Starters' dishes and
+  // Soup of the day's sizes by id, and write nothing else to them.
+  it("gives the salad and the bread their calories and the bread its mark by id, and writes nothing else to them", () => {
+    const writes = [
+      ...code.matchAll(/update public\.items i\n  set calories_low[^;]*;/g),
+    ].map((match) => match[0]);
+    expect(writes).toHaveLength(2);
+    for (const statement of writes) {
+      expect(statement).toMatch(/where i\.id = (salad|bread)/);
+      expect(statement).not.toMatch(
+        /\b(name|sort|description|note|price_kind|price_cents|allergens|dietary_tags|available)\s*=/,
+      );
+    }
+    const sizes = [
+      ...code.matchAll(
+        /update public\.item_sizes z\n  set calories_low[^;]*;/g,
+      ),
+    ].map((match) => match[0]);
+    expect(sizes).toHaveLength(1);
+    expect(sizes[0]).toMatch(/where z\.item_id = soup/);
+    expect(sizes[0]).not.toMatch(/\b(name|price_cents|deleted_at)\s*=/);
   });
 });

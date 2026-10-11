@@ -1,6 +1,7 @@
--- Owner boundary check for item_sizes, the sizes of a dish (migration 6).
--- Run in the Supabase SQL editor after every migration that touches sizes,
--- after the restaurants script and the items script. Everything rolls back.
+-- Owner boundary check for item_sizes, the sizes of a dish (migration 6,
+-- their calories in migration 11). Run in the Supabase SQL editor after
+-- every migration that touches sizes, after the restaurants script and the
+-- items script. Everything rolls back.
 -- Replace the uid below with your own auth.users id. A run that ends
 -- without an error passed every check.
 begin;
@@ -73,7 +74,7 @@ begin
     and att.attnum > 0 and not att.attisdropped
     and has_column_privilege('authenticated', 'public.item_sizes', att.attname,
       'update');
-  expected := 'deleted_at, name, price_cents';
+  expected := 'calories_high, calories_low, deleted_at, name, price_cents';
   if held is distinct from expected then
     raise exception 'FAIL: authenticated updates %, expected %', held, expected;
   end if;
@@ -286,6 +287,43 @@ begin
   update public.item_sizes set price_cents = null where id = cup;
   update public.item_sizes set price_cents = 500 where id = cup;
   raise notice 'ok: a price takes the cap, clears to null, and comes back';
+
+  -- Calories (D-167, migration 11): whole numbers from 0 to 99,999, both
+  -- absent or the low one set, the high one at least the low.
+  begin
+    update public.item_sizes set calories_high = 100 where id = cup;
+    raise exception 'FAIL: a high number with no low one was accepted';
+  exception when check_violation then
+    raise notice 'ok: calories need the low number first (item_sizes_calories_shape)';
+  end;
+
+  begin
+    update public.item_sizes set calories_low = 100, calories_high = 50
+    where id = cup;
+    raise exception 'FAIL: a high number below the low one was accepted';
+  exception when check_violation then
+    raise notice 'ok: the high number is at least the low one';
+  end;
+
+  begin
+    update public.item_sizes set calories_low = 100000 where id = cup;
+    raise exception 'FAIL: 100,000 calories were accepted';
+  exception when check_violation then
+    raise notice 'ok: calories are under 100,000';
+  end;
+
+  begin
+    update public.item_sizes set calories_low = -1 where id = cup;
+    raise exception 'FAIL: negative calories were accepted';
+  exception when check_violation then
+    raise notice 'ok: calories are never negative';
+  end;
+
+  update public.item_sizes set calories_low = 0 where id = cup;
+  update public.item_sizes set calories_low = 180, calories_high = 220 where id = cup;
+  update public.item_sizes set calories_low = null, calories_high = null where id = cup;
+  update public.item_sizes set calories_low = 180 where id = cup;
+  raise notice 'ok: calories take zero, a range, null, and one number';
 
   -- Names differ within a dish, whatever the case or the outer spaces.
   begin

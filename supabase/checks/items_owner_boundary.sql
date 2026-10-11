@@ -1,10 +1,11 @@
 -- Owner boundary check for items, the dishes of a section. Run in the
 -- Supabase SQL editor after every migration that touches items, the
--- functions that count and delete what a menu or a section holds, the
--- function that moves a dish, the allergen check (migration 7), the
--- lists rule (migration 8), or the schedule and availability (migration 9).
--- Everything rolls back. Replace the uid below with your own auth.users id.
--- A run that ends without an error passed every check.
+-- functions that count and delete what a menu, a section, or a list holds,
+-- the function that moves a dish, the allergen check (migration 7), the
+-- lists rule (migration 8), the schedule and availability (migration 9),
+-- or calories and the Cooked to order mark (migration 11). Everything
+-- rolls back. Replace the uid below with your own auth.users id. A run
+-- that ends without an error passed every check.
 begin;
 
 -- The one line to change. The script makes this user a member of two
@@ -90,7 +91,7 @@ begin
     and att.attnum > 0 and not att.attisdropped
     and has_column_privilege('authenticated', 'public.items', att.attname,
       'update');
-  expected := 'allergens, allergens_reviewed, available, custom_allergens, deleted_at, description, dietary_tags, name, note, price_cents, price_kind, sold_out_at, sort, special_schedule';
+  expected := 'allergens, allergens_reviewed, available, calories_high, calories_low, cooked_to_order, custom_allergens, deleted_at, description, dietary_tags, name, note, price_cents, price_kind, sold_out_at, sort, special_schedule';
   if held is distinct from expected then
     raise exception 'FAIL: authenticated updates %, expected %', held, expected;
   end if;
@@ -645,6 +646,79 @@ begin
   raise notice 'ok: a tag write that names tags the dish no longer holds lands on no row';
   update public.items set dietary_tags = '{}' where id = mine;
 
+  -- Calories (D-167, migration 11): whole numbers from 0 to 99,999, both
+  -- absent or the low one set, the high one at least the low.
+  begin
+    update public.items set calories_high = 100 where id = mine;
+    raise exception 'FAIL: a high number with no low one was accepted';
+  exception when check_violation then
+    raise notice 'ok: calories need the low number first (items_calories_shape)';
+  end;
+
+  begin
+    update public.items set calories_low = 100, calories_high = 50 where id = mine;
+    raise exception 'FAIL: a high number below the low one was accepted';
+  exception when check_violation then
+    raise notice 'ok: the high number is at least the low one';
+  end;
+
+  begin
+    update public.items set calories_low = 100000 where id = mine;
+    raise exception 'FAIL: 100,000 calories were accepted';
+  exception when check_violation then
+    raise notice 'ok: calories are under 100,000';
+  end;
+
+  begin
+    update public.items set calories_low = 500, calories_high = 100000
+    where id = mine;
+    raise exception 'FAIL: a high number of 100,000 was accepted';
+  exception when check_violation then
+    raise notice 'ok: the high number is under 100,000 too';
+  end;
+
+  begin
+    update public.items set calories_low = -1 where id = mine;
+    raise exception 'FAIL: negative calories were accepted';
+  exception when check_violation then
+    raise notice 'ok: calories are never negative';
+  end;
+
+  update public.items set calories_low = 0 where id = mine;
+  update public.items set calories_low = 760, calories_high = 760 where id = mine;
+  update public.items set calories_low = 760, calories_high = 99999 where id = mine;
+  update public.items set calories_low = null, calories_high = null where id = mine;
+  update public.items set calories_low = 760, calories_high = 860 where id = mine;
+  raise notice 'ok: calories take zero, an equal pair, the cap, null, and a range';
+
+  -- Undo names the pair the page showed, column by column.
+  update public.items set calories_low = 500, calories_high = null
+  where id = mine and calories_low = 760 and calories_high is null;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a calorie write that named a pair the dish no longer holds landed';
+  end if;
+  update public.items set calories_low = 500, calories_high = null
+  where id = mine and calories_low = 760 and calories_high = 860;
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: a calorie write that named the pair the dish holds did not land';
+  end if;
+  raise notice 'ok: a calorie write lands only when it names the pair the dish holds';
+  update public.items set calories_low = null where id = mine;
+
+  -- Cooked to order (D-167, migration 11): one mark, never null.
+  update public.items set cooked_to_order = true where id = mine;
+  update public.items set cooked_to_order = false where id = mine;
+  raise notice 'ok: an owner marks a dish cooked to order and clears the mark';
+
+  begin
+    update public.items set cooked_to_order = null where id = mine;
+    raise exception 'FAIL: a null mark was accepted';
+  exception when not_null_violation then
+    raise notice 'ok: the mark is never null';
+  end;
+
   -- The schedule's shape (D-159, migration 9): any of its five parts, and
   -- nothing else.
   update public.items set special_schedule =
@@ -1085,7 +1159,7 @@ begin
 
   -- delete_with_contents(), a section. It holds three dishes.
   begin
-    perform public.delete_with_contents('section', a_menu, a_section, 0, 2);
+    perform public.delete_with_contents('section', a_menu, a_section, 0, 2, 0);
     raise exception 'FAIL: a section was deleted with more dishes than the owner was told';
   exception when raise_exception then
     if sqlerrm <> 'delete_grew' then raise; end if;
@@ -1093,7 +1167,7 @@ begin
   end;
 
   begin
-    perform public.delete_with_contents('section', a_menu, a_section, null, null);
+    perform public.delete_with_contents('section', a_menu, a_section, null, null, 0);
     raise exception 'FAIL: a section was deleted with nothing said about its dishes';
   exception when raise_exception then
     if sqlerrm <> 'delete_grew' then raise; end if;
@@ -1107,7 +1181,7 @@ begin
   end if;
 
   begin
-    perform public.delete_with_contents('section', a_other, a_section, 0, 3);
+    perform public.delete_with_contents('section', a_other, a_section, 0, 3, 0);
     raise exception 'FAIL: a section was deleted from a menu it is not in';
   exception when raise_exception then
     if sqlerrm <> 'delete_not_found' then raise; end if;
@@ -1115,14 +1189,14 @@ begin
   end;
 
   begin
-    perform public.delete_with_contents('dish', a_menu, a_section, 0, 3);
+    perform public.delete_with_contents('dish', a_menu, a_section, 0, 3, 0);
     raise exception 'FAIL: an unknown kind was accepted';
   exception when raise_exception then
     if sqlerrm <> 'delete_unknown_kind' then raise; end if;
-    raise notice 'ok: only a menu or a section is deleted this way';
+    raise notice 'ok: only a menu, a section, or a list is deleted this way';
   end;
 
-  perform public.delete_with_contents('section', a_menu, a_section, 0, 3);
+  perform public.delete_with_contents('section', a_menu, a_section, 0, 3, 0);
   select s.deleted_at is not null into marked
   from public.sections s where s.id = a_section;
   select bool_and(i.deleted_at is null) into untouched
@@ -1133,7 +1207,7 @@ begin
   raise notice 'ok: a section that holds what was told is marked, and its dishes keep their own state';
 
   begin
-    perform public.delete_with_contents('section', a_menu, a_section, 0, 3);
+    perform public.delete_with_contents('section', a_menu, a_section, 0, 3, 0);
     raise exception 'FAIL: a deleted section was deleted again';
   exception when raise_exception then
     if sqlerrm <> 'delete_not_found' then raise; end if;
@@ -1144,7 +1218,7 @@ begin
   -- menu holds one live section with one live dish; the deleted section and
   -- its three dishes are not counted.
   begin
-    perform public.delete_with_contents('menu', a, a_menu, 0, 1);
+    perform public.delete_with_contents('menu', a, a_menu, 0, 1, 0);
     raise exception 'FAIL: a menu was deleted with more sections than the owner was told';
   exception when raise_exception then
     if sqlerrm <> 'delete_grew' then raise; end if;
@@ -1152,7 +1226,7 @@ begin
   end;
 
   begin
-    perform public.delete_with_contents('menu', a, a_menu, 1, 0);
+    perform public.delete_with_contents('menu', a, a_menu, 1, 0, 0);
     raise exception 'FAIL: a menu was deleted with more dishes than the owner was told';
   exception when raise_exception then
     if sqlerrm <> 'delete_grew' then raise; end if;
@@ -1160,14 +1234,14 @@ begin
   end;
 
   begin
-    perform public.delete_with_contents('menu', b_restaurant, a_menu, 1, 1);
+    perform public.delete_with_contents('menu', b_restaurant, a_menu, 1, 1, 0);
     raise exception 'FAIL: a menu was deleted from a restaurant it is not in';
   exception when raise_exception then
     if sqlerrm <> 'delete_not_found' then raise; end if;
     raise notice 'ok: a menu is deleted only from its own restaurant';
   end;
 
-  perform public.delete_with_contents('menu', a, a_menu, 1, 1);
+  perform public.delete_with_contents('menu', a, a_menu, 1, 1, 0);
   select m.deleted_at is not null into marked
   from public.menus m where m.id = a_menu;
   select s.deleted_at is null into untouched
@@ -1178,7 +1252,7 @@ begin
   raise notice 'ok: a menu that holds what was told is marked, deleted rows under it are not counted, and its sections keep their own state';
 
   begin
-    perform public.delete_with_contents('menu', a, a_menu, 1, 1);
+    perform public.delete_with_contents('menu', a, a_menu, 1, 1, 0);
     raise exception 'FAIL: a deleted menu was deleted again';
   exception when raise_exception then
     if sqlerrm <> 'delete_not_found' then raise; end if;
@@ -1190,7 +1264,7 @@ begin
   update public.sections set deleted_at = null where id = a_section;
 
   -- Told more than it holds is no reason to refuse.
-  perform public.delete_with_contents('section', a_menu, a_second, 7, 7);
+  perform public.delete_with_contents('section', a_menu, a_second, 7, 7, 0);
   update public.sections set deleted_at = null where id = a_second;
   raise notice 'ok: a row that holds less than told is deleted, and comes back by a column write';
 end;
@@ -1249,7 +1323,7 @@ begin
   raise notice 'ok: a stranger counts nothing';
 
   begin
-    perform public.delete_with_contents('section', a_menu, a_section, 100, 100);
+    perform public.delete_with_contents('section', a_menu, a_section, 100, 100, 0);
     raise exception 'FAIL: a stranger deleted a section';
   exception when raise_exception then
     if sqlerrm <> 'delete_not_found' then raise; end if;
@@ -1257,7 +1331,7 @@ begin
   end;
 
   begin
-    perform public.delete_with_contents('menu', a, a_menu, 100, 100);
+    perform public.delete_with_contents('menu', a, a_menu, 100, 100, 0);
     raise exception 'FAIL: a stranger deleted a menu';
   exception when raise_exception then
     if sqlerrm <> 'delete_not_found' then raise; end if;
@@ -1322,7 +1396,7 @@ begin
 end;
 $$;
 
--- A diner: the table and the five functions are closed, and the views are
+-- A diner: the table and the seven functions are closed, and the views are
 -- empty.
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
@@ -1355,7 +1429,7 @@ begin
 
   begin
     perform public.delete_with_contents('menu', gen_random_uuid(),
-      gen_random_uuid(), 0, 0);
+      gen_random_uuid(), 0, 0, 0);
     raise exception 'FAIL: anon ran delete_with_contents';
   exception when insufficient_privilege then
     raise notice 'ok: anon cannot run delete_with_contents';
@@ -1373,6 +1447,22 @@ begin
     raise exception 'FAIL: anon ran move_item';
   exception when insufficient_privilege then
     raise notice 'ok: anon cannot run move_item';
+  end;
+
+  begin
+    perform public.set_choice_list_order(gen_random_uuid(),
+      array[gen_random_uuid()]);
+    raise exception 'FAIL: anon ran set_choice_list_order';
+  exception when insufficient_privilege then
+    raise notice 'ok: anon cannot run set_choice_list_order';
+  end;
+
+  begin
+    perform public.set_choice_option_order(gen_random_uuid(),
+      array[gen_random_uuid()]);
+    raise exception 'FAIL: anon ran set_choice_option_order';
+  exception when insufficient_privilege then
+    raise notice 'ok: anon cannot run set_choice_option_order';
   end;
 
   select (select count(*) from public.published_menus)

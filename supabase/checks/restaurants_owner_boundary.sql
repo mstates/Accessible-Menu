@@ -36,13 +36,13 @@ begin
     and p.proname not in ('create_restaurant', 'is_owner', 'owns_object',
       'set_menu_order', 'set_section_order', 'set_item_order',
       'section_dish_counts', 'delete_with_contents', 'move_section',
-      'move_item')
+      'move_item', 'set_choice_list_order', 'set_choice_option_order')
     and has_function_privilege('authenticated', p.oid, 'execute');
   if open_to_authenticated is not null then
     raise exception 'FAIL: authenticated can run %', open_to_authenticated;
   end if;
 
-  raise notice 'ok: no function in public is open beyond create_restaurant, is_owner, owns_object, set_menu_order, set_section_order, set_item_order, section_dish_counts, delete_with_contents, move_section, and move_item';
+  raise notice 'ok: no function in public is open beyond create_restaurant, is_owner, owns_object, set_menu_order, set_section_order, set_item_order, section_dish_counts, delete_with_contents, move_section, move_item, set_choice_list_order, and set_choice_option_order';
 end;
 $$;
 
