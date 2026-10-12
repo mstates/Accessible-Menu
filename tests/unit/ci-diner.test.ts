@@ -178,6 +178,23 @@ describe("CI Diner's data file (D-126)", () => {
     }
   });
 
+  // Publish (migration 12): Dinner is published through publish_menu() as
+  // CI Diner's owner, only when it is not published or its draft differs
+  // from what was published, so a second run writes nothing; Lunch and
+  // Drinks stay unpublished, and nothing is ever unpublished.
+  it("publishes Dinner through publish_menu() only when it is not published or changed, and unpublishes nothing", () => {
+    const presses = [...code.matchAll(/publish_menu\(([^)]*)\)/g)].map(
+      (match) => match[1],
+    );
+    expect(presses).toEqual(["dinner"]);
+    expect(code).toMatch(
+      /if exists \(\s*select 1 from public\.menu_publish_states\(diner\) s\s*where s\.menu = dinner and \(not s\.published or s\.changed\)\s*\) then\s*perform public\.publish_menu\(dinner\);/,
+    );
+    expect(code).not.toMatch(/unpublish_menu/);
+    expect(code).not.toMatch(/published_snapshot\s*=/);
+    expect(code).not.toMatch(/\bpublished\s*=\s*(true|false)/);
+  });
+
   // Calories and the mark (migration 11, task 7) touch Starters' dishes and
   // Soup of the day's sizes by id, and write nothing else to them.
   it("gives the salad and the bread their calories and the bread its mark by id, and writes nothing else to them", () => {

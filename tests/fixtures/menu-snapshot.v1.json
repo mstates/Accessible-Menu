@@ -1,0 +1,155 @@
+{
+  "v": 1,
+  "menu": { "id": "00e6ba8b-650d-4bac-9c69-53c0eb599be7", "name": "Dinner" },
+  "sections": [
+    {
+      "id": "e0549afb-db31-4fbe-b53e-3582dc8c3ac4",
+      "name": "Starters",
+      "note": null,
+      "items": [
+        {
+          "id": "2c17d1e2-d3d0-48dc-b8d0-eb7788b6a1e4",
+          "name": "Soup of the day",
+          "note": null,
+          "price": {
+            "kind": "sizes",
+            "sizes": [
+              {
+                "id": "93fa441b-757a-4698-9726-8938fe5854fc",
+                "name": "Cup",
+                "price_cents": 500,
+                "calories_low": 180,
+                "calories_high": null
+              },
+              {
+                "id": "9b084d81-8344-4390-a634-033c1af1d92e",
+                "name": "Bowl",
+                "price_cents": 800,
+                "calories_low": 290,
+                "calories_high": null
+              }
+            ]
+          },
+          "allergens": {
+            "major": ["milk", "wheat"],
+            "other": ["celery"],
+            "checked": true
+          },
+          "description": null,
+          "choice_lists": [],
+          "dietary_tags": [],
+          "cooked_to_order": false
+        },
+        {
+          "id": "2e128381-dcdc-4b44-8d02-b8294ba59918",
+          "name": "House salad",
+          "note": null,
+          "price": {
+            "kind": "one",
+            "price_cents": 900,
+            "calories_low": 320,
+            "calories_high": null
+          },
+          "allergens": { "major": [], "other": [], "checked": true },
+          "description": null,
+          "choice_lists": [
+            {
+              "id": "1935428a-3b4a-468d-85a9-c00d1511cd01",
+              "lead": "Choose a dressing",
+              "options": [
+                {
+                  "id": "03436543-b3ed-431c-b0f1-398feb8f9a2c",
+                  "name": "Ranch",
+                  "allergens": {
+                    "major": ["milk", "eggs"],
+                    "other": [],
+                    "checked": true
+                  },
+                  "calories_low": 150,
+                  "calories_high": null,
+                  "added_price_cents": null
+                },
+                {
+                  "id": "4a03007b-5b0a-4066-bcb4-23693144215d",
+                  "name": "Vinaigrette",
+                  "allergens": { "major": [], "other": [], "checked": true },
+                  "calories_low": 90,
+                  "calories_high": null,
+                  "added_price_cents": null
+                }
+              ]
+            }
+          ],
+          "dietary_tags": ["vegetarian", "made-without-gluten"],
+          "cooked_to_order": false
+        },
+        {
+          "id": "32ffd886-419a-4ff9-82d7-bceef2002e4a",
+          "name": "Garlic bread",
+          "note": null,
+          "price": {
+            "kind": "market",
+            "calories_low": 410,
+            "calories_high": null
+          },
+          "allergens": { "checked": false },
+          "description": null,
+          "choice_lists": [],
+          "dietary_tags": [],
+          "cooked_to_order": true
+        }
+      ],
+      "choice_lists": [
+        {
+          "id": "cb67e61f-9447-41cf-b5cd-cce9b14886c9",
+          "lead": "Add a buttered roll to any dish",
+          "options": [
+            {
+              "id": "bee13260-536c-4828-b4ff-70e972668b70",
+              "name": "Buttered roll",
+              "allergens": {
+                "major": ["milk", "wheat"],
+                "other": [],
+                "checked": true
+              },
+              "calories_low": null,
+              "calories_high": null,
+              "added_price_cents": 200
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "79c2e9d0-babd-4474-a9ca-8422ffe2d753",
+      "name": "Mains",
+      "note": null,
+      "items": [
+        {
+          "id": "5588ac00-0ebe-4668-9bfe-9499cbcef069",
+          "name": "Soup of the day",
+          "note": null,
+          "price": {
+            "kind": "one",
+            "price_cents": null,
+            "calories_low": null,
+            "calories_high": null
+          },
+          "allergens": { "checked": false },
+          "description": null,
+          "choice_lists": [],
+          "dietary_tags": [],
+          "cooked_to_order": false
+        }
+      ],
+      "choice_lists": []
+    },
+    {
+      "id": "485c7716-f5ba-4e78-9ba2-fada3101c786",
+      "name": "Desserts",
+      "note": null,
+      "items": [],
+      "choice_lists": []
+    }
+  ]
+}

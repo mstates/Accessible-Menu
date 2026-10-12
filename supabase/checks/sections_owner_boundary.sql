@@ -602,8 +602,9 @@ begin
 end;
 $$;
 
--- A diner: the table and both functions are closed, and the views are
--- empty.
+-- A diner: the table and both functions are closed, the views that read
+-- sections are gone (migration 12), and the one that stays shows nothing
+-- of this draft.
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 
@@ -633,13 +634,18 @@ begin
     raise notice 'ok: anon cannot run move_section';
   end;
 
-  select (select count(*) from public.published_menus)
-    + (select count(*) from public.published_sections)
-    + (select count(*) from public.published_items) into shown;
-  if shown <> 0 then
-    raise exception 'FAIL: the published views show % rows', shown;
+  if to_regclass('public.published_sections') is not null
+     or to_regclass('public.published_items') is not null then
+    raise exception 'FAIL: a view that read drafts is still there';
   end if;
-  raise notice 'ok: the published views show no menus, sections, or items';
+  raise notice 'ok: published_sections and published_items are gone';
+
+  select count(*) into shown from public.published_menus pm
+  where pm.id = current_setting('boundary.a_menu')::uuid;
+  if shown <> 0 then
+    raise exception 'FAIL: published_menus shows an unpublished menu';
+  end if;
+  raise notice 'ok: published_menus shows nothing of an unpublished menu';
 end;
 $$;
 

@@ -3,7 +3,8 @@
 -- functions that count and delete what a menu, a section, or a list holds,
 -- the function that moves a dish, the allergen check (migration 7), the
 -- lists rule (migration 8), the schedule and availability (migration 9),
--- or calories and the Cooked to order mark (migration 11). Everything
+-- calories and the Cooked to order mark (migration 11), or the columns
+-- Publish retired (migration 12). Everything
 -- rolls back. Replace the uid below with your own auth.users id. A run
 -- that ends without an error passed every check.
 begin;
@@ -41,23 +42,25 @@ begin
     raise exception 'FAIL: put your auth.users id in boundary.uid';
   end if;
 
-  -- price_text is gone (migration 6): market price is a choice, and the
-  -- published view no longer names the column.
-  if exists (
-    select 1 from pg_attribute att
-    where att.attrelid = 'public.items'::regclass
-      and att.attname = 'price_text' and not att.attisdropped
-  ) then
-    raise exception 'FAIL: price_text is still a column of items';
+  -- price_text is gone (migration 6): market price is a choice. The photo
+  -- columns and their check are gone too (migration 12): dish photos are
+  -- parked (D-165), and the view that named them retired with the snapshot.
+  select string_agg(att.attname, ', ' order by att.attname) into held
+  from pg_attribute att
+  where att.attrelid = 'public.items'::regclass
+    and att.attname in ('price_text', 'photo_url', 'photo_alt')
+    and not att.attisdropped;
+  if held is not null then
+    raise exception 'FAIL: items still holds %', held;
   end if;
   if exists (
-    select 1 from pg_attribute att
-    where att.attrelid = 'public.published_items'::regclass
-      and att.attname = 'price_text' and not att.attisdropped
+    select 1 from pg_constraint con
+    where con.conrelid = 'public.items'::regclass
+      and con.conname = 'items_photo_requires_alt'
   ) then
-    raise exception 'FAIL: published_items still names price_text';
+    raise exception 'FAIL: items_photo_requires_alt is still there';
   end if;
-  raise notice 'ok: price_text is gone from items and from published_items';
+  raise notice 'ok: price_text, photo_url, photo_alt, and the photo check are gone from items';
 
   -- anon holds nothing on the table.
   if has_any_column_privilege('anon', 'public.items',
@@ -1396,8 +1399,9 @@ begin
 end;
 $$;
 
--- A diner: the table and the seven functions are closed, and the views are
--- empty.
+-- A diner: the table and the seven functions are closed, the views that
+-- read dishes are gone (migration 12), and the one that stays shows
+-- nothing of this draft.
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 
@@ -1465,13 +1469,18 @@ begin
     raise notice 'ok: anon cannot run set_choice_option_order';
   end;
 
-  select (select count(*) from public.published_menus)
-    + (select count(*) from public.published_sections)
-    + (select count(*) from public.published_items) into shown;
-  if shown <> 0 then
-    raise exception 'FAIL: the published views show % rows', shown;
+  if to_regclass('public.published_sections') is not null
+     or to_regclass('public.published_items') is not null then
+    raise exception 'FAIL: a view that read drafts is still there';
   end if;
-  raise notice 'ok: the published views show no menus, sections, or items';
+  raise notice 'ok: published_sections and published_items are gone';
+
+  select count(*) into shown from public.published_menus pm
+  where pm.id = current_setting('boundary.a_menu')::uuid;
+  if shown <> 0 then
+    raise exception 'FAIL: published_menus shows an unpublished menu';
+  end if;
+  raise notice 'ok: published_menus shows nothing of an unpublished menu';
 end;
 $$;
 

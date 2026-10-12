@@ -27,8 +27,10 @@
 -- and Vinaigrette (90 calories, checked with none), Soup of the day's Cup
 -- at 180 and Bowl at 290 calories, and Garlic bread at 410 calories and
 -- cooked to order (migration 11, task 7); at least one menu that holds no
--- section; and at least one section of Dinner that holds no dish. Nothing
--- here can publish (migration 3).
+-- section; and at least one section of Dinner that holds no dish. Dinner
+-- is published through publish_menu() as CI Diner's owner, only when it is
+-- not published or holds changes, so a second run writes nothing; Lunch
+-- and Drinks stay unpublished (migration 12, the Publish task).
 
 do $$
 declare
@@ -491,6 +493,21 @@ begin
   if placed > 0 then
     raise notice 'gave Garlic bread 410 calories and marked it cooked to order';
   end if;
+
+  -- 3g. Dinner published (migration 12, the Publish task): the gate reads
+  -- Dinner's page as a published menu and the dashboard's sentence, and
+  -- never presses Publish. The press goes through publish_menu() as CI
+  -- Diner's owner, and only when Dinner is not published or its draft
+  -- differs from what was published, so a second run writes nothing. Lunch
+  -- and Drinks stay unpublished, so the gate reads an unpublished menu's
+  -- page too.
+  if exists (
+    select 1 from public.menu_publish_states(diner) s
+    where s.menu = dinner and (not s.published or s.changed)
+  ) then
+    perform public.publish_menu(dinner);
+    raise notice 'published Dinner';
+  end if;
 end $$;
 
 -- 4. What CI Diner holds now, in the order its screens show it. The first
@@ -705,6 +722,16 @@ verdict as (
        where lower(btrim(li.name)) = 'soup of the day'),
       false) as calories_ok,
     coalesce(
+      (select m.published and m.published_at is not null
+         and m.published_snapshot is not null
+       from public.menus m join dinner on m.id = dinner.id)
+      and not exists (
+        select 1 from public.menus m
+        join live_menus lm on lm.id = m.id
+        where lm.place <= 3 and lower(btrim(lm.name)) in ('lunch', 'drinks')
+          and m.published),
+      false) as published_ok,
+    coalesce(
       (select li.dietary_tags
          = '{vegetarian,made-without-gluten}'::public.dietary_tag[]
        from live_items li join starters on li.section_id = starters.id
@@ -744,12 +771,17 @@ from (
         'not ready: House salad is not at 320 calories, Garlic bread at 410 and cooked to order, or Soup of the day''s Cup and Bowl at 180 and 290'
       when not v.showing_ok then
         'not ready: House salad is not tagged vegetarian and made without gluten ingredients, Garlic bread is not off the menu for now, or Soup of the day is not a special every day from 4 to 9 pm'
+      when not v.published_ok then
+        'not ready: Dinner is not published, or Lunch or Drinks is'
       else 'ready for the owner gate'
     end as status
   from verdict v
   union all
   select lm.place, 0, 0, 0, 0, 0,
-    'menu ' || lm.place || ': ' || lm.name,
+    'menu ' || lm.place || ': ' || lm.name
+      || case
+        when m.published then ', published ' || m.published_at::date::text
+        else ', not published' end,
     case
       when lm.place <= 3
         and lower(btrim(lm.name)) in ('lunch', 'dinner', 'drinks')
@@ -757,6 +789,7 @@ from (
       else 'extra, left as it is'
     end
   from live_menus lm
+  join public.menus m on m.id = lm.id
   union all
   select lm.place, ls.place, 0, 0, 0, 0,
     'section ' || ls.place || ' of ' || lm.name || ': ' || ls.name,

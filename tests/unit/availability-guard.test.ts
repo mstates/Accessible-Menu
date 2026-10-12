@@ -25,6 +25,8 @@ const allowed: Record<string, string> = {
     "records the previous mark for Undo and asks the decider whether it has ended",
   "app/app/restaurants/[code]/dishes/[dish]/page.tsx":
     "hands the row to the decider and the mark to the page",
+  "src/domain/snapshot.ts":
+    "lists the mark among the keys a published snapshot never holds, since the diner page reads it live (migration 12)",
 };
 
 function sourceFiles(dir: string): string[] {

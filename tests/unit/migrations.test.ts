@@ -18,9 +18,26 @@ const sql = files
 const tables = [
   ...sql.matchAll(/create table (?:if not exists )?public\.(\w+)/g),
 ].map((match) => match[1] ?? "");
+// Every view a migration made, and the ones that are live after every
+// migration: each create, minus a later drop. The published views were
+// made in migration one, published_items was made again in six, and
+// twelve retires two and remakes two (D-82, D-85).
+const viewEvents = [
+  ...sql.matchAll(/(create (?:or replace )?view|drop view) public\.(\w+)/g),
+].map((match) => ({
+  dropped: (match[1] ?? "").startsWith("drop"),
+  name: match[2] ?? "",
+}));
 const views = [
-  ...sql.matchAll(/create (?:or replace )?view public\.(\w+)/g),
-].map((match) => match[1] ?? "");
+  ...new Set(viewEvents.filter((e) => !e.dropped).map((e) => e.name)),
+];
+const liveViews = viewEvents.reduce<string[]>(
+  (live, e) =>
+    e.dropped
+      ? live.filter((name) => name !== e.name)
+      : [...live.filter((name) => name !== e.name), e.name],
+  [],
+);
 
 // Columns that must never reach a diner page (D-26, Spec 8), who checked a
 // dish's allergens and when among them (D-148).
@@ -39,11 +56,17 @@ const privateColumns = [
   "contact",
 ];
 
+// A view's newest definition: the last create across the migrations.
 function viewBody(name: string): string {
-  const match = sql.match(
-    new RegExp(`create (?:or replace )?view public\\.${name}[\\s\\S]*?;`),
-  );
-  return match?.[0] ?? "";
+  const matches = [
+    ...sql.matchAll(
+      new RegExp(
+        `create (?:or replace )?view public\\.${name}[\\s\\S]*?;`,
+        "g",
+      ),
+    ),
+  ];
+  return matches.at(-1)?.[0] ?? "";
 }
 
 describe("migrations", () => {
@@ -90,8 +113,14 @@ describe("migrations", () => {
         "published_menus",
         "published_sections",
         "published_items",
+        "published_item_states",
       ]),
     );
+    expect([...liveViews].sort()).toEqual([
+      "published_item_states",
+      "published_menus",
+      "published_restaurants",
+    ]);
     for (const view of views) {
       expect(sql).toMatch(
         new RegExp(
@@ -123,9 +152,12 @@ describe("migrations", () => {
     }
   });
 
-  it("requires alt text when an item has a photo", () => {
+  it("required alt text while an item could have a photo, until the Publish task dropped both columns with the rule (D-165)", () => {
     expect(sql).toMatch(
       /photo_url is null or length\(trim\(coalesce\(photo_alt, ''\)\)\) > 0/,
+    );
+    expect(sql).toMatch(
+      /alter table public\.items drop constraint items_photo_requires_alt;\s*alter table public\.items drop column photo_url;\s*alter table public\.items drop column photo_alt;/,
     );
   });
 
@@ -372,7 +404,7 @@ describe("the owner boundary on menus (D-82, D-85)", () => {
     expect(later).not.toMatch(/grant [^;]*\bdelete\b[^;]*public\.menus\b/);
   });
 
-  it("lets nothing publish until the Publish task", () => {
+  it("let nothing publish until the Publish task, whose migration alone drops the constraint", () => {
     const unpublish = menus.indexOf(
       "update public.menus set published = false, published_at = null where published;",
     );
@@ -381,7 +413,12 @@ describe("the owner boundary on menus (D-82, D-85)", () => {
     );
     expect(unpublish).toBeGreaterThan(-1);
     expect(constraint).toBeGreaterThan(unpublish);
-    expect(sql).not.toMatch(/drop constraint menus_not_published_yet/);
+    const dropping = files.filter((name) =>
+      readFileSync(join(dir, name), "utf8").includes(
+        "drop constraint menus_not_published_yet",
+      ),
+    );
+    expect(dropping).toEqual(["20261012000001_publish.sql"]);
   });
 
   it("leaves the published views alone", () => {
@@ -495,11 +532,10 @@ describe("the owner boundary on sections (D-85, D-121)", () => {
     expect(later).not.toMatch(/grant [^;]*\bdelete\b[^;]*public\.sections\b/);
   });
 
-  it("leaves the published views alone, and names the new columns in none", () => {
+  it("leaves the published views alone, and names the line in none", () => {
     expect(sections).not.toMatch(/\bview\b/);
     for (const view of views) {
       expect(viewBody(view)).not.toMatch(/\bevery_item\b/);
-      expect(viewBody(view)).not.toMatch(/\bdeleted_at\b/);
     }
   });
 
@@ -647,7 +683,7 @@ describe("the owner boundary on items (D-85, task 3a)", () => {
 
   it("leaves the published views alone", () => {
     expect(items).not.toMatch(/\bview\b/);
-    expect(sql).not.toMatch(/drop constraint menus_not_published_yet/);
+    expect(items).not.toMatch(/drop constraint menus_not_published_yet/);
   });
 
   it("holds the name rule as a table constraint, with existing rows brought inside first and trimmed again after the cut", () => {
@@ -2013,5 +2049,259 @@ describe("the choices migration (D-85, D-166, D-167, task 7)", () => {
         /\b(calories_low|calories_high|cooked_to_order|choice_lists|choice_options)\b/,
       );
     }
+  });
+});
+
+describe("the Publish migration (D-82, D-85, the Publish task)", () => {
+  const file = "20261012000001_publish.sql";
+  const publish = readFileSync(join(dir, file), "utf8");
+  const before = files
+    .slice(0, files.indexOf(file))
+    .map((name) => readFileSync(join(dir, name), "utf8"))
+    .join("\n");
+
+  function bodyOf(name: string): string {
+    const from = publish.indexOf(`create function public.${name}`);
+    expect(from, `${name} is not in ${file}`).toBeGreaterThan(-1);
+    return publish.slice(from, publish.indexOf("\n$$;", from));
+  }
+
+  it("is the twelfth migration, after choices", () => {
+    expect(files.indexOf(file)).toBe(11);
+    expect(files[10]).toBe("20261011000001_choices.sql");
+  });
+
+  it("adds the snapshot, drops the hold on publishing, and keeps the three publish columns whole, with any stray time cleared first", () => {
+    const column = publish.indexOf(
+      "alter table public.menus add column published_snapshot jsonb;",
+    );
+    const drop = publish.indexOf(
+      "alter table public.menus drop constraint menus_not_published_yet;",
+    );
+    const clear = publish.indexOf(
+      "update public.menus set published_at = null\n  where not published and published_at is not null;",
+    );
+    const whole = publish.indexOf(
+      "add constraint menus_published_whole check (\n  (published and published_at is not null and published_snapshot is not null)\n  or (not published and published_at is null and published_snapshot is null)\n);",
+    );
+    expect(column).toBeGreaterThan(-1);
+    expect(drop).toBeGreaterThan(column);
+    expect(clear).toBeGreaterThan(drop);
+    expect(whole).toBeGreaterThan(clear);
+  });
+
+  it("drops migration one's trigger that stamped published_at, with its function", () => {
+    expect(publish).toMatch(
+      /drop trigger menus_published_at on public\.menus;/,
+    );
+    expect(publish).toMatch(/drop function public\.set_menu_published_at\(\);/);
+    expect(before).toMatch(/create trigger menus_published_at/);
+  });
+
+  it("grants owners nothing new on menus: published, published_at, and the snapshot stay the functions' alone", () => {
+    expect(publish).not.toMatch(/grant [^;]*on public\.menus\b/);
+    expect(publish).not.toMatch(/create policy/);
+    expect(publish).not.toMatch(/create trigger/);
+  });
+
+  it("retires the views that read drafts first, then the columns they kept alive, then remakes the two that stay", () => {
+    const dropItems = publish.indexOf("drop view public.published_items;");
+    const dropSections = publish.indexOf(
+      "drop view public.published_sections;",
+    );
+    const dropMenus = publish.indexOf("drop view public.published_menus;");
+    const dropRestaurants = publish.indexOf(
+      "drop view public.published_restaurants;",
+    );
+    const photos = publish.indexOf(
+      "alter table public.items drop constraint items_photo_requires_alt;",
+    );
+    const slug = publish.indexOf(
+      "drop trigger restaurants_keep_slug on public.restaurants;\ndrop function public.keep_slug();\nalter table public.restaurants drop column slug;",
+    );
+    const restaurants = publish.indexOf(
+      "create view public.published_restaurants",
+    );
+    const menus = publish.indexOf("create view public.published_menus");
+    const states = publish.indexOf("create view public.published_item_states");
+    expect(dropItems).toBeGreaterThan(-1);
+    expect(dropSections).toBeGreaterThan(dropItems);
+    expect(dropMenus).toBeGreaterThan(dropSections);
+    expect(dropRestaurants).toBeGreaterThan(dropMenus);
+    expect(photos).toBeGreaterThan(dropRestaurants);
+    expect(slug).toBeGreaterThan(photos);
+    expect(restaurants).toBeGreaterThan(slug);
+    expect(menus).toBeGreaterThan(restaurants);
+    expect(states).toBeGreaterThan(menus);
+    expect(publish).not.toMatch(/create view public\.published_sections/);
+    expect(publish).not.toMatch(/create view public\.published_items\b/);
+  });
+
+  it("keeps the three views behind a security barrier, under one grant to anon and authenticated, and nothing else to anon", () => {
+    for (const view of liveViews) {
+      expect(viewBody(view)).toMatch(/with \(security_barrier = true\)/);
+      expect(viewBody(view)).not.toMatch(/security_invoker/);
+    }
+    expect(publish).toMatch(
+      /grant select on public\.published_restaurants, public\.published_menus,\s*public\.published_item_states to anon, authenticated;/,
+    );
+    const toAnon = [...publish.matchAll(/grant [^;]*to anon[^;]*;/g)];
+    expect(toAnon).toHaveLength(1);
+  });
+
+  it("shows the restaurant by code with no slug, and the menu by code with its snapshot and no draft name, both for menus that are not deleted", () => {
+    const restaurants = viewBody("published_restaurants");
+    expect(restaurants).toMatch(/\br\.code\b/);
+    expect(restaurants).not.toMatch(/\bslug\b/);
+    expect(restaurants).toMatch(/m\.published and m\.deleted_at is null/);
+    expect(restaurants).toMatch(/r\.status in \('trial', 'active'\)/);
+    const menus = viewBody("published_menus");
+    expect(menus).toMatch(
+      /select m\.id, m\.restaurant_id, r\.code, m\.sort, m\.published_at,\s*m\.published_snapshot/,
+    );
+    expect(menus).not.toMatch(/m\.name/);
+    expect(menus).toMatch(/m\.published and m\.deleted_at is null/);
+    expect(menus).toMatch(/r\.status in \('trial', 'active'\)/);
+  });
+
+  it("keys a dish's state by the ids inside each published snapshot, with no deleted_at filter, and carries only the state", () => {
+    const states = viewBody("published_item_states");
+    expect(states).toMatch(
+      /select i\.id, pm\.id as menu_id, i\.available, i\.sold_out_at, i\.special_schedule/,
+    );
+    expect(states).toMatch(/from public\.published_menus pm/);
+    expect(states).toMatch(
+      /jsonb_path_query\(pm\.published_snapshot,\s*'\$\.sections\[\*\]\.items\[\*\]\.id'\)/,
+    );
+    expect(states).toMatch(
+      /join public\.items i on i\.id = \(d\.id #>> '\{\}'\)::uuid/,
+    );
+    expect(states).not.toMatch(/deleted_at/);
+    expect(states).not.toMatch(
+      /\b(name|description|price_cents|allergens|custom_allergens|note|cooked_to_order|dietary_tags)\b/,
+    );
+  });
+
+  it("builds the snapshot as the caller, with every array ordered, deleted rows and empty lists out, lists only when checked, and never a private column", () => {
+    const body = bodyOf("menu_snapshot");
+    expect(body).toMatch(/language sql stable set search_path = ''/);
+    expect(body).not.toMatch(/security definer/);
+    expect(body).toMatch(/'v', 1,/);
+    expect(body).toMatch(/order by o\.sort, o\.created_at, o\.id/);
+    expect(body).toMatch(/order by ls\.sort, ls\.created_at, ls\.id/);
+    expect(body).toMatch(/order by li\.sort, li\.created_at, li\.id/);
+    expect(body).toMatch(
+      /order by z\.price_cents nulls last, z\.created_at, z\.id/,
+    );
+    expect(body).toMatch(/order by i\.sort, i\.created_at, i\.id/);
+    expect(body).toMatch(/order by s\.sort, s\.created_at, s\.id/);
+    for (const table of ["l", "o", "z", "i", "s", "m"]) {
+      expect(body).toMatch(new RegExp(`\\b${table}\\.deleted_at is null`));
+    }
+    expect(body).toMatch(/\) o on o\.options is not null/);
+    expect(body).toMatch(
+      /case when o\.allergens_reviewed\s*then jsonb_build_object\('checked', true,\s*'major', to_jsonb\(o\.allergens\), 'other', to_jsonb\(o\.custom_allergens\)\)\s*else jsonb_build_object\('checked', false\) end/,
+    );
+    expect(body).toMatch(
+      /case when i\.allergens_reviewed\s*then jsonb_build_object\('checked', true,\s*'major', to_jsonb\(i\.allergens\), 'other', to_jsonb\(i\.custom_allergens\)\)\s*else jsonb_build_object\('checked', false\) end/,
+    );
+    expect(body).toMatch(/'price_cents', i\.price_cents/);
+    expect(body).toMatch(/'kind', 'sizes', 'sizes', coalesce\(/);
+    for (const column of [
+      ...privateColumns,
+      "available",
+      "sold_out_at",
+      "special_schedule",
+      "photo_url",
+      "photo_alt",
+      "source",
+      "updated_at",
+    ]) {
+      expect(body, column).not.toMatch(new RegExp(`\\b${column}\\b`));
+    }
+  });
+
+  it("reports what blocks Publish as the caller: a live size with no name or no price under a live dish by size", () => {
+    const body = bodyOf("publish_problems");
+    expect(body).toMatch(/language sql stable set search_path = ''/);
+    expect(body).not.toMatch(/security definer/);
+    expect(body).toMatch(/'size_unnamed' else 'size_unpriced'/);
+    expect(body).toMatch(/i\.price_kind = 'sizes'/);
+    expect(body).toMatch(/z\.name is null or z\.price_cents is null/);
+    for (const table of ["s", "i", "z", "m"]) {
+      expect(body).toMatch(new RegExp(`\\b${table}\\.deleted_at is null`));
+    }
+  });
+
+  it("tells the owner pages each live menu's state as the caller, changed by value and never by a clock", () => {
+    const body = bodyOf("menu_publish_states");
+    expect(body).toMatch(/language sql stable set search_path = ''/);
+    expect(body).not.toMatch(/security definer/);
+    expect(body).toMatch(
+      /case when m\.published\s*then public\.menu_snapshot\(m\.id\) is distinct from m\.published_snapshot\s*end/,
+    );
+    expect(body).toMatch(/m\.deleted_at is null/);
+    expect(body).not.toMatch(/updated_at/);
+  });
+
+  it("publishes and unpublishes as a definer that checks the caller before any lock, refuses by name, and writes the three columns together", () => {
+    const pub = bodyOf("publish_menu");
+    expect(pub).toMatch(/security definer set search_path = ''/);
+    const owner = pub.indexOf("not public.is_owner(v_restaurant)");
+    const lock = pub.indexOf("for update;");
+    const blocked = pub.indexOf("raise exception 'publish_blocked'");
+    const write = pub.indexOf("set published = true,");
+    expect(owner).toBeGreaterThan(-1);
+    expect(lock).toBeGreaterThan(owner);
+    expect(blocked).toBeGreaterThan(lock);
+    expect(write).toBeGreaterThan(blocked);
+    expect(pub).toMatch(
+      /raise exception 'publish_not_found' using errcode = 'P0001';/,
+    );
+    expect(pub).toMatch(
+      /exists \(select 1 from public\.publish_problems\(p_menu\)\)/,
+    );
+    expect(pub).toMatch(
+      /set published = true,\s*published_at = now\(\),\s*published_snapshot = public\.menu_snapshot\(p_menu\)/,
+    );
+    const un = bodyOf("unpublish_menu");
+    expect(un).toMatch(/security definer set search_path = ''/);
+    expect(un).toMatch(/not public\.is_owner\(v_restaurant\)/);
+    expect(un).toMatch(
+      /raise exception 'unpublish_not_found' using errcode = 'P0001';/,
+    );
+    expect(un).toMatch(
+      /set published = false, published_at = null, published_snapshot = null\s*where m\.id = p_menu and m\.deleted_at is null and m\.published;/,
+    );
+  });
+
+  it("adds five callable functions, each revoked by name and open to authenticated only, and only the two writers as definers", () => {
+    const callable = [
+      ...publish.matchAll(
+        /create (?:or replace )?function public\.(\w+)\s*\([\s\S]*?\)\s*returns\s+(\S+)/gi,
+      ),
+    ]
+      .filter((match) => (match[2] ?? "").toLowerCase() !== "trigger")
+      .map((match) => match[1]);
+    expect(callable).toEqual([
+      "menu_snapshot",
+      "publish_problems",
+      "menu_publish_states",
+      "publish_menu",
+      "unpublish_menu",
+    ]);
+    for (const name of callable) {
+      expect(publish).toMatch(
+        new RegExp(
+          `revoke all on function public\\.${name}\\(uuid\\) from public, anon;\\s*grant execute on function public\\.${name}\\(uuid\\) to authenticated;`,
+        ),
+      );
+    }
+    expect(
+      definers
+        .filter((fn) => publish.includes(`create function public.${fn.name}(`))
+        .map((fn) => fn.name)
+        .sort(),
+    ).toEqual(["publish_menu", "unpublish_menu"]);
   });
 });
