@@ -146,11 +146,20 @@ export async function menusControls(page: Page): Promise<Control[]> {
   ];
 }
 
+// A menu's page: Publish, and Unpublish while the menu is published
+// (D-82), then the rows' controls.
 export async function menuControls(page: Page): Promise<Control[]> {
   const words = en.owner.sections;
+  const publishing = en.owner.publishing;
+  const published =
+    (await page
+      .getByRole("button", { name: publishing.unpublish, exact: true })
+      .count()) > 0;
   return [
     site,
     ...nav,
+    button(publishing.publish),
+    ...(published ? [button(publishing.unpublish)] : []),
     ...(await rowControls(page, words, "section", words.editDishes)),
   ];
 }

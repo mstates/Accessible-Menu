@@ -10,16 +10,28 @@ type Props = {
   name: string;
   code: string;
   origin: { origin: string; permanent: boolean };
+  // What the restaurant's menus say about Publish (D-82): which are
+  // published, and which have changes not published yet; nothing for a
+  // restaurant with no menu.
+  publishing: readonly string[];
   children?: ReactNode;
 };
 
 // One restaurant on the dashboard: its name, its menu link from the one
-// builder (D-88), the way to its details and to its menus, and whatever the
-// page passes in (the billing line). The "never changes" note shows only
-// when the origin is the configured one; a preview URL is not permanent.
-// Each link names the restaurant in visually hidden text, so a list of links
-// reads one entry per restaurant instead of "Edit details" over and over.
-export function RestaurantCard({ copy, name, code, origin, children }: Props) {
+// builder (D-88), its menus' publish state, the way to its details and to
+// its menus, and whatever the page passes in (the billing line). The "never
+// changes" note shows only when the origin is the configured one; a
+// preview URL is not permanent. Each link names the restaurant in visually
+// hidden text, so a list of links reads one entry per restaurant instead of
+// "Edit details" over and over.
+export function RestaurantCard({
+  copy,
+  name,
+  code,
+  origin,
+  publishing,
+  children,
+}: Props) {
   const headingId = `restaurant-${code}`;
   const strings = copy.owner.restaurants;
   return (
@@ -39,6 +51,11 @@ export function RestaurantCard({ copy, name, code, origin, children }: Props) {
           {strings.menuLinkPermanent}
         </p>
       ) : null}
+      {publishing.map((sentence) => (
+        <p key={sentence} className="mt-2">
+          {sentence}
+        </p>
+      ))}
       <p className="mt-2">
         <PageLink
           href={restaurantDetailsPath(code)}

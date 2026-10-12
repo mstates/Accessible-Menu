@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { en } from "../../src/copy";
+import { menuPath } from "../../src/domain/menu-url";
 import { expectFocusResetThenSkipLink, open, pageChecks } from "./checks";
 import { pages } from "./pages";
 
@@ -10,6 +11,24 @@ for (const path of pages) {
     pageChecks(path);
   });
 }
+
+// A menu page carries its permanent address as its canonical link, from
+// the one builder (D-88): an https origin or the preview's own, and the
+// menu path. The demo answers to its Phase 0 name until the diner page task
+// reads real data.
+test("the demo menu carries a canonical link to its menu path", async ({
+  page,
+}) => {
+  await open(page, menuPath("demo"));
+  const href = await page
+    .locator('head link[rel="canonical"]')
+    .getAttribute("href");
+  expect(href).not.toBeNull();
+  const canonical = new URL(href ?? "");
+  expect(canonical.pathname).toBe(menuPath("demo"));
+  expect(canonical.search).toBe("");
+  expect(canonical.hash).toBe("");
+});
 
 // Sign-in is an owner page reachable signed out, so it carries the empty
 // status region every owner page has (D-106).

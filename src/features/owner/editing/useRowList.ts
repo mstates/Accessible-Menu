@@ -185,6 +185,9 @@ export type RowListConfig<
   // What a row holds that a delete would take with it. Absent: a row holds
   // nothing, and every delete goes at once.
   held?: (row: Row) => Held;
+  // One more sentence the confirmation shows under its question for this
+  // row, or null: that a published menu leaves diners at once (D-82).
+  describeDelete?: (row: Row) => string | null;
   // The link to the row's own page, one level down.
   link?: { label: string; href: (row: Row) => string };
   other?: OtherUndo<Other>;
@@ -508,6 +511,13 @@ function useRows<
         push({ kind: "delete", id: row.id, name: row.name, order: ids });
       });
     });
+  }
+
+  // The sentence under the confirmation's question for the row it asks
+  // about, read from the list as it is now.
+  function askingNote(id: string): string | null {
+    const row = shown.find((entry) => entry.id === id);
+    return row ? (config.describeDelete?.(row) ?? null) : null;
   }
 
   // A row's Delete button. A row that holds content asks first, and names
@@ -916,8 +926,10 @@ function useRows<
     addFieldId,
     newName,
     addProblem: editing.failures[ADD_KEY]?.problem ?? blankAdd,
-    // The question the confirmation asks, or null while it is closed.
+    // The question the confirmation asks, or null while it is closed, and
+    // the sentence under it when the row has one.
     question: asking ? deleteQuestion(words, asking.name, asking.held) : null,
+    questionNote: asking ? askingNote(asking.id) : null,
     asks: config.held !== undefined,
     fieldOf,
     own: ownTexts,

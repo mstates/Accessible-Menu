@@ -6,15 +6,24 @@ import {
   addOwnerMenu,
   deleteOwnerMenu,
   listOwnerMenuNames,
+  listPublishBlockers,
+  publishOwnerMenu,
   renameOwnerMenu,
   restoreOwnerMenu,
   setOwnerMenuOrder,
+  unpublishOwnerMenu,
   type MenuWriteError,
 } from "@/core/supabase/menus";
-import { mergeOrder, type Held, type OwnerMenu } from "@/domain/menu";
+import {
+  mergeOrder,
+  type Held,
+  type OwnerMenu,
+  type PublishBlocker,
+} from "@/domain/menu";
 import type { ListProblem } from "./editing/list-words";
 import { menuList } from "./lists";
 import { ownerScope } from "./owner-scope";
+import type { PublishFailure } from "./publishing-words";
 
 // The menus list saves through these (D-111). A failed save must never leave
 // the page, so nothing here redirects: a missing session comes back as a
@@ -23,8 +32,9 @@ import { ownerScope } from "./owner-scope";
 // carries the re-rendered list; without a session the page's own redirect
 // would run, so those paths return before it. The code and the ids are user
 // input: they are checked here and in ownerScope, and row level security
-// decides whether the rows are this owner's. Nothing here can publish
-// (migration 3).
+// decides whether the rows are this owner's. Publish and Unpublish go
+// through the database's two functions, which check the caller themselves
+// (migration 12).
 
 type ServerProblem = Exclude<
   ListProblem,
@@ -221,5 +231,67 @@ export async function orderMenus(
   );
   refresh();
   if (!result.ok) return refuse(fromWrite(result.error, "gone"));
+  return { ok: true, value: null };
+}
+
+type PublishActionProblem = Exclude<
+  PublishFailure,
+  { kind: "unreachable" } | { kind: "out-of-date" }
+>;
+
+export type PublishActionResult =
+  { ok: true; value: null } | { ok: false; problem: PublishActionProblem };
+
+// Publishes the menu (D-82, migration 12). The database refuses while a
+// size has no name or no price and writes nothing then; the blockers are
+// read back so the sentence can name the dish. A menu that is not here, or
+// not this owner's, is gone.
+export async function publishMenu(
+  rawCode: string,
+  rawId: string,
+): Promise<PublishActionResult> {
+  const scope = await ownerScope(rawCode);
+  if (!scope.ok) return scope;
+  const id = idSchema.safeParse(rawId);
+  if (!id.success) return { ok: false, problem: { kind: "gone" } };
+  const result = await publishOwnerMenu(scope.client, id.data);
+  if (!result.ok && result.error.kind === "blocked") {
+    let blockers: PublishBlocker[] = [];
+    try {
+      blockers = await listPublishBlockers(scope.client, id.data);
+    } catch {
+      blockers = [];
+    }
+    refresh();
+    return { ok: false, problem: { kind: "blocked", blockers } };
+  }
+  refresh();
+  if (!result.ok) {
+    return {
+      ok: false,
+      problem: { kind: result.error.kind === "not-found" ? "gone" : "failed" },
+    };
+  }
+  return { ok: true, value: null };
+}
+
+// Unpublishes the menu: the flag, the time, and the snapshot go together,
+// and a menu already unpublished is left as it is.
+export async function unpublishMenu(
+  rawCode: string,
+  rawId: string,
+): Promise<PublishActionResult> {
+  const scope = await ownerScope(rawCode);
+  if (!scope.ok) return scope;
+  const id = idSchema.safeParse(rawId);
+  if (!id.success) return { ok: false, problem: { kind: "gone" } };
+  const result = await unpublishOwnerMenu(scope.client, id.data);
+  refresh();
+  if (!result.ok) {
+    return {
+      ok: false,
+      problem: { kind: result.error.kind === "not-found" ? "gone" : "failed" },
+    };
+  }
   return { ok: true, value: null };
 }

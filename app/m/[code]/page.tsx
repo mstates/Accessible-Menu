@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { en } from "@/copy";
 import { fill } from "@/copy/fill";
+import { menuOrigin } from "@/core/config";
 import { getRestaurant, listRestaurantSlugs } from "@/core/data";
+import { menuUrl } from "@/domain/menu-url";
 import { MenuPage } from "@/features/diner/MenuPage";
 
 type Params = { params: Promise<{ code: string }> };
@@ -16,13 +18,16 @@ export function generateStaticParams() {
   return listRestaurantSlugs().map((code) => ({ code }));
 }
 
+// The canonical link is the menu URL from the one builder (D-88): the path
+// is permanent, and a search engine that reaches the page any other way is
+// told the one address it has.
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { code } = await params;
   const restaurant = getRestaurant(code);
+  if (!restaurant) return { title: en.notFound.title };
   return {
-    title: restaurant
-      ? fill(en.menu.title, { restaurant: restaurant.name })
-      : en.notFound.title,
+    title: fill(en.menu.title, { restaurant: restaurant.name }),
+    alternates: { canonical: menuUrl(menuOrigin.origin, code) },
   };
 }
 

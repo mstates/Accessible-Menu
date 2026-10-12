@@ -7,6 +7,8 @@ import {
   snapshotKeys,
   type MenuSnapshot,
 } from "../../src/domain/snapshot";
+import { menuSnapshot, publishProblems } from "../local/menu-snapshot.mjs";
+import { seedStore } from "../local/standin-seed.mjs";
 
 // The fixture is CI Diner's Dinner as publish_menu() wrote it on a
 // throwaway Postgres 17 after ci_diner.sql (migration 12): three sections;
@@ -176,5 +178,91 @@ describe("the published snapshot (migration 12, D-82)", () => {
     if (!soup || soup.price.kind !== "sizes") throw new Error("no soup");
     (soup.price.sizes[0] as Record<string, unknown>).name = null;
     expect(menuSnapshotSchema.safeParse(unnamed).success).toBe(false);
+  });
+});
+
+// The stand-in's builder (tests/local/menu-snapshot.mjs) writes the same
+// shape over the stand-in's rows, which mirror CI Diner's, so the local
+// checks press a Publish that means what the database's does.
+describe("the stand-in's snapshot builder", () => {
+  let clock = Date.parse("2026-10-04T12:00:00Z");
+  const store = seedStore({
+    restaurant: { id: "11111111-1111-4111-8111-111111111111" },
+    user: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
+    stamp: () => new Date((clock += 1000)).toISOString(),
+  });
+  const dinnerId = store.menus[1]?.id ?? "";
+
+  it("builds a snapshot the one schema accepts, in the fixture's shape", () => {
+    const built = menuSnapshotSchema.parse(menuSnapshot(store, dinnerId));
+    expect(built.menu.name).toBe("Dinner");
+    expect(built.sections.map((s) => s.name)).toEqual(
+      dinner().sections.map((s) => s.name),
+    );
+    const starters = built.sections[0];
+    expect(starters?.items.map((i) => i.name)).toEqual(
+      section("Starters").items.map((i) => i.name),
+    );
+    expect(starters?.items.map((i) => i.price.kind)).toEqual(
+      section("Starters").items.map((i) => i.price.kind),
+    );
+    expect(starters?.choice_lists.map((l) => l.lead)).toEqual(
+      section("Starters").choice_lists.map((l) => l.lead),
+    );
+    const keys = snapshotKeys(built);
+    for (const never of SNAPSHOT_NEVER_HOLDS) {
+      expect(keys.has(never), never).toBe(false);
+    }
+  });
+
+  it("reports nothing blocking the seed, and an unnamed or unpriced size once it is there", () => {
+    expect(publishProblems(store, dinnerId)).toEqual([]);
+    const soup = store.items[0];
+    if (!soup) throw new Error("no soup");
+    const blank = {
+      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      item_id: soup.id,
+      restaurant_id: soup.restaurant_id,
+      name: null,
+      price_cents: 300,
+      calories_low: null,
+      calories_high: null,
+      deleted_at: null,
+      created_at: "2026-10-04T13:00:00.000Z",
+    };
+    const withBlank = { ...store, sizes: [...store.sizes, blank] };
+    expect(publishProblems(withBlank, dinnerId)).toEqual([
+      {
+        problem: "size_unnamed",
+        dish: soup.id,
+        dish_name: "Soup of the day",
+        section_name: "Starters",
+        size: blank.id,
+      },
+    ]);
+    const unpriced = { ...blank, name: "Mug", price_cents: null };
+    expect(
+      publishProblems(
+        { ...store, sizes: [...store.sizes, unpriced] },
+        dinnerId,
+      ).map((row: { problem: string }) => row.problem),
+    ).toEqual(["size_unpriced"]);
+    expect(
+      menuSnapshotSchema.safeParse(menuSnapshot(withBlank, dinnerId)).success,
+      "a snapshot with a blank size is one the schema refuses, which is why Publish refuses first",
+    ).toBe(false);
+  });
+
+  it("builds null for a menu that is missing or deleted", () => {
+    expect(menuSnapshot(store, "nope")).toBeNull();
+    const deleted = {
+      ...store,
+      menus: store.menus.map((m) =>
+        m.id === dinnerId
+          ? { ...m, deleted_at: "2026-10-04T13:00:00.000Z" }
+          : m,
+      ),
+    };
+    expect(menuSnapshot(deleted, dinnerId)).toBeNull();
   });
 });

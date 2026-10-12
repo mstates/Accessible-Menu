@@ -72,10 +72,11 @@ listRowChecks({
   path: sectionsPath,
   h1: () => ownerFixture().withSections.name,
   // The name field and Move up, Move down, and Delete; the add field, Add,
-  // and Undo. A section's note and every-dish line are on its own page
-  // (D-135), so its row is the row every list has.
+  // and Undo, and, above them, Publish and Unpublish, since the menu with
+  // sections is published (D-82, migration 12). A section's note is on its
+  // own page (D-135), so its row is the row every list has.
   rowControls: 4,
-  pageControls: 3,
+  pageControls: 5,
   rowLink: {
     label: strings.editDishes,
     target: () => {

@@ -7,6 +7,7 @@ import type { ListedSection } from "@/domain/section";
 import { RowList } from "./editing/RowList";
 import { useRowList } from "./editing/useRowList";
 import { sectionList } from "./lists";
+import { MenuPublishing, type MenuPublishingProps } from "./MenuPublishing";
 import { restaurantSectionPath } from "./paths";
 import {
   addSection,
@@ -25,13 +26,20 @@ type Props = {
   // them, each with the dishes it holds. Every save ends with a refresh, so
   // this is always the truth.
   sections: ListedSection[];
+  // The page's lead about its sections, drawn under the publishing group.
+  lead: string;
+  // Publish and Unpublish for the menu (D-82): drawn first, inside the
+  // page's log and sharing its one editing state, so a press waits its
+  // turn behind every save on its way and is said the way a move is.
+  publishing: MenuPublishingProps;
 };
 
 // The sections of one menu (D-111, D-128): the shared list, with one field
 // a row, its name, so a section's row is the row every list has. Each row
-// links to the section's own page, where its dishes are, and its note and
-// its every-dish line (D-135). Delete on a section that holds dishes asks
-// first, and names them; an empty section goes at once (D-119).
+// links to the section's own page, where its dishes are, and its note
+// (D-135). Delete on a section that holds dishes asks first, and names
+// them; an empty section goes at once (D-119). The publishing group comes
+// first, then the lead, then the saved status and the rows.
 export function SectionList(props: Props) {
   return (
     <Announcer>
@@ -40,7 +48,15 @@ export function SectionList(props: Props) {
   );
 }
 
-function SectionRows({ strings, editing, code, menuId, sections }: Props) {
+function SectionRows({
+  strings,
+  editing,
+  code,
+  menuId,
+  sections,
+  lead,
+  publishing,
+}: Props) {
   const words = useMemo(
     () => sectionList.words(strings, editing),
     [strings, editing],
@@ -68,5 +84,15 @@ function SectionRows({ strings, editing, code, menuId, sections }: Props) {
       href: (section) => restaurantSectionPath(code, section.id),
     },
   });
-  return <RowList list={list} />;
+  return (
+    <RowList
+      list={list}
+      afterOwn={
+        <>
+          <MenuPublishing {...publishing} saves={list.editing} />
+          <p className="mt-6 text-foreground-muted">{lead}</p>
+        </>
+      }
+    />
+  );
 }

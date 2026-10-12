@@ -1,6 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { Held, ListedMenu, OwnerMenu } from "@/domain/menu";
+import type {
+  Held,
+  ListedMenu,
+  MenuPublishState,
+  OwnerMenu,
+  PublishBlocker,
+} from "@/domain/menu";
 import { shaped } from "./log";
 import { listSectionDishes } from "./sections";
 
@@ -8,18 +14,22 @@ import { listSectionDishes } from "./sections";
 // row level security decides what is visible (D-75) and the table
 // constraints decide what is valid (migration 3). A delete marks the row and
 // keeps it, so Undo can bring it back; reads leave marked rows out. Owners
-// write name, sort, and deleted_at as columns and nothing else, so nothing
-// here can publish. A delete goes through delete_with_contents(), which
+// write name, sort, and deleted_at as columns and nothing else: publishing
+// goes through publish_menu() and unpublish_menu() alone, definers that
+// check the caller and write the flag, the time, and the snapshot together
+// (migration 12, D-82). A delete goes through delete_with_contents(), which
 // counts what the menu holds in the statement that marks it (migration 5).
 // The only place the row shape is known; features see OwnerMenu, and the
-// list sees it with the sections and the dishes each menu holds (D-119).
+// list sees it with the sections and the dishes each menu holds (D-119)
+// and whether it is published, which its delete question names.
 
-const columns = "id, name, sort";
+const columns = "id, name, sort, published";
 
 const rowSchema = z.object({
   id: z.string(),
   name: z.string(),
   sort: z.number(),
+  published: z.boolean(),
 });
 
 function toMenu(row: z.infer<typeof rowSchema>): OwnerMenu {
@@ -93,6 +103,7 @@ export async function listOwnerMenus(
   return rows.map((row) => ({
     ...toMenu(row),
     ...(held.get(row.id) ?? { sections: 0, dishes: 0, options: 0 }),
+    published: row.published,
   }));
 }
 
@@ -265,5 +276,110 @@ export async function setOwnerMenuOrder(
   return {
     ok: false,
     error: { kind: error.message === "order_mismatch" ? "mismatch" : "failed" },
+  };
+}
+
+// Each live menu's publish state, from menu_publish_states() (migration 12):
+// whether it is published, since when, and whether the draft differs from
+// what was published. The function runs as the caller, so row level
+// security decides which menus it reports. A read that fails throws: an
+// error must never look like no menus.
+const stateSchema = z.object({
+  menu: z.string(),
+  menu_name: z.string(),
+  published: z.boolean(),
+  published_at: z.string().nullable(),
+  changed: z.boolean().nullable(),
+});
+
+export async function listOwnerMenuPublishStates(
+  client: SupabaseClient,
+  restaurantId: string,
+): Promise<MenuPublishState[]> {
+  const { data, error } = await client.rpc("menu_publish_states", {
+    p_restaurant: restaurantId,
+  });
+  if (error) throw new Error("the publish states could not be read");
+  const rows = shaped(z.array(stateSchema), data, "menu_publish_states");
+  if (!rows) throw new Error("the publish states could not be read");
+  return rows.map((row) => ({
+    id: row.menu,
+    name: row.menu_name,
+    published: row.published,
+    publishedAt: row.published_at,
+    changed: row.changed,
+  }));
+}
+
+// What would block Publish on one menu, from publish_problems() (migration
+// 12): each live size with no name or no price under a live dish by size,
+// named by the dish and its section, in page order. A read that fails
+// throws.
+const blockerSchema = z.object({
+  problem: z.enum(["size_unnamed", "size_unpriced"]),
+  dish: z.string(),
+  dish_name: z.string(),
+  section_name: z.string(),
+  size: z.string(),
+});
+
+export async function listPublishBlockers(
+  client: SupabaseClient,
+  menuId: string,
+): Promise<PublishBlocker[]> {
+  const { data, error } = await client.rpc("publish_problems", {
+    p_menu: menuId,
+  });
+  if (error) throw new Error("the publish problems could not be read");
+  const rows = shaped(z.array(blockerSchema), data, "publish_problems");
+  if (!rows) throw new Error("the publish problems could not be read");
+  return rows.map((row) => ({
+    kind: row.problem === "size_unnamed" ? "size-unnamed" : "size-unpriced",
+    dish: row.dish_name,
+    section: row.section_name,
+  }));
+}
+
+export type PublishError =
+  // A size with no name or no price blocks it; the database wrote nothing.
+  { kind: "blocked" } | { kind: "not-found" } | { kind: "failed" };
+
+export type PublishResult = { ok: true } | { ok: false; error: PublishError };
+
+// Publishes the menu through publish_menu() (migration 12): the database
+// checks the caller, refuses by name while a size is incomplete, and writes
+// the flag, the time, and the snapshot in one statement. A menu that is not
+// this owner's, is deleted, or matches nothing is not found.
+export async function publishOwnerMenu(
+  client: SupabaseClient,
+  menuId: string,
+): Promise<PublishResult> {
+  const { error } = await client.rpc("publish_menu", { p_menu: menuId });
+  if (!error) return { ok: true };
+  if (error.message === "publish_blocked") {
+    return { ok: false, error: { kind: "blocked" } };
+  }
+  return {
+    ok: false,
+    error: {
+      kind: error.message === "publish_not_found" ? "not-found" : "failed",
+    },
+  };
+}
+
+// Unpublishes the menu through unpublish_menu(): the flag, the time, and
+// the snapshot go together, and a menu already unpublished is left as it
+// is, with no error.
+export async function unpublishOwnerMenu(
+  client: SupabaseClient,
+  menuId: string,
+): Promise<PublishResult> {
+  const { error } = await client.rpc("unpublish_menu", { p_menu: menuId });
+  if (!error) return { ok: true };
+  return {
+    ok: false,
+    error: {
+      kind: error.message === "unpublish_not_found" ? "not-found" : "failed",
+    },
   };
 }

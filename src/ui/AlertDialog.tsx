@@ -11,6 +11,9 @@ type Props = {
   // The question, which is also the dialog's name: "Delete Lunch, with its
   // 4 sections?"
   title: string;
+  // One more sentence under the question, read after the name when the
+  // dialog takes focus: that a published menu leaves diners at once.
+  description?: string;
   keepLabel: string;
   confirmLabel: string;
   // Keep, or Escape. Nothing is sent.
@@ -40,11 +43,13 @@ type Props = {
 export function AlertDialog({
   isOpen,
   title,
+  description,
   keepLabel,
   confirmLabel,
   onKeep,
   onConfirm,
 }: Props) {
+  const descriptionId = useId();
   return (
     <ModalOverlay
       isOpen={isOpen}
@@ -54,10 +59,19 @@ export function AlertDialog({
       className="fixed inset-0 z-50 flex overflow-y-auto bg-background/80 p-2"
     >
       <Modal className="m-auto w-full max-w-md rounded border-2 border-border bg-background p-4">
-        <Dialog role="alertdialog" className="outline-none">
+        <Dialog
+          role="alertdialog"
+          className="outline-none"
+          aria-describedby={description ? descriptionId : undefined}
+        >
           <Heading slot="title" className="text-xl font-bold">
             {title}
           </Heading>
+          {description ? (
+            <p id={descriptionId} className="mt-3">
+              {description}
+            </p>
+          ) : null}
           <Answers
             keepLabel={keepLabel}
             confirmLabel={confirmLabel}

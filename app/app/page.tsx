@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
 import { menuOrigin } from "@/core/config";
+import { listOwnerMenuPublishStates } from "@/core/supabase/menus";
 import { listOwnerRestaurants } from "@/core/supabase/restaurants";
 import { createSupabaseServerClient } from "@/core/supabase/server";
 import { startTrial } from "@/features/billing/actions";
@@ -11,6 +12,7 @@ import { signOut } from "@/features/owner/actions";
 import { arrivalKey } from "@/features/owner/arrival";
 import { DashboardShell } from "@/features/owner/DashboardShell";
 import { restaurantNewPath } from "@/features/owner/paths";
+import { publishSummary } from "@/features/owner/publishing-words";
 import { RestaurantCard } from "@/features/owner/RestaurantCard";
 import { PageLink } from "@/ui/PageLink";
 
@@ -26,9 +28,9 @@ const notices: Record<string, string> = {
   missing: en.owner.billing.restaurantMissing,
 };
 
-// The dashboard lists every restaurant the user belongs to (D-89). Features
-// never import each other, so the page composes the owner card and the
-// billing line itself.
+// The dashboard lists every restaurant the user belongs to (D-89), each
+// with what its menus say about Publish (D-82). Features never import each
+// other, so the page composes the owner card and the billing line itself.
 export default async function OwnerPage({ searchParams }: Props) {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase.auth.getClaims();
@@ -41,8 +43,14 @@ export default async function OwnerPage({ searchParams }: Props) {
       ? { message, key: arrivalKey("checkout", checkout) }
       : null;
 
-  // Row level security limits this to the owner's restaurants.
+  // Row level security limits this to the owner's restaurants, and the
+  // publish states to each restaurant's menus.
   const restaurants = await listOwnerRestaurants(supabase);
+  const states = await Promise.all(
+    restaurants.map((restaurant) =>
+      listOwnerMenuPublishStates(supabase, restaurant.id),
+    ),
+  );
 
   return (
     <DashboardShell copy={en} email={email} signOut={signOut} notice={notice}>
@@ -52,13 +60,18 @@ export default async function OwnerPage({ searchParams }: Props) {
         </PageLink>
       </p>
       {restaurants.length > 0 ? (
-        restaurants.map((restaurant) => (
+        restaurants.map((restaurant, index) => (
           <RestaurantCard
             key={restaurant.code}
             copy={en}
             name={restaurant.name}
             code={restaurant.code}
             origin={menuOrigin}
+            publishing={publishSummary(
+              en.owner.publishing,
+              states[index] ?? [],
+              en.lang,
+            )}
           >
             <RestaurantBilling
               copy={en}

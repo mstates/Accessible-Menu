@@ -347,6 +347,59 @@ export const en = {
         addGrew:
           "{menu} has sections now, so it stays. To delete it, use its Delete button.",
       },
+      // Under the delete question when the menu is published (D-82,
+      // migration 12): a deleted published menu is off at once, and Undo
+      // brings it back as it was published.
+      deletePublished:
+        "It is published. Deleting it takes it away from diners at once, and Undo brings it back.",
+    },
+    // Publish and Unpublish for one menu (D-82, migration 12), at the top of
+    // the menu's own page, and the dashboard's summary of a restaurant's
+    // menus. Publish sends the menu's content to diners as a snapshot; a
+    // sold-out mark and a special's schedule reach diners on their own
+    // (D-84). A size with no name or no price blocks Publish (D-139).
+    publishing: {
+      heading: "Publishing",
+      state: {
+        notPublished: "Not published yet. Diners do not see this menu.",
+        published: "Published on {date}. Nothing has changed since.",
+        changed:
+          "Published on {date}. Changes since then are not published yet.",
+      },
+      waitingLead: "Publish is waiting on:",
+      problems: {
+        sizeUnnamed: "{dish} in {section} has a size with no name.",
+        sizeUnpriced: "{dish} in {section} has a size with no price.",
+      },
+      publish: "Publish",
+      unpublish: "Unpublish",
+      pending: { publish: "Publishing", unpublish: "Unpublishing" },
+      publishHint:
+        "Publish sends this menu's words, prices, allergens, and choices to diners. Availability and specials reach diners on their own, with no Publish.",
+      unpublishHint: "Unpublish takes this menu away from diners at once.",
+      spoken: { published: "Published.", unpublished: "Unpublished." },
+      refused: {
+        sizeUnnamed:
+          "{menu} was not published. {dish} has a size with no name. Name it or remove it, then publish again.",
+        sizeUnpriced:
+          "{menu} was not published. {dish} has a size with no price. Give it a price or remove it, then publish again.",
+        gone: "{menu} was not published. It is not there any more.",
+        notPublished: "{menu} was not published.",
+        notUnpublishedGone:
+          "{menu} was not unpublished. It is not there any more.",
+        notUnpublished: "{menu} was not unpublished.",
+      },
+      summary: {
+        none: "No menu is published yet.",
+        published: {
+          one: "{names} is published.",
+          other: "{names} are published.",
+        },
+        changed: {
+          one: "{names} has changes not yet published.",
+          other: "{names} have changes not yet published.",
+        },
+      },
     },
     // A menu's own page: its sections (D-120 to D-122). The page is named
     // for its menu, so it has no title or heading here. A section's note

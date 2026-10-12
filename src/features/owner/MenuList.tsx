@@ -65,6 +65,9 @@ function MenuRows({ strings, editing, code, menus }: Props) {
       dishes: menu.dishes,
       options: 0,
     }),
+    // A published menu leaves diners the moment it is deleted, and comes
+    // back with Undo (D-82, migration 12).
+    describeDelete: (menu) => (menu.published ? strings.deletePublished : null),
     link: {
       label: strings.editSections,
       href: (menu) => restaurantMenuPath(code, menu.id),

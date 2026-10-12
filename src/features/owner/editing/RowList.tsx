@@ -269,6 +269,7 @@ export function RowList<
         <AlertDialog
           isOpen={list.question !== null}
           title={list.question ?? ""}
+          description={list.questionNote ?? undefined}
           keepLabel={strings.keep ?? ""}
           confirmLabel={strings.remove}
           onKeep={list.keep}

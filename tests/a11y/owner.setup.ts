@@ -17,11 +17,12 @@ import {
 // the menus the menus checks read, the sections the sections checks read,
 // the dishes the dishes checks read, one dish priced each way for the
 // dish page checks (D-139), and the two choice lists the choices checks
-// read (D-166). Messages name counts, codes, and
-// the test menus' and sections' names, never a token, and say how to fix
-// the data: one file, run by hand in the SQL editor, since the gate never
-// writes (D-126). A failure after sign-in signs out first, since the
-// teardown has no session file to work from yet.
+// read (D-166), and the menu with sections published while the empty one
+// is not, for the publishing checks (D-82, migration 12). Messages name
+// counts, codes, and the test menus' and sections' names, never a token,
+// and say how to fix the data: one file, run by hand in the SQL editor,
+// since the gate never writes (D-126). A failure after sign-in signs out
+// first, since the teardown has no session file to work from yet.
 
 const MENUS_NEEDED = 3;
 const SECTIONS_NEEDED = 3;
@@ -58,6 +59,9 @@ const memberships = z.array(
     restaurants: z.object({ code: z.string() }).nullable(),
   }),
 );
+const publishStates = z.array(
+  z.object({ menu: z.string(), published: z.boolean() }),
+);
 
 setup(
   "the test owner signs in and holds exactly one restaurant, with its menus, sections, and dishes",
@@ -83,9 +87,8 @@ setup(
       if (error) {
         throw new Error(`could not read memberships: ${error.message}`);
       }
-      const codes = memberships
-        .parse(data)
-        .map((row) => row.restaurants?.code ?? "unknown");
+      const members = memberships.parse(data);
+      const codes = members.map((row) => row.restaurants?.code ?? "unknown");
       if (codes.length !== 1 || codes[0] !== env.code) {
         const found =
           codes.length === 0 ? "none" : `${codes.length}: ${codes.join(", ")}`;
@@ -93,6 +96,7 @@ setup(
           `expected one membership with code ${env.code}, found ${found}`,
         );
       }
+      const restaurantId = members[0]?.restaurant_id ?? "";
       // The menus checks read three rows: a first, a last, and one between
       // with both moves on. The gate never writes, so the menus come from
       // the data file, and their absence stops the run here with the reason.
@@ -264,6 +268,30 @@ setup(
           .join(", ");
         throw new Error(
           `the test restaurant (${env.code}) needs one menu with three sections, one of them with three dishes and one with none, and one menu with no section; found ${found}. ${FIX_DATA}`,
+        );
+      }
+      // The publishing checks read the menu with sections as published and
+      // the empty menu as not (D-82), which the data file sets through
+      // publish_menu() as the owner, so the gate never presses Publish.
+      const states = await supabase.rpc("menu_publish_states", {
+        p_restaurant: restaurantId,
+      });
+      if (states.error) {
+        throw new Error(
+          `could not read the publish states: ${states.error.message}`,
+        );
+      }
+      const published = new Map(
+        publishStates
+          .parse(states.data)
+          .map((row) => [row.menu, row.published]),
+      );
+      if (
+        published.get(withSections.id) !== true ||
+        published.get(empty.id) !== false
+      ) {
+        throw new Error(
+          `the test restaurant (${env.code}) needs ${withSections.name} published and ${empty.name} not; found ${withSections.name} ${published.get(withSections.id) ? "published" : "not published"}, ${empty.name} ${published.get(empty.id) ? "published" : "not published"}. ${FIX_DATA}`,
         );
       }
       const fixture: OwnerFixture = {

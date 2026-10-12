@@ -4,7 +4,11 @@ import { cache } from "react";
 import { z } from "zod";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
-import { findOwnerMenu } from "@/core/supabase/menus";
+import {
+  findOwnerMenu,
+  listOwnerMenuPublishStates,
+  listPublishBlockers,
+} from "@/core/supabase/menus";
 import { listOwnerSectionsWithDishes } from "@/core/supabase/sections";
 import { loadRestaurant } from "@/features/owner/load-restaurant";
 import { restaurantMenusPath } from "@/features/owner/paths";
@@ -53,17 +57,27 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 // breadcrumb above the h1 is the way back there. The list is read on every
 // render, with how many dishes each section holds, which is what a delete
 // asks about (D-119), and every save ends with a refresh, so what the page
-// shows is what the server holds.
+// shows is what the server holds. Publish and Unpublish sit first on the
+// page (D-82, migration 12): the menu's publish state and what would block
+// Publish are read with the sections, and every press ends with a refresh
+// too.
 export default async function RestaurantMenuPage({ params }: Props) {
   const { code, menu: menuId } = await params;
   const { supabase, email, restaurant, menu } = await loadMenu(code, menuId);
   if (!email) redirect("/app/sign-in");
   if (!restaurant || !menu) notFound();
-  const sections = await listOwnerSectionsWithDishes(
-    supabase,
-    restaurant.id,
-    menu.id,
-  );
+  const [sections, states, blockers] = await Promise.all([
+    listOwnerSectionsWithDishes(supabase, restaurant.id, menu.id),
+    listOwnerMenuPublishStates(supabase, restaurant.id),
+    listPublishBlockers(supabase, menu.id),
+  ]);
+  const state = states.find((candidate) => candidate.id === menu.id) ?? {
+    id: menu.id,
+    name: menu.name,
+    published: false,
+    publishedAt: null,
+    changed: null,
+  };
 
   return (
     <PageFrame
@@ -90,13 +104,23 @@ export default async function RestaurantMenuPage({ params }: Props) {
         current={menu.name}
       />
       <h1 className="mt-2 text-3xl font-bold">{menu.name}</h1>
-      <p className="mt-6 text-foreground-muted">{strings.lead}</p>
       <SectionList
         strings={strings}
         editing={en.owner.editing}
         code={restaurant.code}
         menuId={menu.id}
         sections={sections}
+        lead={strings.lead}
+        publishing={{
+          strings: en.owner.publishing,
+          editing: en.owner.editing,
+          code: restaurant.code,
+          menu: { id: menu.id, name: menu.name },
+          state,
+          blockers,
+          timeZone: restaurant.timezone,
+          lang: en.lang,
+        }}
       />
     </PageFrame>
   );
