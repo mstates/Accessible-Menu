@@ -372,6 +372,14 @@ test("with JavaScript off the page reads whole and points at no missing id", asy
     const page = await context.newPage();
     const response = await page.goto(bare);
     expect(response?.status()).toBe(200);
+    // Q-96: the styles are inside the HTML, so the page paints after one
+    // request; the gate checks the same on the preview.
+    const html = (await response?.text()) ?? "";
+    const head = html.slice(0, html.indexOf("</head>"));
+    expect(head, "the head carries a style tag").toMatch(/<style[\s>]/);
+    expect(head, "the head has no stylesheet link").not.toMatch(
+      /<link[^>]+rel="stylesheet"/,
+    );
     await expectNoMissingIds(page);
     await expect(
       page.getByRole("heading", { level: 1, name: en.site.descriptor }),

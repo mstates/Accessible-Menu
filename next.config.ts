@@ -50,6 +50,17 @@ const nextConfig: NextConfig = {
     // same gap for a link pressed while its prefetch is on its way. Revisit
     // both at the next Next upgrade.
     optimisticRouting: false,
+    // The diner page's styles arrive inside its HTML (Q-96). With a link
+    // tag the page needed two requests before it could paint, and on Slow
+    // 4G with JavaScript off the preview pass measured first contentful
+    // paint at 1,216 ms, over the one-second acceptance line. Tailwind's
+    // sheet is small (under 5 KB compressed), so inlining costs little,
+    // and the diner gate holds the head to a style tag with no stylesheet
+    // link and no blocking script. Costs: the flag applies to every page,
+    // the styles are repeated in the RSC payload on a first load, and a
+    // future Content Security Policy must allow the inline style, by nonce
+    // or 'unsafe-inline' (the Architecture page's note).
+    inlineCss: true,
   },
 };
 

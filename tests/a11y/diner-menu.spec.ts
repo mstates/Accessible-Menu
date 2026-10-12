@@ -192,6 +192,48 @@ test.describe("with JavaScript off", () => {
       soupShows() ? 2 : 1,
     );
   });
+
+  // Q-96: the styles arrive inside the HTML, so the page paints after one
+  // request. The head holds a style tag and no stylesheet link, every
+  // script in it with a src is async or defer (a nomodule script is skipped
+  // by every browser that runs modules, so it never blocks), and with
+  // JavaScript off the browser fetches no stylesheet and no script. Inline
+  // scripts, the favicon, and the brand mark do not count, and neither does
+  // a chunk the head names in a preload link: Next emits one at low
+  // priority, Chromium fetches it with scripts off, and a preload never
+  // holds up the paint.
+  test("the styles arrive inline, and no stylesheet or script is fetched", async ({
+    page,
+  }) => {
+    const fetched: string[] = [];
+    page.on("request", (request) => {
+      const type = request.resourceType();
+      if (type === "stylesheet" || type === "script") {
+        fetched.push(`${type} ${new URL(request.url()).pathname}`);
+      }
+    });
+    const response = await open(page, bare);
+    const html = await response.text();
+    const head = html.slice(0, html.indexOf("</head>"));
+    const preloaded = [...head.matchAll(/<link[^>]+rel="preload"[^>]*>/g)]
+      .map((match) => /href="([^"]+)"/.exec(match[0])?.[1] ?? "")
+      .filter((href) => href !== "");
+    expect(head, "the head carries a style tag").toMatch(/<style[\s>]/);
+    expect(head, "the head has no stylesheet link").not.toMatch(
+      /<link[^>]+rel="stylesheet"/,
+    );
+    const blocking = [...head.matchAll(/<script\b[^>]*\bsrc=[^>]*>/g)]
+      .map((match) => match[0])
+      .filter((tag) => !/\b(async|defer|nomodule)\b/i.test(tag));
+    expect(blocking, "every script with a src is async or defer").toEqual([]);
+    await page.waitForLoadState("load");
+    expect(
+      fetched.filter(
+        (entry) => !preloaded.some((href) => entry.endsWith(` ${href}`)),
+      ),
+      "no stylesheet or script is fetched with JavaScript off",
+    ).toEqual([]);
+  });
 });
 
 test("the sentences on CI Diner's Dinner come from the builders, and the hidden dish is absent", async ({
