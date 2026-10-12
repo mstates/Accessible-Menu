@@ -95,7 +95,12 @@ declare
   n integer;
   in_place boolean;
 begin
-  select id into target from public.restaurants order by created_at limit 1;
+  -- The oldest restaurant on trial or active: the three published views
+  -- hide a paused or closed restaurant (Q-8), so the Publish block's reads
+  -- of them below would fail on a closed one, as Michael's oldest, Test
+  -- Kitchen, is on the live database.
+  select id into target from public.restaurants
+  where status in ('trial', 'active') order by created_at limit 1;
   if target is null then
     raise exception 'FAIL: this user owns no restaurant';
   end if;
