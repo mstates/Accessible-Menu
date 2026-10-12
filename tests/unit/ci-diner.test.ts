@@ -33,9 +33,10 @@ describe("CI Diner's data file (D-126)", () => {
     expect(code).not.toMatch(/\b(create|alter|grant|revoke)\b/i);
   });
 
-  it("writes only through inserts, sort updates, the three dishes' prices, two dishes' allergens, the roll's price, lists, and check, the three dishes' tags, availability, and schedule, and the calories, the dressing options, and the mark", () => {
+  it("writes only through inserts, the details, sort updates, the four dishes' prices, three dishes' allergens, the roll's price, lists, and check, the three dishes' tags, availability, and schedule, and the calories, the dressing options, and the mark", () => {
     const updates = code.match(/\bupdate\s+public\.\w+\s+\w+\s+set\s+\w+/gi);
     expect(updates).toEqual([
+      "update public.restaurants r\n  set timezone",
       "update public.menus m\n  set sort",
       "update public.sections s\n  set sort",
       "update public.items i\n  set sort",
@@ -57,7 +58,24 @@ describe("CI Diner's data file (D-126)", () => {
       "update public.choice_options o\n  set sort",
       "update public.item_sizes z\n  set calories_low",
       "update public.items i\n  set calories_low",
+      "update public.items i\n  set price_kind",
+      "update public.items i\n  set allergens",
+      "update public.items i\n  set allergens_reviewed",
     ]);
+  });
+
+  // The live details the diner page reads (the diner page task): one
+  // statement on the restaurant's row, writing the four columns and
+  // nothing else, never the name, the code, or the status.
+  it("sets the time zone, hours, preparation sentence, and allergen note in one statement and writes nothing else to the restaurant", () => {
+    const writes = [
+      ...code.matchAll(/update public\.restaurants r\n  set [^;]*;/g),
+    ].map((match) => match[0]);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatch(/where r\.id = diner/);
+    expect(writes[0]).not.toMatch(
+      /\b(name|code|status|plan|address|city|region|postal_code|phone|website|stripe_customer_id)\s*=/,
+    );
   });
 
   // The tags, availability, and schedule updates (migration 9, task 5)
@@ -77,23 +95,24 @@ describe("CI Diner's data file (D-126)", () => {
     }
   });
 
-  // The price updates touch only Starters' three dishes, by id, and write
-  // only the choice and the price (D-139).
-  it("prices the three dishes by id and writes nothing else to them", () => {
+  // The price updates touch only Starters' three dishes and Drinks'
+  // Lemonade, by id, and write only the choice and the price (D-139).
+  it("prices the four dishes by id and writes nothing else to them", () => {
     const prices = [
       ...code.matchAll(/update public\.items i\n  set price_kind[^;]*;/g),
     ].map((match) => match[0]);
-    expect(prices).toHaveLength(3);
+    expect(prices).toHaveLength(4);
     for (const statement of prices) {
-      expect(statement).toMatch(/where i\.id = (soup|salad|bread)/);
+      expect(statement).toMatch(/where i\.id = (soup|salad|bread|lemonade)/);
       expect(statement).not.toMatch(/\b(name|sort|description|note)\s*=/);
     }
   });
 
-  // The allergen writes touch the soup and the salad, by id, write only the
-  // two lists and the check, and check in a statement of their own, since
-  // one statement that changes a list and checks it ends unchecked (D-148).
-  it("lists and checks two dishes' allergens by id, the check in its own statement, as CI Diner's owner", () => {
+  // The allergen writes touch the soup, the salad, and the lemonade, by
+  // id, write only the two lists and the check, and check in a statement
+  // of their own, since one statement that changes a list and checks it
+  // ends unchecked (D-148).
+  it("lists and checks three dishes' allergens by id, the check in its own statement, as CI Diner's owner", () => {
     const lists = [
       ...code.matchAll(/update public\.items i\n  set allergens =[^;]*;/g),
     ].map((match) => match[0]);
@@ -102,10 +121,10 @@ describe("CI Diner's data file (D-126)", () => {
         /update public\.items i\n  set allergens_reviewed = true[^;]*;/g,
       ),
     ].map((match) => match[0]);
-    expect(lists).toHaveLength(2);
-    expect(checks).toHaveLength(2);
+    expect(lists).toHaveLength(3);
+    expect(checks).toHaveLength(3);
     for (const statement of [...lists, ...checks]) {
-      expect(statement).toMatch(/where i\.id = (soup|salad)/);
+      expect(statement).toMatch(/where i\.id = (soup|salad|lemonade)/);
       expect(statement).not.toMatch(
         /\b(name|sort|description|note|price_kind|price_cents|allergens_reviewed_by|allergens_reviewed_at)\s*=/,
       );
@@ -178,18 +197,22 @@ describe("CI Diner's data file (D-126)", () => {
     }
   });
 
-  // Publish (migration 12): Dinner is published through publish_menu() as
-  // CI Diner's owner, only when it is not published or its draft differs
-  // from what was published, so a second run writes nothing; Lunch and
-  // Drinks stay unpublished, and nothing is ever unpublished.
-  it("publishes Dinner through publish_menu() only when it is not published or changed, and unpublishes nothing", () => {
+  // Publish (migration 12): Dinner and Drinks are published through
+  // publish_menu() as CI Diner's owner, each only when it is not published
+  // or its draft differs from what was published, so a second run writes
+  // nothing; Lunch stays unpublished, and nothing is ever unpublished.
+  it("publishes Dinner and Drinks through publish_menu() only when not published or changed, and unpublishes nothing", () => {
     const presses = [...code.matchAll(/publish_menu\(([^)]*)\)/g)].map(
       (match) => match[1],
     );
-    expect(presses).toEqual(["dinner"]);
-    expect(code).toMatch(
-      /if exists \(\s*select 1 from public\.menu_publish_states\(diner\) s\s*where s\.menu = dinner and \(not s\.published or s\.changed\)\s*\) then\s*perform public\.publish_menu\(dinner\);/,
-    );
+    expect(presses).toEqual(["dinner", "drinks"]);
+    for (const menu of ["dinner", "drinks"]) {
+      expect(code).toMatch(
+        new RegExp(
+          `if exists \\(\\s*select 1 from public\\.menu_publish_states\\(diner\\) s\\s*where s\\.menu = ${menu} and \\(not s\\.published or s\\.changed\\)\\s*\\) then\\s*perform public\\.publish_menu\\(${menu}\\);`,
+        ),
+      );
+    }
     expect(code).not.toMatch(/unpublish_menu/);
     expect(code).not.toMatch(/published_snapshot\s*=/);
     expect(code).not.toMatch(/\bpublished\s*=\s*(true|false)/);

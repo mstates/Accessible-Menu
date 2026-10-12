@@ -97,6 +97,12 @@ const fixtureSchema = z.object({
     }),
     dish: z.object({ id: z.string(), lead: z.string(), options: z.number() }),
   }),
+  // The names of the published menus, in the order the dashboard joins
+  // them (D-171).
+  published: z.array(z.string()),
+  // Every live section of the restaurant, across its menus: what a dish's
+  // move lists, less the dish's own (D-129).
+  sectionsInRestaurant: z.number(),
 });
 
 export type OwnerFixture = z.infer<typeof fixtureSchema>;

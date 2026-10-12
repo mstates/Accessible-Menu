@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { parseTime, TIME_PATTERN } from "./time";
+import {
+  formatTimeRange,
+  parseTime,
+  TIME_PATTERN,
+  type TimeCopy,
+} from "./time";
 import type { Day } from "./timezones";
 
 // Opening hours (D-92). One object keyed by day, each day a list of up to two
@@ -271,4 +276,66 @@ export function dayEnd(ranges: readonly TimeRange[]): DayEnd | null {
   const hh = String(Math.floor(onDay / 60)).padStart(2, "0");
   const mm = String(onDay % 60).padStart(2, "0");
   return { daysOn: end >= MINUTES_IN_DAY ? 1 : 0, time: `${hh}:${mm}` };
+}
+
+// The words the week needs. The locale's copy object satisfies it.
+export type HoursWordsCopy = {
+  days: Record<DayKey, string>;
+  line: string;
+  closed: string;
+  allDay: string;
+  dayRun: string;
+  twoRanges: string;
+  range: string;
+};
+
+// The whole week in words for the diner page (Spec 3.1, D-92), one line
+// per run of days with the same times, Monday first: "Monday to Friday,
+// 11 am to 9 pm.", "Saturday, 5 pm to 2 am.", "Sunday, open 24 hours.",
+// "Tuesday, 11 am to 2 pm and 5 to 9 pm.", "Monday, closed." Two
+// consecutive days are listed, three or more are a run. The whole week,
+// never today's hours alone, so the line changes with no clock.
+export function hoursSentences(
+  hours: Hours,
+  copy: HoursWordsCopy,
+  time: TimeCopy,
+  lang: string,
+): string[] {
+  const put = (template: string, values: Record<string, string>) =>
+    template.replace(
+      /\{(\w+)\}/g,
+      (match, key: string) => values[key] ?? match,
+    );
+  const runs: { days: DayKey[]; ranges: TimeRange[] }[] = [];
+  for (const key of DAY_KEYS) {
+    const ranges = hours[key];
+    const last = runs[runs.length - 1];
+    if (last && JSON.stringify(last.ranges) === JSON.stringify(ranges)) {
+      last.days.push(key);
+    } else {
+      runs.push({ days: [key], ranges });
+    }
+  }
+  return runs.map(({ days, ranges }) => {
+    const names = days.map((key) => copy.days[key]);
+    const first = names[0] ?? "";
+    const last = names[names.length - 1] ?? first;
+    const when =
+      names.length >= 3
+        ? put(copy.dayRun, { first, last })
+        : new Intl.ListFormat(lang, { type: "conjunction" }).format(names);
+    if (ranges.length === 0) return put(copy.closed, { days: when });
+    if (isOpenAllDay(ranges)) return put(copy.allDay, { days: when });
+    const spans = ranges.map((range) =>
+      formatTimeRange(range.open, range.close, copy.range, time),
+    );
+    const text =
+      spans.length === 1
+        ? (spans[0] ?? "")
+        : put(copy.twoRanges, {
+            first: spans[0] ?? "",
+            second: spans[1] ?? "",
+          });
+    return put(copy.line, { days: when, hours: text });
+  });
 }

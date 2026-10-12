@@ -2,11 +2,13 @@
 
 import { refresh } from "next/cache";
 import { z } from "zod";
+import { expireRestaurant } from "@/core/cache";
 import {
   writeOwnerDishSchedule,
   writeOwnerDishTags,
   type DishWriteError,
 } from "@/core/supabase/dishes";
+import { normalizeMenuCode } from "@/domain/menu-url";
 import {
   normalizeSchedule,
   parseSchedule,
@@ -128,6 +130,8 @@ export async function setDishSchedule(
     normalizeSchedule(next.schedule),
     shown.schedule,
   );
+  // A schedule reaches diners without Publish (D-84, D-159).
+  if (result.ok) expireRestaurant(normalizeMenuCode(rawCode));
   refresh();
   if (!result.ok) {
     return { ok: false, problem: fromScheduleWrite(result.error) };

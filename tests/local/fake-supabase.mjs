@@ -30,7 +30,12 @@ const user = {
   user_metadata: {},
   created_at: "2026-10-01T00:00:00Z",
 };
-const restaurant = {
+// The stand-in's restaurant, its live details as CI Diner's data file
+// sets them (the diner page task): the time zone, a closed Monday, a split
+// Tuesday, an overnight Saturday, an around-the-clock Sunday, and the
+// shared-fryer sentence, so the details and diner checks run on the same
+// hours here as on the preview. A reset puts the details back.
+const restaurantDefaults = {
   id: "11111111-1111-4111-8111-111111111111",
   code: "12345678",
   name: "Stand-in Diner (test restaurant, not real)",
@@ -40,13 +45,45 @@ const restaurant = {
   postal_code: "19601",
   phone: null,
   website: null,
-  hours: null,
+  hours: {
+    mon: [],
+    tue: [
+      { open: "11:00", close: "14:00" },
+      { open: "17:00", close: "21:00" },
+    ],
+    wed: [{ open: "11:00", close: "21:00" }],
+    thu: [{ open: "11:00", close: "21:00" }],
+    fri: [{ open: "11:00", close: "21:00" }],
+    sat: [{ open: "17:00", close: "02:00" }],
+    sun: [{ open: "00:00", close: "00:00" }],
+  },
   timezone: "America/New_York",
   allergen_note: null,
-  prep_notes: [],
+  prep_notes: ["shared-fryer"],
   status: "trial",
   stripe_customer_id: null,
+  city_slug: null,
+  country: "US",
+  enabled_languages: [],
+  show_icons: false,
 };
+const restaurant = structuredClone(restaurantDefaults);
+// Restaurants a test created through create_restaurant(), each with a
+// code of its own, drawn at random as generate_menu_code() draws one, so no
+// cached page from an earlier run can answer for it; a reset or
+// remove-created drops them.
+let created = [];
+// The code the next create_restaurant() will mint, once a test has asked
+// for it through the next-code knob, so the test can read that code's page
+// before the restaurant exists.
+let nextCode = null;
+const restaurants = () => [restaurant, ...created];
+function freshCode() {
+  for (;;) {
+    const code = String(10_000_000 + Math.floor(Math.random() * 90_000_000));
+    if (!restaurants().some((row) => row.code === code)) return code;
+  }
+}
 
 let clock = Date.parse("2026-10-04T12:00:00Z");
 const stamp = () => new Date((clock += 1000)).toISOString();
@@ -67,9 +104,11 @@ function seed(withDishes = true) {
   ));
 }
 seed();
-// Knobs a test can turn: delay every Data API write, or fail the next one.
+// Knobs a test can turn: delay every Data API write, or fail the next one,
+// or fail the next reads of the published views.
 let delayMs = 0;
 let failNext = 0;
+let failReads = 0;
 // Names whose next insert fails, on menus or sections, once each.
 let failNames = new Map();
 // Every write the stand-in took, for a test that must prove none was sent.
@@ -602,6 +641,103 @@ function optionProblem(row) {
 const raised = (res, message) =>
   send(res, 400, { code: "P0001", message, details: null, hint: null });
 
+// Publish and Unpublish as publish_menu() and unpublish_menu() do them
+// (migration 12): the flag, the time, and the snapshot together, refused
+// by name for a stranger's or a deleted menu, and while a size has no name
+// or no price. Null when it landed.
+function publish(menuId) {
+  const menu = menus.find(
+    (m) =>
+      m.id === menuId &&
+      m.restaurant_id === restaurant.id &&
+      m.deleted_at === null,
+  );
+  if (!menu) return "publish_not_found";
+  if (publishProblems(store(), menuId).length > 0) return "publish_blocked";
+  menu.published = true;
+  menu.published_at = stamp();
+  menu.published_snapshot = menuSnapshot(store(), menuId);
+  return null;
+}
+
+function unpublish(menuId) {
+  const menu = menus.find(
+    (m) =>
+      m.id === menuId &&
+      m.restaurant_id === restaurant.id &&
+      m.deleted_at === null,
+  );
+  if (!menu) return "unpublish_not_found";
+  menu.published = false;
+  menu.published_at = null;
+  menu.published_snapshot = null;
+  return null;
+}
+
+// The three views diners read (migration 12), over every restaurant the
+// stand-in holds.
+const readable = (row) => row.status === "trial" || row.status === "active";
+const publishedMenuRows = (row) =>
+  menus.filter(
+    (m) => m.restaurant_id === row.id && m.published && m.deleted_at === null,
+  );
+
+function publishedRestaurants() {
+  return restaurants()
+    .filter((row) => readable(row) && publishedMenuRows(row).length > 0)
+    .map((row) => ({
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      city: row.city,
+      city_slug: row.city_slug,
+      country: row.country,
+      hours: row.hours,
+      website: row.website,
+      timezone: row.timezone,
+      enabled_languages: row.enabled_languages,
+      allergen_note: row.allergen_note,
+      prep_notes: row.prep_notes,
+      show_icons: row.show_icons,
+    }));
+}
+
+function publishedMenus() {
+  return restaurants()
+    .filter(readable)
+    .flatMap((row) =>
+      publishedMenuRows(row).map((m) => ({
+        id: m.id,
+        restaurant_id: row.id,
+        code: row.code,
+        sort: m.sort,
+        published_at: m.published_at,
+        published_snapshot: m.published_snapshot,
+      })),
+    );
+}
+
+function publishedItemStates() {
+  return publishedMenus().flatMap((pm) =>
+    (pm.published_snapshot?.sections ?? [])
+      .flatMap((section) => section.items)
+      .flatMap((dish) => {
+        const row = items.find((i) => i.id === dish.id);
+        return row
+          ? [
+              {
+                id: row.id,
+                menu_id: pm.id,
+                available: row.available,
+                sold_out_at: row.sold_out_at,
+                special_schedule: row.special_schedule,
+              },
+            ]
+          : [];
+      }),
+  );
+}
+
 const liveSectionsOf = (menuId) =>
   sections.filter((s) => s.menu_id === menuId && s.deleted_at === null);
 const liveItemsOf = (sectionId) =>
@@ -838,10 +974,54 @@ const server = http.createServer(async (req, res) => {
     // Test knobs.
     if (path === "/__test/reset") {
       seed(params.get("dishes") !== "0");
+      Object.assign(restaurant, structuredClone(restaurantDefaults));
+      created = [];
       delayMs = 0;
       failNext = 0;
+      failReads = 0;
       failNames = new Map();
       writes = [];
+      return send(res, 200, { ok: true });
+    }
+    // The diner page's knobs (the diner page task).
+    if (path === "/__test/reset-details") {
+      Object.assign(restaurant, structuredClone(restaurantDefaults));
+      return send(res, 200, { ok: true });
+    }
+    if (path === "/__test/remove-created") {
+      created = [];
+      nextCode = null;
+      return send(res, 200, { ok: true });
+    }
+    if (path === "/__test/next-code") {
+      nextCode = freshCode();
+      return send(res, 200, { code: nextCode });
+    }
+    if (path === "/__test/set-status") {
+      restaurant.status = params.get("status") ?? "trial";
+      return send(res, 200, { ok: true });
+    }
+    if (path === "/__test/set-sold-out") {
+      const dish = items.find((i) => i.id === params.get("dish"));
+      if (!dish) return send(res, 404, { message: "no such dish" });
+      dish.available = true;
+      dish.sold_out_at = params.get("at") ?? new Date().toISOString();
+      return send(res, 200, dish);
+    }
+    if (path === "/__test/publish") {
+      const problem = publish(params.get("menu"));
+      return problem
+        ? send(res, 400, { message: problem })
+        : send(res, 200, { ok: true });
+    }
+    if (path === "/__test/unpublish") {
+      const problem = unpublish(params.get("menu"));
+      return problem
+        ? send(res, 400, { message: problem })
+        : send(res, 200, { ok: true });
+    }
+    if (path === "/__test/fail-read") {
+      failReads = Number(params.get("times") ?? "1");
       return send(res, 200, { ok: true });
     }
     if (path === "/__test/items") return send(res, 200, items);
@@ -1069,11 +1249,77 @@ const server = http.createServer(async (req, res) => {
 
     // Data API.
     const reading = req.method === "GET" || req.method === "HEAD";
+    // The three views anon reads and the one function it runs (migration
+    // 12, migration 13): a published restaurant on trial or active with a
+    // published menu that is not deleted, each such menu with its snapshot
+    // by code and sort, each published dish's state by the menu's id, and
+    // the name behind a code whatever the status. A read told to fail
+    // answers 500, so a test can prove a failed read is never cached.
+    const publishedView =
+      path === "/rest/v1/published_restaurants" ||
+      path === "/rest/v1/published_menus" ||
+      path === "/rest/v1/published_item_states";
+    if (publishedView && reading && failReads > 0) {
+      failReads -= 1;
+      return send(res, 500, {
+        code: "XX000",
+        message: "the stand-in was told to fail a read",
+      });
+    }
+    if (path === "/rest/v1/published_restaurants" && reading) {
+      const rows = publishedRestaurants().filter((row) => matches(row, params));
+      return respondRows(req, res, rows, params);
+    }
+    if (path === "/rest/v1/published_menus" && reading) {
+      const rows = publishedMenus().filter((row) => matches(row, params));
+      return respondRows(req, res, ordered(rows, params), params);
+    }
+    if (path === "/rest/v1/published_item_states" && reading) {
+      const rows = publishedItemStates().filter((row) => matches(row, params));
+      return respondRows(req, res, rows, params);
+    }
+    if (
+      path === "/rest/v1/rpc/restaurant_name_by_code" &&
+      req.method === "POST"
+    ) {
+      const { p_code } = await body(req);
+      const found = restaurants().find((row) => row.code === p_code);
+      return send(res, 200, found ? [{ name: found.name }] : []);
+    }
+    // create_restaurant() (migration 2): the caller's new restaurant with
+    // the next stand-in code, so a test can prove a code's page clears
+    // once the restaurant exists.
+    if (path === "/rest/v1/rpc/create_restaurant" && req.method === "POST") {
+      const input = await body(req);
+      writes.push(`rpc create_restaurant ${JSON.stringify(input.p_name)}`);
+      if (await knobs(res)) return;
+      if (created.length >= 2) return raised(res, "restaurant_cap");
+      const code = nextCode ?? freshCode();
+      nextCode = null;
+      const row = {
+        ...structuredClone(restaurantDefaults),
+        id: randomUUID(),
+        code,
+        name: input.p_name,
+        address: input.p_address,
+        city: input.p_city,
+        region: input.p_region,
+        postal_code: input.p_postal_code,
+        phone: input.p_phone ?? null,
+        website: input.p_website ?? null,
+        hours: input.p_hours ?? null,
+        timezone: input.p_timezone,
+        allergen_note: input.p_allergen_note ?? null,
+        prep_notes: input.p_prep_notes ?? [],
+      };
+      created.push(row);
+      return respondRows(req, res, [row], params);
+    }
     if (path === "/rest/v1/restaurants" && reading) {
       return respondRows(
         req,
         res,
-        [restaurant].filter((row) => matches(row, params)),
+        restaurants().filter((row) => matches(row, params)),
         params,
       );
     }
@@ -1082,17 +1328,19 @@ const server = http.createServer(async (req, res) => {
       const payload = await body(req);
       writes.push(`PATCH restaurants ${JSON.stringify(payload)}`);
       if (await knobs(res)) return;
-      const found = [restaurant].filter((row) => matches(row, params));
+      const found = restaurants().filter((row) => matches(row, params));
       for (const row of found) Object.assign(row, payload);
       return respondRows(req, res, found, params);
     }
     if (path === "/rest/v1/owners") {
-      return send(res, 200, [
-        {
-          restaurant_id: restaurant.id,
-          restaurants: { code: restaurant.code },
-        },
-      ]);
+      return send(
+        res,
+        200,
+        restaurants().map((row) => ({
+          restaurant_id: row.id,
+          restaurants: { code: row.code },
+        })),
+      );
     }
     if (path === "/rest/v1/menus") {
       if (reading) {
@@ -1191,19 +1439,8 @@ const server = http.createServer(async (req, res) => {
       const { p_menu } = await body(req);
       writes.push(`rpc publish_menu ${p_menu}`);
       if (await knobs(res)) return;
-      const menu = menus.find(
-        (m) =>
-          m.id === p_menu &&
-          m.restaurant_id === restaurant.id &&
-          m.deleted_at === null,
-      );
-      if (!menu) return raised(res, "publish_not_found");
-      if (publishProblems(store(), p_menu).length > 0) {
-        return raised(res, "publish_blocked");
-      }
-      menu.published = true;
-      menu.published_at = stamp();
-      menu.published_snapshot = menuSnapshot(store(), p_menu);
+      const problem = publish(p_menu);
+      if (problem) return raised(res, problem);
       res.writeHead(204);
       return res.end();
     }
@@ -1211,16 +1448,8 @@ const server = http.createServer(async (req, res) => {
       const { p_menu } = await body(req);
       writes.push(`rpc unpublish_menu ${p_menu}`);
       if (await knobs(res)) return;
-      const menu = menus.find(
-        (m) =>
-          m.id === p_menu &&
-          m.restaurant_id === restaurant.id &&
-          m.deleted_at === null,
-      );
-      if (!menu) return raised(res, "unpublish_not_found");
-      menu.published = false;
-      menu.published_at = null;
-      menu.published_snapshot = null;
+      const problem = unpublish(p_menu);
+      if (problem) return raised(res, problem);
       res.writeHead(204);
       return res.end();
     }

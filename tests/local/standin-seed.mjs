@@ -72,6 +72,21 @@ export function seedStore({ restaurant, user, stamp }, withDishes = true) {
   }));
   const starters = sections[0];
   const mains = sections[1];
+  // Drinks holds Soft drinks with Lemonade, as CI Diner's data file gives
+  // it (the diner page task), so the diner page has a switcher and a
+  // second published menu's page; Lunch stays empty.
+  const drinks = menus[2];
+  const soft = {
+    id: randomUUID(),
+    menu_id: drinks.id,
+    restaurant_id: restaurant.id,
+    name: "Soft drinks",
+    sort: 1,
+    note: null,
+    deleted_at: null,
+    created_at: stamp(),
+  };
+  sections.push(soft);
   // Priced one way each, as CI Diner's data file prices them (D-139): the
   // soup by size, the salad at one price, the bread at market price. With
   // their allergens, as the file lists them (D-148): the soup checked with
@@ -166,6 +181,33 @@ export function seedStore({ restaurant, user, stamp }, withDishes = true) {
       created_at: stamp(),
     });
   }
+  if (withDishes) {
+    items.push({
+      id: randomUUID(),
+      section_id: soft.id,
+      restaurant_id: restaurant.id,
+      name: "Lemonade",
+      description: null,
+      price_kind: "one",
+      price_cents: 300,
+      calories_low: null,
+      calories_high: null,
+      cooked_to_order: false,
+      note: null,
+      allergens: [],
+      custom_allergens: [],
+      allergens_reviewed: true,
+      allergens_reviewed_by: user.id,
+      allergens_reviewed_at: stamp(),
+      dietary_tags: [],
+      available: true,
+      sold_out_at: null,
+      special_schedule: null,
+      sort: 1,
+      deleted_at: null,
+      created_at: stamp(),
+    });
+  }
   const soup = items[0];
   const salad = items[1];
   const sizes = (
@@ -228,5 +270,8 @@ export function seedStore({ restaurant, user, stamp }, withDishes = true) {
   dinner.published = true;
   dinner.published_at = stamp();
   dinner.published_snapshot = menuSnapshot(store, dinner.id);
+  drinks.published = true;
+  drinks.published_at = stamp();
+  drinks.published_snapshot = menuSnapshot(store, drinks.id);
   return store;
 }

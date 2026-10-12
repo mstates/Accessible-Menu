@@ -56,32 +56,10 @@ export type Item = {
   note?: string;
 };
 
-export type Section = {
-  id: string;
-  name: string;
-  note?: string;
-  items: Item[];
-};
-
-export type Menu = {
-  id: string;
-  name: string;
-  sections: Section[];
-};
-
-export type City = {
-  slug: string;
-  name: string;
-};
-
+// What the allergen note reads of a restaurant.
 export type Restaurant = {
-  slug: string;
   name: string;
-  city: City;
-  hours?: string;
-  website?: string;
   allergenNote: string | null;
   prepNotes: PrepNoteId[];
   region: AllergenRegion;
-  menus: Menu[];
 };

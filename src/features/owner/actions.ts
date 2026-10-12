@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { en } from "@/copy";
+import { expireRestaurant } from "@/core/cache";
 import {
   createOwnerRestaurant,
   updateOwnerRestaurant,
@@ -130,6 +131,8 @@ export async function createRestaurant(
   if (!result.ok) {
     return { status: "error", message: writeErrorMessage(result.error) };
   }
+  // A page for this code may be cached as not found; it clears here.
+  expireRestaurant(result.restaurant.code);
   redirect(restaurantDetailsPath(result.restaurant.code, { created: true }));
 }
 
@@ -156,5 +159,8 @@ export async function updateRestaurant(
   if (!result.ok) {
     return { status: "error", message: writeErrorMessage(result.error) };
   }
+  // Details save live (D-82): the diner pages read them on their next
+  // request.
+  expireRestaurant(code);
   redirect(restaurantDetailsPath(code, { saved: Date.now() }));
 }

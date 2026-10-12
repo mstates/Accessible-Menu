@@ -1,3 +1,4 @@
+import { loadEnvConfig } from "@next/env";
 import { existsSync } from "node:fs";
 import { defineConfig, devices, type Project } from "@playwright/test";
 import { ownerEnv, ownerStatePath } from "./tests/a11y/owner-env";
@@ -9,11 +10,30 @@ const baseURL = process.env.A11Y_BASE_URL ?? "http://localhost:3100";
 // Two scopes (D-100). The default scans the public pages signed out, the
 // same locally and in CI. A11Y_SCOPE=owner scans the owner pages signed in
 // as the test owner and needs five values; missing ones fail the run and
-// name themselves. Only the owner scope reads .env.local, where those values
-// live locally, so the public run never carries that file's other keys.
+// name themselves. The owner scope reads .env.local, where those values
+// live locally. The public scope takes only the two public Supabase names
+// from it, through Next's own loader, so a local build renders the diner
+// pages from the live database as the preview does and carries none of
+// the file's other keys.
 const ownerScope = process.env.A11Y_SCOPE === "owner";
 if (ownerScope && existsSync(".env.local")) process.loadEnvFile(".env.local");
 if (ownerScope) ownerEnv();
+if (!ownerScope && existsSync(".env.local")) {
+  const publicNames = [
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+  ] as const;
+  const before = new Set(Object.keys(process.env));
+  const quiet = { info() {}, error() {} };
+  const { combinedEnv } = loadEnvConfig(process.cwd(), false, quiet);
+  for (const key of Object.keys(process.env)) {
+    if (!before.has(key)) delete process.env[key];
+  }
+  for (const name of publicNames) {
+    const value = combinedEnv[name];
+    if (value && !before.has(name)) process.env[name] = value;
+  }
+}
 
 // A device profile Playwright ships, or a clear failure if it is gone.
 function device(name: string) {

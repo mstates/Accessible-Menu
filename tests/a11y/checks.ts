@@ -320,12 +320,42 @@ export async function setLargestText(page: Page) {
 }
 
 export async function expectRootAtLargest(page: Page) {
+  await expectRootAt(page, largestText.standard);
+}
+
+// A root past 200%, for the diner pages (Q-42): iOS's largest accessibility
+// text size makes the root about 53px. Call before the next load, as
+// setLargestText is. Chromium takes the default font size itself; WebKit
+// and Firefox take a root set to the matching percentage as the page is
+// parsed.
+export async function setRootText(page: Page, px: number) {
+  if (engine(page) === "chromium") {
+    const session = await page.context().newCDPSession(page);
+    await session.send("Page.setFontSizes", {
+      fontSizes: {
+        standard: px,
+        fixed: Math.round((px * largestText.fixed) / largestText.standard),
+      },
+    });
+    return;
+  }
+  const percent = (px / 16) * 100;
+  await page.addInitScript((size: number) => {
+    document.addEventListener("DOMContentLoaded", () => {
+      const style = document.createElement("style");
+      style.textContent = `html { font-size: ${size}% !important; }`;
+      document.head.append(style);
+    });
+  }, percent);
+}
+
+export async function expectRootAt(page: Page, px: number) {
   expect(
     await page.evaluate(
       () => getComputedStyle(document.documentElement).fontSize,
     ),
     "html follows the default font size",
-  ).toBe("32px");
+  ).toBe(`${px}px`);
 }
 
 // A link or button a page is expected to show, by its role and its whole

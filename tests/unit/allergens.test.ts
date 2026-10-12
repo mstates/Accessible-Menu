@@ -113,36 +113,43 @@ describe("the restaurant allergen note (D-35)", () => {
   });
 });
 
-describe("the confirmation line (D-36)", () => {
-  const menu = (items: { allergensReviewed: boolean }[]) => ({
-    sections: [{ items }],
-  });
-
-  it("confirms every dish at one hundred percent reviewed", () => {
-    const line = confirmationLine(
-      menu([reviewed([]), reviewed(["soy"])]),
-      copy,
-    );
-    expect(line.unconfirmed).toBe(0);
-    expect(line.text).toBe("Allergens confirmed for every dish.");
+describe("the confirmation line (D-36, D-166)", () => {
+  it("confirms every dish only when no shown dish and no shown option is unchecked", () => {
+    const line = confirmationLine({ dishes: 0, options: 0 }, copy);
+    expect(line).toEqual({
+      dishes: 0,
+      options: 0,
+      text: "Allergens confirmed for every dish.",
+    });
   });
 
   it("uses the singular for one unconfirmed dish", () => {
-    const line = confirmationLine(menu([reviewed([]), unreviewed()]), copy);
-    expect(line.unconfirmed).toBe(1);
-    expect(line.text).toBe(
+    expect(confirmationLine({ dishes: 1, options: 0 }, copy).text).toBe(
       "We're still confirming allergens for 1 dish. Ask your server about that.",
     );
   });
 
-  it("counts every unconfirmed dish across sections", () => {
-    const line = confirmationLine(
-      menu([unreviewed(), unreviewed(), reviewed([])]),
-      copy,
-    );
-    expect(line.unconfirmed).toBe(2);
-    expect(line.text).toBe(
+  it("counts every unconfirmed dish", () => {
+    expect(confirmationLine({ dishes: 2, options: 0 }, copy).text).toBe(
       "We're still confirming allergens for 2 dishes. Ask your server about those.",
+    );
+  });
+
+  it("names unchecked options alone when every dish is checked", () => {
+    expect(confirmationLine({ dishes: 0, options: 1 }, copy).text).toBe(
+      "We're still confirming allergens for 1 option. Ask your server about that.",
+    );
+    expect(confirmationLine({ dishes: 0, options: 3 }, copy).text).toBe(
+      "We're still confirming allergens for 3 options. Ask your server about those.",
+    );
+  });
+
+  it("names dishes and options together", () => {
+    expect(confirmationLine({ dishes: 1, options: 1 }, copy).text).toBe(
+      "We're still confirming allergens for 1 dish and 1 option. Ask your server about those.",
+    );
+    expect(confirmationLine({ dishes: 12, options: 2 }, copy).text).toBe(
+      "We're still confirming allergens for 12 dishes and 2 options. Ask your server about those.",
     );
   });
 });

@@ -98,12 +98,19 @@ test("an unpublished menu's page says so and shows Publish alone, before the sec
   await expectNoAxeViolations(page);
 });
 
-test("the dashboard says which menu is published", async ({ page }) => {
-  const { withSections } = ownerFixture();
+test("the dashboard says which menus are published", async ({ page }) => {
+  const { withSections, published } = ownerFixture();
+  expect(published).toContain(withSections.name);
+  const list = new Intl.ListFormat("en", { type: "conjunction" });
   await open(page, dashboardPath);
   await expect(
     page.getByText(
-      fill(strings.summary.published.one, { names: withSections.name }),
+      fill(
+        published.length === 1
+          ? strings.summary.published.one
+          : strings.summary.published.other,
+        { names: list.format(published) },
+      ),
       { exact: true },
     ),
   ).toBeVisible();

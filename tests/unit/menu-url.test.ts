@@ -7,6 +7,7 @@ import {
   normalizeMenuCode,
   parseMenuOrigin,
   resolveMenuOrigin,
+  resolveMenuPath,
   statementPath,
 } from "../../src/domain/menu-url";
 
@@ -42,6 +43,53 @@ describe("the one URL builder (D-88)", () => {
     expect(menuUrl("https://menus.example", "47293158")).toBe(
       "https://menus.example/m/47293158",
     );
+  });
+
+  it("names a menu by its id under the code, never its name", () => {
+    const id = "3f9a1c2e-7b3d-4c9e-9a1b-2c3d4e5f6a7b";
+    expect(menuPath("47293158", id)).toBe(`/m/47293158/${id}`);
+    expect(menuUrl("https://menus.example", "47293158", id)).toBe(
+      `https://menus.example/m/47293158/${id}`,
+    );
+  });
+});
+
+describe("the one resolver (D-88)", () => {
+  const id = "3f9a1c2e-7b3d-4c9e-9a1b-2c3d4e5f6a7b";
+
+  it("reads the bare code and the code with a menu's id", () => {
+    expect(resolveMenuPath(["47293158"])).toEqual({
+      kind: "menu",
+      code: "47293158",
+      menuId: null,
+    });
+    expect(resolveMenuPath(["47293158", id])).toEqual({
+      kind: "menu",
+      code: "47293158",
+      menuId: id,
+    });
+  });
+
+  it("normalizes the code and the id before the check", () => {
+    expect(resolveMenuPath([" 47293158 ", id.toUpperCase()])).toEqual({
+      kind: "menu",
+      code: "47293158",
+      menuId: id,
+    });
+  });
+
+  it.each([
+    [[]],
+    [["demo"]],
+    [["07293158"]],
+    [["4729315"]],
+    [["47293158", "dinner"]],
+    [["47293158", "3f9a1c2e"]],
+    [["47293158", id, "extra"]],
+    [["47293158", ""]],
+    [["", id]],
+  ])("knows nothing of %j", (segments) => {
+    expect(resolveMenuPath(segments)).toEqual({ kind: "unknown" });
   });
 });
 

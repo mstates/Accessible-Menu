@@ -1,12 +1,12 @@
 "use client";
 
-import { Fragment } from "react";
 import { handToBox } from "../editing/hand-to-box";
 import {
   US_MAJOR_ALLERGENS,
   type AllergenCopy,
   type AllergenSentence,
 } from "@/domain/allergens";
+import { AllergenSentence as SentenceWords } from "@/ui/AllergenSentence";
 import { Button } from "@/ui/Button";
 import { Checkbox, CheckboxGroup } from "@/ui/CheckboxGroup";
 import { ComboBox } from "@/ui/ComboBox";
@@ -233,10 +233,9 @@ export function AllergenGroup({
 }
 
 // 'Diners read: "Contains milk, wheat."', with the allergen words in bold,
-// as the diner page draws them (D-35). Its text is exactly the words a
-// reader is handed as the check box's description. This is that
-// rendering's second use (the diner page's AllergenLine is the first); the
-// third lifts it to src/ui (module rule 12).
+// as the diner page draws them (D-35), through the one component in src/ui.
+// Its text is exactly the words a reader is handed as the check box's
+// description.
 function DinersRead({
   strings,
   sentence,
@@ -245,25 +244,10 @@ function DinersRead({
   sentence: AllergenSentence;
 }) {
   const [before = "", after = ""] = strings.dinersRead.split("{sentence}");
-  const words =
-    sentence.kind === "contains" ? (
-      <>
-        {sentence.lead}{" "}
-        {sentence.words.map((word, index) => (
-          <Fragment key={`${index}-${word}`}>
-            {index > 0 ? ", " : null}
-            <strong>{word}</strong>
-          </Fragment>
-        ))}
-        {"."}
-      </>
-    ) : (
-      sentence.text
-    );
   return (
     <>
       {before}
-      {words}
+      <SentenceWords sentence={sentence} />
       {after}
     </>
   );

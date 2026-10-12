@@ -60,7 +60,7 @@ const memberships = z.array(
   }),
 );
 const publishStates = z.array(
-  z.object({ menu: z.string(), published: z.boolean() }),
+  z.object({ menu: z.string(), menu_name: z.string(), published: z.boolean() }),
 );
 
 setup(
@@ -281,10 +281,9 @@ setup(
           `could not read the publish states: ${states.error.message}`,
         );
       }
+      const stateRows = publishStates.parse(states.data);
       const published = new Map(
-        publishStates
-          .parse(states.data)
-          .map((row) => [row.menu, row.published]),
+        stateRows.map((row) => [row.menu, row.published]),
       );
       if (
         published.get(withSections.id) !== true ||
@@ -325,6 +324,10 @@ setup(
             options: optionsIn.get(dishList.id) ?? 0,
           },
         },
+        published: stateRows
+          .filter((row) => row.published)
+          .map((row) => row.menu_name),
+        sectionsInRestaurant: sections.length,
       };
       writeFileSync(ownerFixturePath, JSON.stringify(fixture), { mode: 0o600 });
       writeFileSync(

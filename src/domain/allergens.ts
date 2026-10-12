@@ -15,7 +15,15 @@ export type AllergenCopy = {
   notConfirmed: string;
   noteDefault: string;
   prepNotes: Record<PrepNoteId, string>;
-  confirming: { one: string; other: string };
+  confirming: {
+    one: string;
+    other: string;
+    optionsOne: string;
+    optionsOther: string;
+    both: string;
+    dishes: { one: string; other: string };
+    options: { one: string; other: string };
+  };
   confirmedAll: string;
 };
 
@@ -101,29 +109,42 @@ export function restaurantAllergenNote(
   return [note, ...restaurant.prepNotes.map((id) => copy.prepNotes[id])];
 }
 
-export type ConfirmationLine = { unconfirmed: number; text: string };
+// What the header line counts (D-36, D-166): the dishes a diner can see
+// now whose list is not checked, and the options in their lists, and in
+// their sections' lists, that are not checked. Counted by the diner page's
+// view model from what it shows, so the counts agree with the page.
+export type ConfirmationCounts = { dishes: number; options: number };
 
-// The header line under the note (D-36).
-type ReviewState = {
-  sections: { items: Pick<Item, "allergensReviewed">[] }[];
-};
+export type ConfirmationLine = ConfirmationCounts & { text: string };
 
+function count(n: number, words: { one: string; other: string }): string {
+  return (n === 1 ? words.one : words.other).replace("{count}", String(n));
+}
+
+// The header line under the note (D-36). "Allergens confirmed for every
+// dish." only when no shown dish and no shown option is unchecked.
 export function confirmationLine(
-  menu: ReviewState,
+  counts: ConfirmationCounts,
   copy: AllergenCopy,
 ): ConfirmationLine {
-  const unconfirmed = menu.sections
-    .flatMap((section) => section.items)
-    .filter((item) => !item.allergensReviewed).length;
-  if (unconfirmed === 0) {
-    return { unconfirmed, text: copy.confirmedAll };
+  const { dishes, options } = counts;
+  const { confirming } = copy;
+  let text: string;
+  if (dishes === 0 && options === 0) {
+    text = copy.confirmedAll;
+  } else if (options === 0) {
+    text = count(dishes, confirming);
+  } else if (dishes === 0) {
+    text = count(options, {
+      one: confirming.optionsOne,
+      other: confirming.optionsOther,
+    });
+  } else {
+    text = confirming.both
+      .replace("{dishes}", count(dishes, confirming.dishes))
+      .replace("{options}", count(options, confirming.options));
   }
-  const template =
-    unconfirmed === 1 ? copy.confirming.one : copy.confirming.other;
-  return {
-    unconfirmed,
-    text: template.replace("{count}", String(unconfirmed)),
-  };
+  return { dishes, options, text };
 }
 
 // The owner side (task 4, D-148). Owners in the US see the nine (D-94,

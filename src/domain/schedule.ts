@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { isRealDay } from "./date";
 import { DAY_KEYS, dayKeyOf, type DayKey, type TimeRange } from "./hours";
-import { formatTime, TIME_PATTERN, type TimeCopy } from "./time";
+import {
+  formatTime,
+  formatTimeRange,
+  TIME_PATTERN,
+  type TimeCopy,
+} from "./time";
 import { instantOf, shiftDay, zonedDay, type Day } from "./timezones";
 
 // A special's schedule (D-159): five optional parts, an absent part meaning
@@ -382,22 +387,14 @@ function monthsPhrase(
   );
 }
 
-// "4 to 9 pm": a shared am or pm is said once, at the end. Noon and
-// midnight carry no suffix, so "noon to 3 pm" stays as it is.
+// "4 to 9 pm", through the range builder time.ts shares with the
+// restaurant's hours.
 function hoursPhrase(
   range: TimeRange,
   words: ScheduleCopy,
   time: TimeCopy,
 ): string {
-  const open = formatTime(range.open, time);
-  const close = formatTime(range.close, time);
-  const shared = [time.am, time.pm].find(
-    (suffix) => open.endsWith(` ${suffix}`) && close.endsWith(` ${suffix}`),
-  );
-  return put(words.hours, {
-    open: shared ? open.slice(0, -(shared.length + 1)) : open,
-    close,
-  });
+  return formatTimeRange(range.open, range.close, words.hours, time);
 }
 
 // The first and last day: "February 10 to March 26", or "October 16 to 31"

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { en } from "../../src/copy";
 import {
   DAY_KEYS,
   dayEnd,
@@ -6,6 +7,7 @@ import {
   emptyHours,
   hoursInputSchema,
   hoursSchema,
+  hoursSentences,
   isAllDay,
   isOpenAllDay,
   parseHours,
@@ -399,5 +401,66 @@ describe("when a day's service ends (D-160)", () => {
     expect(dayKeyOf("2026-10-09")).toBe("fri");
     expect(dayKeyOf("2026-03-08")).toBe("sun");
     expect(dayKeyOf("2026-10-12")).toBe("mon");
+  });
+});
+
+describe("the week in words (Spec 3.1, D-92)", () => {
+  const words = { ...en.menu.hours, days: en.days };
+  const lines = (hours: Hours) => hoursSentences(hours, words, en.time, "en");
+
+  it("groups runs of days with the same times and reads each shape", () => {
+    expect(
+      lines({
+        mon: [],
+        tue: [
+          { open: "11:00", close: "14:00" },
+          { open: "17:00", close: "21:00" },
+        ],
+        wed: [{ open: "11:00", close: "21:00" }],
+        thu: [{ open: "11:00", close: "21:00" }],
+        fri: [{ open: "11:00", close: "21:00" }],
+        sat: [{ open: "17:00", close: "02:00" }],
+        sun: [{ open: "00:00", close: "00:00" }],
+      }),
+    ).toEqual([
+      "Monday, closed.",
+      "Tuesday, 11 am to 2 pm and 5 to 9 pm.",
+      "Wednesday to Friday, 11 am to 9 pm.",
+      "Saturday, 5 pm to 2 am.",
+      "Sunday, open 24 hours.",
+    ]);
+  });
+
+  it("lists two days and reads noon and midnight as words", () => {
+    expect(
+      lines({
+        mon: [{ open: "12:00", close: "15:00" }],
+        tue: [{ open: "12:00", close: "15:00" }],
+        wed: [{ open: "18:00", close: "00:00" }],
+        thu: [],
+        fri: [],
+        sat: [],
+        sun: [],
+      }),
+    ).toEqual([
+      "Monday and Tuesday, noon to 3 pm.",
+      "Wednesday, 6 pm to midnight.",
+      "Thursday to Sunday, closed.",
+    ]);
+  });
+
+  it("reads a week open every day as one line", () => {
+    const every = { open: "11:00", close: "21:00" };
+    expect(
+      lines({
+        mon: [every],
+        tue: [every],
+        wed: [every],
+        thu: [every],
+        fri: [every],
+        sat: [every],
+        sun: [every],
+      }),
+    ).toEqual(["Monday to Sunday, 11 am to 9 pm."]);
   });
 });

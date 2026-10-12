@@ -52,6 +52,7 @@ function firstSectionName(page: Page) {
   return page.locator("main ul > li").first().locator('input[id$="-name"]');
 }
 
+const list = new Intl.ListFormat("en", { type: "conjunction" });
 const publishedNow = /^Published on .+\. Nothing has changed since\.$/;
 const changedNow =
   /^Published on .+\. Changes since then are not published yet\.$/;
@@ -75,11 +76,14 @@ test("a rename makes changes not published yet, Publish is said once and clears 
   await renameFirstSection(page, `${original} renamed`);
   await expect(group(page).getByText(changedNow)).toBeVisible();
 
+  // Dinner and Drinks are published, as the data file leaves CI Diner.
   await page.goto(dashboardPath);
   await page.waitForLoadState("networkidle");
   await expect(
     page.getByText(
-      fill(strings.summary.published.one, { names: withSections.name }),
+      fill(strings.summary.published.other, {
+        names: list.format([withSections.name, "Drinks"]),
+      }),
       { exact: true },
     ),
   ).toBeVisible();
@@ -108,10 +112,13 @@ test("a rename makes changes not published yet, Publish is said once and clears 
     "focus stays in the group, on Publish, once Unpublish has gone",
   ).toBeFocused();
 
+  // Drinks stays published on its own.
   await page.goto(dashboardPath);
   await page.waitForLoadState("networkidle");
   await expect(
-    page.getByText(strings.summary.none, { exact: true }),
+    page.getByText(fill(strings.summary.published.one, { names: "Drinks" }), {
+      exact: true,
+    }),
   ).toBeVisible();
 
   // As it was: the name back, then published with nothing changed since.

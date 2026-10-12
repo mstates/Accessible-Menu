@@ -12,6 +12,10 @@
 //   npm run local                    build, serve, run tests/local
 //   npm run local -- --owner-gate    then the whole owner gate, against the
 //                                    same stand-in, freshly seeded
+//   npm run local -- --public-gate   then the public gate, against the same
+//                                    stand-in, whose diner pages are the
+//                                    stand-in restaurant's; PUBLIC_GATE_PROJECTS
+//                                    narrows it, as "chromium-*" does
 //   npm run local -- --no-build      serve the build already in .next-local,
 //                                    which this script built
 //   npm run local -- --grep "<title>"
@@ -23,6 +27,7 @@
 // The build goes to .next-local, so .next, where next dev, npm run build,
 // and the gate's build go, never holds a build against the stand-in.
 import { spawn } from "node:child_process";
+import { rmSync } from "node:fs";
 import { createConnection } from "node:net";
 import { fileURLToPath } from "node:url";
 
@@ -30,9 +35,11 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 const args = process.argv.slice(2);
 const build = !args.includes("--no-build");
 const ownerGate = args.includes("--owner-gate");
+const publicGate = args.includes("--public-gate");
 // The rest is for the local specs' Playwright run, --grep among them.
 const playwrightArgs = args.filter(
-  (arg) => arg !== "--no-build" && arg !== "--owner-gate",
+  (arg) =>
+    arg !== "--no-build" && arg !== "--owner-gate" && arg !== "--public-gate",
 );
 
 const STANDIN_PORT = 54400;
@@ -144,6 +151,12 @@ try {
   if (build && (await run(bin("next"), ["build"])) !== 0) {
     throw new Error("the build against the stand-in failed");
   }
+  // The diner pages' route cache and data cache from the last run live on
+  // disk and outlast a build, so a code a test created would still answer;
+  // a fresh stand-in gets a fresh cache, as a new deployment does.
+  for (const folder of ["server/route-cache", "cache/fetch-cache"]) {
+    rmSync(`${root}.next-local/${folder}`, { recursive: true, force: true });
+  }
 
   appProcess = start(bin("next"), ["start", "-p", String(APP_PORT)], "app");
   await until(app, "the app");
@@ -161,6 +174,18 @@ try {
     const gate = await run(bin("playwright"), ["test"], {
       A11Y_SCOPE: "owner",
       A11Y_BASE_URL: app,
+    });
+    failed ||= gate !== 0;
+  }
+
+  if (publicGate) {
+    await fetch(`${standin}/__test/reset`);
+    const projects = process.env.PUBLIC_GATE_PROJECTS
+      ? [`--project=${process.env.PUBLIC_GATE_PROJECTS}`]
+      : [];
+    const gate = await run(bin("playwright"), ["test", ...projects], {
+      A11Y_BASE_URL: app,
+      A11Y_MENU_CODE: "12345678",
     });
     failed ||= gate !== 0;
   }

@@ -27,6 +27,12 @@ const allowed: Record<string, string> = {
     "hands the row to the decider and the mark to the page",
   "src/domain/snapshot.ts":
     "lists the mark among the keys a published snapshot never holds, since the diner page reads it live (migration 12)",
+  "src/core/supabase/diner.ts":
+    "reads the column from published_item_states for the diner page and hands it on, never reading its meaning",
+  "src/domain/diner.ts":
+    "carries each dish's row to the decider, which says whether the dish shows and reads sold out",
+  "src/features/diner/load.ts":
+    "maps the read's rows into the state the view model and the timed ends take",
 };
 
 function sourceFiles(dir: string): string[] {

@@ -2,6 +2,7 @@
 
 import { refresh } from "next/cache";
 import { z } from "zod";
+import { expireRestaurant } from "@/core/cache";
 import {
   listOwnerDishes,
   moveOwnerDish,
@@ -40,6 +41,7 @@ import {
   type SizeText,
 } from "@/domain/dish";
 import { mergeOrder } from "@/domain/menu";
+import { normalizeMenuCode } from "@/domain/menu-url";
 import { parsePrice } from "@/domain/money";
 import type { ListProblem } from "../editing/list-words";
 import { dishScope } from "../owner-scope";
@@ -336,6 +338,9 @@ export async function setDishAvailability(
     patch,
     expected,
   );
+  // Availability reaches diners without Publish (D-84, D-160): the
+  // restaurant's pages re-render on their next request.
+  if (result.ok) expireRestaurant(normalizeMenuCode(rawCode));
   refresh();
   if (!result.ok) {
     return refuse(

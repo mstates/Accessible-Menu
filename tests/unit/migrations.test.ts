@@ -39,6 +39,12 @@ const liveViews = viewEvents.reduce<string[]>(
   [],
 );
 
+// The functions anon may run, each with its reason: the restaurant's name
+// behind a code, exact match and one row, for the page a diner sees while
+// nothing is published or the restaurant is paused or closed (migration
+// 13, Q-84, Q-31). Everything else anon reads is a view.
+const ANON_FUNCTIONS = ["restaurant_name_by_code(text)"];
+
 // Columns that must never reach a diner page (D-26, Spec 8), who checked a
 // dish's allergens and when among them (D-148).
 const privateColumns = [
@@ -138,11 +144,18 @@ describe("migrations", () => {
     }
   });
 
-  it("never grants anon anything but the published views", () => {
-    // Schema usage is the one grant anon needs besides the views.
+  it("never grants anon anything but the published views and the one lookup", () => {
+    // Schema usage is the one grant anon needs besides the views, and the
+    // restaurant's name by code is the one function it runs (migration 13).
     const anonGrants = [...sql.matchAll(/grant [^;]*to anon[^;]*;/g)]
       .map((match) => match[0])
-      .filter((grant) => !grant.startsWith("grant usage on schema"));
+      .filter((grant) => !grant.startsWith("grant usage on schema"))
+      .filter(
+        (grant) =>
+          !ANON_FUNCTIONS.some((name) =>
+            grant.startsWith(`grant execute on function public.${name}`),
+          ),
+      );
     expect(anonGrants.length).toBeGreaterThan(0);
     for (const grant of anonGrants) {
       expect(grant).toMatch(/^grant select on/);
@@ -275,12 +288,18 @@ describe("function privileges (CLAUDE.md rule 14)", () => {
     },
   );
 
-  it("grants functions only to authenticated or service_role", () => {
+  it("grants functions only to authenticated or service_role, and the listed lookup to anon", () => {
     expect(functionGrants.length).toBeGreaterThan(0);
     for (const { grant, roles } of functionGrants) {
       expect(roles, grant).not.toEqual([]);
+      const toAnon = ANON_FUNCTIONS.some((name) =>
+        grant.startsWith(`grant execute on function public.${name} to anon;`),
+      );
       for (const role of roles) {
-        expect(["authenticated", "service_role"], grant).toContain(role);
+        expect(
+          toAnon ? ["anon"] : ["authenticated", "service_role"],
+          grant,
+        ).toContain(role);
       }
     }
   });
@@ -2303,5 +2322,50 @@ describe("the Publish migration (D-82, D-85, the Publish task)", () => {
         .map((fn) => fn.name)
         .sort(),
     ).toEqual(["publish_menu", "unpublish_menu"]);
+  });
+});
+
+describe("the diner's lookup (migration 13, Q-84, Q-31)", () => {
+  const lookup = readFileSync(
+    join(dir, "20261013000001_restaurant_name.sql"),
+    "utf8",
+  );
+
+  it("is the thirteenth migration and adds one function and nothing else", () => {
+    expect(files.indexOf("20261013000001_restaurant_name.sql")).toBe(12);
+    expect(lookup).not.toMatch(/create (table|view|policy|trigger|type)/);
+    expect(lookup).not.toMatch(/alter table/);
+    expect(lookup).not.toMatch(/drop /);
+    const callable = [
+      ...lookup.matchAll(/create (?:or replace )?function public\.(\w+)/g),
+    ].map((match) => match[1]);
+    expect(callable).toEqual(["restaurant_name_by_code"]);
+  });
+
+  it("reads the name by exact code as a stable definer with an empty search_path, whatever the status", () => {
+    expect(lookup).toMatch(
+      /create function public\.restaurant_name_by_code\(p_code text\) returns table \(name text\)\s*language sql stable security definer set search_path = '' as \$\$\s*select r\.name from public\.restaurants r where r\.code = p_code;\s*\$\$;/,
+    );
+    // The statements alone: the comments say what the function never
+    // reads, in words.
+    const statements = lookup
+      .split("\n")
+      .map((line) => line.replace(/--.*$/, ""))
+      .join("\n")
+      .replace(/'(?:[^']|'')*'/g, "''");
+    expect(statements).not.toMatch(/\bstatus\b/);
+    expect(statements).not.toMatch(/\blike\b/i);
+  });
+
+  it("is revoked by name from public and authenticated, and open to anon alone", () => {
+    expect(lookup).toMatch(
+      /revoke all on function public\.restaurant_name_by_code\(text\) from public, authenticated;\s*grant execute on function public\.restaurant_name_by_code\(text\) to anon;/,
+    );
+    const grants = [...lookup.matchAll(/grant [^;]*;/g)].map(
+      (match) => match[0],
+    );
+    expect(grants).toEqual([
+      "grant execute on function public.restaurant_name_by_code(text) to anon;",
+    ]);
   });
 });

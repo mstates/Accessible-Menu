@@ -17,6 +17,7 @@ import {
   type MoneyCopy,
   parsePrice,
   type PriceRule,
+  type PriceText,
 } from "./money";
 import type { AllergenId } from "./types";
 
@@ -128,12 +129,15 @@ export type OptionSentence = {
   allergen: AllergenSentence;
 };
 
-export function optionSentence(
-  option: OptionReading,
-  copy: OptionCopy,
+// The option's own words, before its allergen sentence: its name, its
+// added price in words when it has one, its calories in words when it has
+// them. The diner page draws these, then the allergen sentence with its
+// words in bold; the owner's "Diners read" line joins the two.
+export function optionWords(
+  option: Pick<OptionReading, "name" | "addedPriceCents" | "calories">,
+  copy: Pick<OptionCopy, "money" | "calories">,
   lang: string,
-): OptionSentence {
-  const allergen = allergenSentence(option, copy.allergens);
+): PriceText {
   const price =
     option.addedPriceCents === null
       ? null
@@ -147,8 +151,21 @@ export function optionSentence(
       .filter((part) => part !== null)
       .join(", ");
   return {
-    display: `${line(price?.display ?? null)}. ${allergen.text}`,
-    spoken: `${line(price?.spoken ?? null)}. ${allergen.text}`,
+    display: line(price?.display ?? null),
+    spoken: line(price?.spoken ?? null),
+  };
+}
+
+export function optionSentence(
+  option: OptionReading,
+  copy: OptionCopy,
+  lang: string,
+): OptionSentence {
+  const allergen = allergenSentence(option, copy.allergens);
+  const words = optionWords(option, copy, lang);
+  return {
+    display: `${words.display}. ${allergen.text}`,
+    spoken: `${words.spoken}. ${allergen.text}`,
     allergen,
   };
 }

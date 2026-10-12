@@ -1,8 +1,21 @@
 // Every user-facing string, in English. Components import from "@/copy" and
 // hold no literal copy (module rule 6). tests/unit/copy-guard.test.ts checks
 // every string here for banned words.
+// The day names, one word each, shared by the hours grid, a special's
+// schedule, and the diner page's hours in words.
+const days = {
+  mon: "Monday",
+  tue: "Tuesday",
+  wed: "Wednesday",
+  thu: "Thursday",
+  fri: "Friday",
+  sat: "Saturday",
+  sun: "Sunday",
+} as const;
+
 export const en = {
   lang: "en",
+  days,
   site: {
     name: "Accessible Menu",
     // Joins the parts of every owner page title (D-104). A placeholder until
@@ -22,7 +35,6 @@ export const en = {
   home: {
     heading: "Accessible Menu",
     lead: "A restaurant menu anyone can read.",
-    sample: "See a sample menu",
   },
   owner: {
     title: "Owner dashboard",
@@ -139,15 +151,7 @@ export const en = {
         prepNotesHint:
           "Pick any that apply. Each one shows under your allergen note.",
       },
-      days: {
-        mon: "Monday",
-        tue: "Tuesday",
-        wed: "Wednesday",
-        thu: "Thursday",
-        fri: "Friday",
-        sat: "Saturday",
-        sun: "Sunday",
-      },
+      days,
       states: {
         AL: "Alabama",
         AK: "Alaska",
@@ -1280,20 +1284,44 @@ export const en = {
       placeIn: "{lead} for {home}",
     },
   },
-  directory: {
-    title: "Accessible menus in {city}",
-    heading: "Accessible menus in {city}",
-    empty: "No menus in this city yet.",
-  },
+  // The diner page (Spec 3.1, D-81). The week in words comes one line per
+  // run of days with the same times (D-92); the notices belong to the
+  // template and are never typed by an owner (D-167).
   menu: {
     title: "{restaurant} menu",
-    hours: "Hours: {hours}",
+    // With more than one menu, each page's title names its menu (the diner
+    // page task, Michael at the plan's tabs).
+    menuTitle: "{menu} menu, {restaurant}",
+    menusLabel: "Menus",
+    hoursLabel: "Hours",
+    hours: {
+      line: "{days}, {hours}.",
+      closed: "{days}, closed.",
+      allDay: "{days}, open 24 hours.",
+      dayRun: "{first} to {last}",
+      twoRanges: "{first} and {second}",
+      range: "{open} to {close}",
+    },
     website: "Restaurant website",
     sectionsLabel: "Sections",
     sectionLink: "{section}, {items}",
     items: {
       one: "{count} item",
       other: "{count} items",
+    },
+    marketPrice: "Market price",
+    cookedToOrder: "Cooked to order.",
+    // A known code with no menu diners can read (Q-84, Q-31), and a menu id
+    // that is not one of the restaurant's published menus.
+    unavailable: "This menu isn't available right now.",
+    menuUnavailable: "That menu isn't available right now.",
+    menuUnavailableLink: "See {restaurant}'s menu.",
+    notices: {
+      calories:
+        "2,000 calories a day is used for general nutrition advice, but calorie needs vary.",
+      nutrition: "More nutrition information is available on request.",
+      advisory:
+        "Eating raw or undercooked meat, poultry, seafood, shellfish, or eggs may raise your risk of foodborne illness.",
     },
     footer: {
       feedback: "Feedback about this menu",
@@ -1330,10 +1358,19 @@ export const en = {
       "shared-kitchen":
         "Dishes made without gluten ingredients are cooked in a shared kitchen. Not suitable for celiac disease.",
     },
+    // The header line (D-36). Options in choice lists count too (D-166):
+    // the line never says every dish is confirmed while an option is not.
     confirming: {
       one: "We're still confirming allergens for 1 dish. Ask your server about that.",
       other:
         "We're still confirming allergens for {count} dishes. Ask your server about those.",
+      optionsOne:
+        "We're still confirming allergens for 1 option. Ask your server about that.",
+      optionsOther:
+        "We're still confirming allergens for {count} options. Ask your server about those.",
+      both: "We're still confirming allergens for {dishes} and {options}. Ask your server about those.",
+      dishes: { one: "1 dish", other: "{count} dishes" },
+      options: { one: "1 option", other: "{count} options" },
     },
     confirmedAll: "Allergens confirmed for every dish.",
   },

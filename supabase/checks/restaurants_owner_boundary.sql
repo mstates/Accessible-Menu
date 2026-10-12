@@ -11,7 +11,8 @@ begin;
 -- revoke cannot remove it, so each migration revokes by name. Trigger and
 -- event trigger functions cannot be called directly and are skipped; the
 -- live database has rls_auto_enable, Supabase's event trigger function,
--- which no migration created.
+-- which no migration created. Anon runs one function, the restaurant's
+-- name by code (migration 13), and nothing else.
 do $$
 declare
   open_to_anon text;
@@ -22,9 +23,18 @@ begin
   join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public'
     and p.prorettype not in ('trigger'::regtype, 'event_trigger'::regtype)
+    and p.proname <> 'restaurant_name_by_code'
     and has_function_privilege('anon', p.oid, 'execute');
   if open_to_anon is not null then
     raise exception 'FAIL: anon can run %', open_to_anon;
+  end if;
+  if not has_function_privilege('anon',
+    'public.restaurant_name_by_code(text)', 'execute') then
+    raise exception 'FAIL: anon cannot run restaurant_name_by_code';
+  end if;
+  if has_function_privilege('authenticated',
+    'public.restaurant_name_by_code(text)', 'execute') then
+    raise exception 'FAIL: authenticated can run restaurant_name_by_code';
   end if;
 
   select string_agg(p.proname, ', ' order by p.proname)
@@ -44,7 +54,27 @@ begin
     raise exception 'FAIL: authenticated can run %', open_to_authenticated;
   end if;
 
-  raise notice 'ok: no function in public is open beyond create_restaurant, is_owner, owns_object, set_menu_order, set_section_order, set_item_order, section_dish_counts, delete_with_contents, move_section, move_item, set_choice_list_order, set_choice_option_order, menu_snapshot, publish_problems, menu_publish_states, publish_menu, and unpublish_menu';
+  raise notice 'ok: no function in public is open beyond create_restaurant, is_owner, owns_object, set_menu_order, set_section_order, set_item_order, section_dish_counts, delete_with_contents, move_section, move_item, set_choice_list_order, set_choice_option_order, menu_snapshot, publish_problems, menu_publish_states, publish_menu, and unpublish_menu, and anon runs restaurant_name_by_code alone';
+end;
+$$;
+
+-- The oldest restaurant, whatever its status, for the diner block below:
+-- its code and name, and a copy of its status; the block closes it, so a
+-- closed restaurant's name still comes back (Q-31). Everything rolls back.
+do $$
+declare
+  target uuid;
+  target_code text;
+  target_name text;
+begin
+  select id, code, name into target, target_code, target_name
+  from public.restaurants order by created_at limit 1;
+  if target is null then
+    raise exception 'FAIL: no restaurant to look up';
+  end if;
+  update public.restaurants set status = 'closed' where id = target;
+  perform set_config('boundary.name_code', target_code, true);
+  perform set_config('boundary.name_name', target_name, true);
 end;
 $$;
 
@@ -139,6 +169,55 @@ begin
     raise exception 'FAIL: a stranger updated % rows', touched;
   end if;
   raise notice 'ok: a stranger updates zero rows';
+end;
+$$;
+
+-- A diner (migration 13, Q-84, Q-31): the name behind a code comes back
+-- for a closed restaurant too, one row with the name alone; an unknown
+-- code gives no row; the table itself stays closed, so anon cannot list;
+-- and the closed restaurant is not in published_restaurants.
+set local role anon;
+select set_config('request.jwt.claims', '{"role":"anon"}', true);
+
+do $$
+declare
+  target_code text := current_setting('boundary.name_code');
+  target_name text := current_setting('boundary.name_name');
+  found text;
+  rows integer;
+begin
+  select f.name into found
+  from public.restaurant_name_by_code(target_code) f;
+  if found is distinct from target_name then
+    raise exception 'FAIL: the name behind code % read % (expected %)',
+      target_code, found, target_name;
+  end if;
+  raise notice 'ok: anon reads the name behind a code, closed or not';
+
+  select count(*) into rows
+  from public.restaurant_name_by_code(target_code) f;
+  if rows <> 1 then
+    raise exception 'FAIL: the lookup returned % rows for one code', rows;
+  end if;
+  select count(*) into rows from public.restaurant_name_by_code('00000000') f;
+  if rows <> 0 then
+    raise exception 'FAIL: an unknown code returned % rows', rows;
+  end if;
+  raise notice 'ok: one row for a code, none for an unknown code';
+
+  begin
+    perform 1 from public.restaurants limit 1;
+    raise exception 'FAIL: anon read the restaurants table';
+  exception when insufficient_privilege then
+    raise notice 'ok: anon cannot list restaurants';
+  end;
+
+  if exists (
+    select 1 from public.published_restaurants pr where pr.code = target_code
+  ) then
+    raise exception 'FAIL: a closed restaurant is in published_restaurants';
+  end if;
+  raise notice 'ok: a closed restaurant is not in published_restaurants';
 end;
 $$;
 

@@ -56,6 +56,9 @@ jobs:
       - run: npm run a11y -- "--project=${{ matrix.engine }}-*"
         env:
           A11Y_BASE_URL: ${{ github.event.deployment_status.environment_url }}
+          # The diner pages the gate reads are CI Diner's, published by its
+          # data file; the code is a variable, not a secret.
+          A11Y_MENU_CODE: ${{ vars.A11Y_OWNER_CODE }}
       - name: Keep traces of failures
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

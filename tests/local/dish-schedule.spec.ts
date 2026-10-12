@@ -239,13 +239,16 @@ test("Sold out today says Saved. once, the group's line says when it comes back,
   page,
 }) => {
   const { dishes } = ownerFixture();
+  // With no hours the mark ends at midnight; the stand-in carries CI
+  // Diner's hours, so they are taken away for this check and put back at
+  // its end.
+  await knob("set-hours", { hours: "null" });
   await openDish(page, "one");
   await expect(radio(page, availability.available)).toBeChecked();
   await expect(availabilityGroup(page)).toHaveAccessibleDescription("");
   await press(page, availability.soldOut);
   await expect(radio(page, availability.soldOut)).toBeChecked();
   await expect.poll(() => said(page, saved)).toBe(1);
-  // The stand-in restaurant has no hours, so the mark ends at midnight.
   await expect(availabilityGroup(page)).toHaveAccessibleDescription(
     availability.endsMidnight,
   );
@@ -273,6 +276,7 @@ test("Sold out today says Saved. once, the group's line says when it comes back,
   await expect(radio(page, availability.available)).toBeChecked();
   await expect(availabilityGroup(page)).toHaveAccessibleDescription("");
   expect((await row(dishes.one.id)).sold_out_at).toBeNull();
+  await knob("reset-details", {});
 });
 
 test("the line reads the end of the restaurant's day from its hours: today by its time, tomorrow after midnight, and a named day when closed until then", async ({

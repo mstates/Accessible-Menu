@@ -1497,7 +1497,7 @@ test("the next dish link names the dish after this one, and the last dish says t
 test("the move lists every other section under its menu and not the dish's own, and choosing one sends nothing", async ({
   page,
 }) => {
-  const { withSections, withDishes } = ownerFixture();
+  const { withSections, withDishes, sectionsInRestaurant } = ownerFixture();
   await openDish(page, "sizes");
   const select = moveSelect(page);
   await expect(select).toHaveCount(1);
@@ -1505,7 +1505,9 @@ test("the move lists every other section under its menu and not the dish's own, 
   await select.focus();
   await page.keyboard.press("Enter");
   const options = page.getByRole("option");
-  await expect(options).toHaveCount(withSections.sections - 1);
+  // Every live section of the restaurant, Drinks' included, less the
+  // dish's own.
+  await expect(options).toHaveCount(sectionsInRestaurant - 1);
   await expect(options.filter({ hasText: withDishes.name })).toHaveCount(0);
   await expect(
     page.getByRole("group", { name: withSections.name, exact: true }),

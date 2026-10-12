@@ -1,19 +1,29 @@
 import type { Page } from "@playwright/test";
 import {
+  feedbackPath,
+  menuPath,
+  statementPath,
+} from "../../src/domain/menu-url";
+import {
   dashboardPath,
   restaurantDetailsPath,
   restaurantMenusPath,
   restaurantNewPath,
 } from "../../src/features/owner/paths";
 
+// The restaurant whose diner pages the gate reads: CI Diner (D-126) on the
+// preview, published by its data file, or the stand-in's code when
+// `npm run local -- --public-gate` names it. The second published menu's
+// page is found from the switcher when the diner spec runs.
+export const menuCode = process.env.A11Y_MENU_CODE ?? "56097672";
+
 // Every page the accessibility gate scans signed out. A 404 fails the run;
 // nothing skips. Add a page here in the same task that builds it.
 export const pages = [
   "/",
-  "/m/demo",
-  "/a11y/demo",
-  "/feedback/demo",
-  "/d/reading-pa",
+  menuPath(menuCode),
+  statementPath(menuCode),
+  feedbackPath(menuCode),
   "/app",
   "/app/sign-in",
   // An expired sign-in link, arriving with the page (D-110).

@@ -30,7 +30,14 @@
 -- section; and at least one section of Dinner that holds no dish. Dinner
 -- is published through publish_menu() as CI Diner's owner, only when it is
 -- not published or holds changes, so a second run writes nothing; Lunch
--- and Drinks stay unpublished (migration 12, the Publish task).
+-- stays unpublished (migration 12, the Publish task). For the diner page
+-- (the diner page task): CI Diner's live details, the time zone
+-- America/New_York, hours with a closed Monday, a split Tuesday, Wednesday
+-- to Friday 11 am to 9 pm, an overnight Saturday, and an around-the-clock
+-- Sunday, the shared-fryer sentence, and no allergen note of its own; and
+-- Drinks holding the section Soft drinks with the dish Lemonade at one
+-- price, checked with none, published beside Dinner, so the diner page
+-- has a menu switcher and a second menu's page.
 
 do $$
 declare
@@ -42,6 +49,9 @@ declare
   salad uuid;
   bread uuid;
   owner_uid uuid;
+  drinks uuid;
+  soft uuid;
+  lemonade uuid;
   roll_list uuid;
   roll uuid;
   dressing uuid;
@@ -58,6 +68,26 @@ begin
   select r.id into diner from public.restaurants r where r.code = '56097672';
   if diner is null then
     raise exception 'FAIL: no restaurant has code 56097672';
+  end if;
+
+  -- 0. The live details the diner page reads (the diner page task, D-82,
+  -- D-92): the time zone, the week's hours, the preparation sentence, and
+  -- no allergen note of its own, so the default sentence renders. Written
+  -- only when they differ, as the table owner, since the details are the
+  -- restaurant's and not a draft.
+  update public.restaurants r
+  set timezone = 'America/New_York',
+    hours = '{"mon":[],"tue":[{"open":"11:00","close":"14:00"},{"open":"17:00","close":"21:00"}],"wed":[{"open":"11:00","close":"21:00"}],"thu":[{"open":"11:00","close":"21:00"}],"fri":[{"open":"11:00","close":"21:00"}],"sat":[{"open":"17:00","close":"02:00"}],"sun":[{"open":"00:00","close":"00:00"}]}'::jsonb,
+    prep_notes = '{shared-fryer}',
+    allergen_note = null
+  where r.id = diner
+    and (r.timezone is distinct from 'America/New_York'
+      or r.hours is distinct from '{"mon":[],"tue":[{"open":"11:00","close":"14:00"},{"open":"17:00","close":"21:00"}],"wed":[{"open":"11:00","close":"21:00"}],"thu":[{"open":"11:00","close":"21:00"}],"fri":[{"open":"11:00","close":"21:00"}],"sat":[{"open":"17:00","close":"02:00"}],"sun":[{"open":"00:00","close":"00:00"}]}'::jsonb
+      or r.prep_notes is distinct from '{shared-fryer}'::public.prep_note[]
+      or r.allergen_note is not null);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'set CI Diner''s time zone, hours, and preparation sentence';
   end if;
 
   -- 1. The menus. A name matches the way menus_name_key reads it, whatever
@@ -494,19 +524,85 @@ begin
     raise notice 'gave Garlic bread 410 calories and marked it cooked to order';
   end if;
 
-  -- 3g. Dinner published (migration 12, the Publish task): the gate reads
-  -- Dinner's page as a published menu and the dashboard's sentence, and
-  -- never presses Publish. The press goes through publish_menu() as CI
-  -- Diner's owner, and only when Dinner is not published or its draft
-  -- differs from what was published, so a second run writes nothing. Lunch
-  -- and Drinks stay unpublished, so the gate reads an unpublished menu's
-  -- page too.
+  -- 3g. Drinks' section and dish (the diner page task): Soft drinks with
+  -- Lemonade at one price, checked with none, so the diner page has a
+  -- second published menu, a switcher, and a menu's page by its id. Lunch
+  -- stays empty and unpublished, which the gate needs.
+  select m.id into drinks from public.menus m
+  where m.restaurant_id = diner
+    and m.deleted_at is null
+    and lower(btrim(m.name)) = 'drinks';
+  if not exists (
+    select 1 from public.sections s
+    where s.menu_id = drinks
+      and s.deleted_at is null
+      and lower(btrim(s.name)) = 'soft drinks'
+  ) then
+    insert into public.sections (menu_id, name, sort)
+    values (drinks, 'Soft drinks', 1);
+    raise notice 'added the section Soft drinks to Drinks';
+  end if;
+  select s.id into soft from public.sections s
+  where s.menu_id = drinks
+    and s.deleted_at is null
+    and lower(btrim(s.name)) = 'soft drinks';
+  if not exists (
+    select 1 from public.items i
+    where i.section_id = soft
+      and i.deleted_at is null
+      and lower(btrim(i.name)) = 'lemonade'
+  ) then
+    insert into public.items (section_id, name, sort)
+    values (soft, 'Lemonade', 1);
+    raise notice 'added the dish Lemonade to Soft drinks';
+  end if;
+  select i.id into lemonade from public.items i
+  where i.section_id = soft and i.deleted_at is null
+    and lower(btrim(i.name)) = 'lemonade';
+  update public.items i
+  set price_kind = 'one', price_cents = 300
+  where i.id = lemonade
+    and (i.price_kind <> 'one' or i.price_cents is distinct from 300);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'priced Lemonade at one price';
+  end if;
+  update public.items i
+  set allergens = '{}', custom_allergens = '{}'
+  where i.id = lemonade
+    and (cardinality(i.allergens) > 0 or cardinality(i.custom_allergens) > 0);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'cleared the allergen lists of Lemonade';
+  end if;
+  update public.items i
+  set allergens_reviewed = true
+  where i.id = lemonade and not i.allergens_reviewed;
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'checked the allergens of Lemonade';
+  end if;
+
+  -- 3h. Dinner and Drinks published (migration 12, the Publish task): the
+  -- gate reads Dinner's page as a published menu and the dashboard's
+  -- sentence, and never presses Publish. Each press goes through
+  -- publish_menu() as CI Diner's owner, and only when the menu is not
+  -- published or its draft differs from what was published, so a second
+  -- run writes nothing. Lunch stays unpublished, so the gate reads an
+  -- unpublished menu's page too.
   if exists (
     select 1 from public.menu_publish_states(diner) s
     where s.menu = dinner and (not s.published or s.changed)
   ) then
     perform public.publish_menu(dinner);
     raise notice 'published Dinner';
+  end if;
+  if exists (
+    select 1 from public.menu_publish_states(diner) s
+    where s.menu = drinks and (not s.published or s.changed)
+  ) then
+    perform public.publish_menu(drinks);
+    raise notice 'published Drinks';
   end if;
 end $$;
 
@@ -585,6 +681,14 @@ live_options as (
 ),
 dinner as (
   select lm.id from live_menus lm where lower(btrim(lm.name)) = 'dinner'
+),
+drinks as (
+  select lm.id from live_menus lm where lower(btrim(lm.name)) = 'drinks'
+),
+soft as (
+  select ls.id from live_sections ls
+  join drinks on ls.menu_id = drinks.id
+  where ls.place = 1 and lower(btrim(ls.name)) = 'soft drinks'
 ),
 starters as (
   select ls.id from live_sections ls
@@ -725,12 +829,31 @@ verdict as (
       (select m.published and m.published_at is not null
          and m.published_snapshot is not null
        from public.menus m join dinner on m.id = dinner.id)
+      and (select m.published and m.published_at is not null
+         and m.published_snapshot is not null
+       from public.menus m join drinks on m.id = drinks.id)
       and not exists (
         select 1 from public.menus m
         join live_menus lm on lm.id = m.id
-        where lm.place <= 3 and lower(btrim(lm.name)) in ('lunch', 'drinks')
+        where lm.place <= 3 and lower(btrim(lm.name)) = 'lunch'
           and m.published),
       false) as published_ok,
+    coalesce(
+      exists (select 1 from soft)
+      and (select li.price_kind = 'one' and li.price_cents = 300
+         and li.allergens_reviewed
+         and cardinality(li.allergens) = 0
+         and cardinality(li.custom_allergens) = 0
+       from live_items li join soft on li.section_id = soft.id
+       where li.place = 1 and lower(btrim(li.name)) = 'lemonade'),
+      false) as drinks_ok,
+    coalesce(
+      (select r.timezone = 'America/New_York'
+         and r.prep_notes = '{shared-fryer}'::public.prep_note[]
+         and r.allergen_note is null
+         and r.hours = '{"mon":[],"tue":[{"open":"11:00","close":"14:00"},{"open":"17:00","close":"21:00"}],"wed":[{"open":"11:00","close":"21:00"}],"thu":[{"open":"11:00","close":"21:00"}],"fri":[{"open":"11:00","close":"21:00"}],"sat":[{"open":"17:00","close":"02:00"}],"sun":[{"open":"00:00","close":"00:00"}]}'::jsonb
+       from public.restaurants r join diner on r.id = diner.id),
+      false) as details_ok,
     coalesce(
       (select li.dietary_tags
          = '{vegetarian,made-without-gluten}'::public.dietary_tag[]
@@ -771,8 +894,12 @@ from (
         'not ready: House salad is not at 320 calories, Garlic bread at 410 and cooked to order, or Soup of the day''s Cup and Bowl at 180 and 290'
       when not v.showing_ok then
         'not ready: House salad is not tagged vegetarian and made without gluten ingredients, Garlic bread is not off the menu for now, or Soup of the day is not a special every day from 4 to 9 pm'
+      when not v.drinks_ok then
+        'not ready: Drinks does not hold Soft drinks with Lemonade at $3.00 checked with none'
+      when not v.details_ok then
+        'not ready: CI Diner''s time zone, hours, preparation sentence, or allergen note is not as the diner page expects'
       when not v.published_ok then
-        'not ready: Dinner is not published, or Lunch or Drinks is'
+        'not ready: Dinner or Drinks is not published, or Lunch is'
       else 'ready for the owner gate'
     end as status
   from verdict v
@@ -797,6 +924,10 @@ from (
       when lower(btrim(lm.name)) = 'dinner'
         and ls.place <= 3
         and lower(btrim(ls.name)) in ('starters', 'mains', 'desserts')
+        then 'needed'
+      when lower(btrim(lm.name)) = 'drinks'
+        and ls.place = 1
+        and lower(btrim(ls.name)) = 'soft drinks'
         then 'needed'
       else 'extra, left as it is'
     end
@@ -831,6 +962,11 @@ from (
         and lower(btrim(ls.name)) = 'mains'
         and li.place <= 1
         and lower(btrim(li.name)) = 'soup of the day'
+        then 'needed'
+      when lower(btrim(lm.name)) = 'drinks'
+        and lower(btrim(ls.name)) = 'soft drinks'
+        and li.place = 1
+        and lower(btrim(li.name)) = 'lemonade'
         then 'needed'
       else 'extra, left as it is'
     end

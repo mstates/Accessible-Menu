@@ -2,6 +2,7 @@
 
 import { refresh } from "next/cache";
 import { z } from "zod";
+import { expireRestaurant } from "@/core/cache";
 import {
   addOwnerMenu,
   deleteOwnerMenu,
@@ -20,6 +21,7 @@ import {
   type OwnerMenu,
   type PublishBlocker,
 } from "@/domain/menu";
+import { normalizeMenuCode } from "@/domain/menu-url";
 import type { ListProblem } from "./editing/list-words";
 import { menuList } from "./lists";
 import { ownerScope } from "./owner-scope";
@@ -34,7 +36,10 @@ import type { PublishFailure } from "./publishing-words";
 // input: they are checked here and in ownerScope, and row level security
 // decides whether the rows are this owner's. Publish and Unpublish go
 // through the database's two functions, which check the caller themselves
-// (migration 12).
+// (migration 12). A delete, a restore, a move, Publish, and Unpublish each
+// change what diners read (D-170, Q-79), so each clears the restaurant's
+// pages at the edge once its write has landed (core/cache); a rename and
+// an add reach diners through Publish and clear nothing.
 
 type ServerProblem = Exclude<
   ListProblem,
@@ -170,6 +175,7 @@ export async function deleteMenu(
     id.data,
     told.data,
   );
+  if (result.ok) expireRestaurant(normalizeMenuCode(rawCode));
   refresh();
   if (!result.ok) return refuse(fromWrite(result.error, "gone"));
   return { ok: true, value: null };
@@ -193,6 +199,7 @@ export async function restoreMenu(
     scope.restaurantId,
     id.data,
   );
+  if (result.ok) expireRestaurant(normalizeMenuCode(rawCode));
   refresh();
   if (!result.ok) return refuse(fromWrite(result.error, "changed"));
 
@@ -229,6 +236,7 @@ export async function orderMenus(
     scope.restaurantId,
     order.data,
   );
+  if (result.ok) expireRestaurant(normalizeMenuCode(rawCode));
   refresh();
   if (!result.ok) return refuse(fromWrite(result.error, "gone"));
   return { ok: true, value: null };
@@ -255,6 +263,7 @@ export async function publishMenu(
   const id = idSchema.safeParse(rawId);
   if (!id.success) return { ok: false, problem: { kind: "gone" } };
   const result = await publishOwnerMenu(scope.client, id.data);
+  if (result.ok) expireRestaurant(normalizeMenuCode(rawCode));
   if (!result.ok && result.error.kind === "blocked") {
     let blockers: PublishBlocker[] = [];
     try {
@@ -286,6 +295,7 @@ export async function unpublishMenu(
   const id = idSchema.safeParse(rawId);
   if (!id.success) return { ok: false, problem: { kind: "gone" } };
   const result = await unpublishOwnerMenu(scope.client, id.data);
+  if (result.ok) expireRestaurant(normalizeMenuCode(rawCode));
   refresh();
   if (!result.ok) {
     return {

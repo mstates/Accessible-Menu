@@ -76,3 +76,23 @@ export function formatTime(time: string, words: TimeCopy): string {
   const twelve = hour % 12 === 0 ? 12 : hour % 12;
   return mm === "00" ? `${twelve} ${suffix}` : `${twelve}:${mm} ${suffix}`;
 }
+
+// A range as "4 to 9 pm" through the given template ("{open} to {close}"):
+// a shared am or pm is said once, at the end. Noon and midnight carry no
+// suffix, so "noon to 3 pm" stays as it is. One place for a special's
+// hours and the restaurant's (module rule 8).
+export function formatTimeRange(
+  open: string,
+  close: string,
+  template: string,
+  words: TimeCopy,
+): string {
+  const from = formatTime(open, words);
+  const to = formatTime(close, words);
+  const shared = [words.am, words.pm].find(
+    (suffix) => from.endsWith(` ${suffix}`) && to.endsWith(` ${suffix}`),
+  );
+  return template
+    .replace("{open}", shared ? from.slice(0, -(shared.length + 1)) : from)
+    .replace("{close}", to);
+}
