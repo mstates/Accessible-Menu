@@ -99,6 +99,26 @@ describe("the next timed change", () => {
     expect(next(at("2026-10-13T21:00:00Z"), [old])).toBeNull();
   });
 
+  it("names the instant the state flips, and never the moment just passed: at the change second and one second after", () => {
+    const special = plain({
+      schedule: { hours: { open: "16:00", close: "21:00" } },
+    });
+    const soldOut = plain({ soldOutAt: "2026-10-13T18:00:00Z" });
+    // 9 pm New York, Tuesday October 13: the special's hours end and the
+    // day's service ends, so the sold-out dish is back.
+    const end = at("2026-10-14T01:00:00Z");
+    expect(next(new Date(end.getTime() - 1000), [special, soldOut])).toBe(
+      "2026-10-14T01:00:00.000Z",
+    );
+    expect(lifetimeSeconds(new Date(end.getTime() - 1000), end)).toBe(1);
+    // At 9 pm and a second after: the special next shows when the next day
+    // starts, and the sold-out dish, back, adds nothing.
+    for (const now of [end, new Date(end.getTime() + 1000)]) {
+      expect(next(now, [special, soldOut])).toBe("2026-10-14T04:00:00.000Z");
+      expect(next(now, [soldOut])).toBeNull();
+    }
+  });
+
   it("ignores a dish off the menu, which returns by a write", () => {
     const off = plain({
       available: false,

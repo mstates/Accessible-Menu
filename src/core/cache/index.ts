@@ -1,11 +1,13 @@
 import { revalidateTag, unstable_cache, updateTag } from "next/cache";
+import { workUnitAsyncStorage } from "next/dist/server/app-render/work-unit-async-storage.external";
 
 // Every diner page of a restaurant is cached at the edge under one tag, its
-// code, and this module is the only caller of Next's revalidation API
-// (tests/unit/cache-guard.test.ts holds every other file to that). The
-// previous caching model, not Cache Components: the diner route is an ISR
-// page per path, the read runs inside unstable_cache under the tag, and the
-// page's lifetime is lowered to its next timed change (the diner page task).
+// code, and this module is the only caller of Next's revalidation API and
+// the only reader of its render store (tests/unit/cache-guard.test.ts holds
+// every other file to that). The previous caching model, not Cache
+// Components: the diner route is an ISR page per path, the read runs inside
+// unstable_cache under the tag, and the page's lifetime ends at its next
+// timed change with no stale window after it (the diner page task, Q-95).
 // The day the Cache Components flag is turned on, cachedForRestaurant and
 // endLifetimeIn become cacheTag and cacheLife inside a "use cache" scope,
 // and nothing outside this module changes.
@@ -29,18 +31,44 @@ export function cachedForRestaurant<T>(
   })();
 }
 
+// Seconds a page may still be served after its lifetime ends while a fresh
+// one renders. Zero: the edge waits for the render at every timed end, so
+// nobody reads yesterday's page (Q-95). Above zero, Next adds a
+// stale-while-revalidate directive of this length to the page's header.
+export const STALE_WINDOW_SECONDS = 0;
+
 // Ends the page's lifetime after the given seconds, so a special's start
 // or end, a sold-out dish's return, or the restaurant's midnight re-renders
-// it with nobody pressing anything. unstable_cache lowers the route's
-// revalidate to the shortest value any call in the render asked for, as a
-// fetch with a shorter revalidate does; the stored value is never read.
-// Verified in Next 16.3.8's source; tests/local/diner-page.spec.ts is the
-// proof, and a Next update merges only once it passes (D-138).
+// it with nobody pressing anything. The render's store carries the
+// revalidate and expire that become the page's Cache-Control
+// (s-maxage=revalidate, and stale-while-revalidate only when expire is
+// longer), and this is the one place that lowers them: unstable_cache and
+// fetch lower revalidate the same way, and nothing public lowers expire in
+// this model. This is the second coupling to a Next internal, beside the
+// one D-172 verified; tests/local/diner-page.spec.ts reads the header it
+// produces, and a Next update merges only once that passes (D-138). A
+// store without the two numbers is a Next that changed shape, and the throw
+// says so instead of a page quietly living until a write.
 export async function endLifetimeIn(seconds: number): Promise<void> {
   const whole = Math.max(1, Math.ceil(seconds));
-  await unstable_cache(async () => whole, ["lifetime", String(whole)], {
-    revalidate: whole,
-  })();
+  const store = workUnitAsyncStorage.getStore();
+  // A request store is a dynamic render (next dev, or a route Next refused
+  // to keep static), where nothing is cached and a lifetime means nothing.
+  if (store?.type === "request") return;
+  if (
+    store === undefined ||
+    !("revalidate" in store) ||
+    !("expire" in store) ||
+    typeof store.revalidate !== "number" ||
+    typeof store.expire !== "number"
+  ) {
+    throw new Error(
+      "core/cache: no render store carries a revalidate and an expire to end the page's lifetime on. Next changed shape; read endLifetimeIn against the installed version (D-138).",
+    );
+  }
+  if (whole < store.revalidate) store.revalidate = whole;
+  const expire = whole + STALE_WINDOW_SECONDS;
+  if (expire < store.expire) store.expire = expire;
 }
 
 // From a server action: the next request for any of the restaurant's pages

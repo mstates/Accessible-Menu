@@ -218,6 +218,33 @@ describe("what a diner sees at one moment (D-159, D-160, D-39)", () => {
     expect(after.sections[0]?.dishes[0]?.soldOut).toBe(false);
   });
 
+  it("shows the new state at the change second and one second after, so a render at the moment never caches the old page", () => {
+    // 9 pm New York on Tuesday, October 13, 2026: the soup's hours end and
+    // the day's service ends, the instant the page's lifetime is set to.
+    const ninePm = new Date("2026-10-14T01:00:00Z");
+    const snapshot = dinner();
+    const states = ciStates(snapshot);
+    const salad = dishId(snapshot, "Starters", "House salad");
+    states.set(salad, {
+      available: true,
+      soldOutAt: "2026-10-13T20:00:00Z",
+      schedule: null,
+    });
+    const before = view(new Date(ninePm.getTime() - 1000), snapshot, states);
+    expect(before.sections[0]?.dishes.map((d) => d.name)).toEqual([
+      "Soup of the day",
+      "House salad",
+    ]);
+    expect(before.sections[0]?.dishes[1]?.soldOut).toBe(true);
+    for (const at of [ninePm, new Date(ninePm.getTime() + 1000)]) {
+      const menu = view(at, snapshot, states);
+      expect(menu.sections[0]?.dishes.map((d) => d.name)).toEqual([
+        "House salad",
+      ]);
+      expect(menu.sections[0]?.dishes[0]?.soldOut).toBe(false);
+    }
+  });
+
   it("builds every sentence a dish carries", () => {
     const menu = view(fivePm);
     const [soup, salad] = menu.sections[0]?.dishes ?? [];

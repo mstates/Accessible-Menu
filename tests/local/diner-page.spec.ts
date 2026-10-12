@@ -38,10 +38,17 @@ const publishing = en.owner.publishing;
 const saved = en.owner.editing.fieldSaved;
 const restaurants = en.owner.restaurants;
 
-type Served = { status: number; html: string; maxAge: number | null };
+type Served = {
+  status: number;
+  html: string;
+  maxAge: number | null;
+  staleFor: number | null;
+};
 
-// A diner's read of a page: its status, its HTML, and the s-maxage the
-// server set, which is the page's lifetime at the edge.
+// A diner's read of a page: its status, its HTML, the s-maxage the server
+// set, which is the page's lifetime at the edge, and the
+// stale-while-revalidate window after it, which a page with a lifetime must
+// not have (Q-95): the edge waits for the fresh page instead.
 async function served(page: Page, path: string): Promise<Served> {
   const response = await page.request.get(path, {
     headers: { accept: "text/html" },
@@ -49,10 +56,12 @@ async function served(page: Page, path: string): Promise<Served> {
   });
   const control = response.headers()["cache-control"] ?? "";
   const match = /s-maxage=(\d+)/.exec(control);
+  const stale = /stale-while-revalidate=(\d+)/.exec(control);
   return {
     status: response.status(),
     html: await response.text(),
     maxAge: match?.[1] ? Number(match[1]) : null,
+    staleFor: stale?.[1] ? Number(stale[1]) : null,
   };
 }
 
@@ -179,15 +188,21 @@ test("a special's hours ending ends the page's lifetime, and the page changes on
   ).not.toBeNull();
   expect(before.maxAge ?? 0).toBeLessThanOrEqual(left + 2);
   expect(before.maxAge ?? 0).toBeGreaterThan(0);
+  expect(
+    before.staleFor,
+    "no stale window on a page that has a lifetime",
+  ).toBeNull();
 
-  // Past the end: the first read may serve the old page once while the
-  // fresh one renders; the next shows the special gone, with nobody
-  // pressing anything.
-  await page.waitForTimeout(Math.max(0, ends.getTime() - Date.now()) + 1500);
-  await served(page, bare);
-  await expect
-    .poll(async () => (await served(page, bare)).html, { timeout: 30_000 })
-    .not.toContain("Cup $5, 180 calories");
+  // Past the end, with a margin for the whole second the lifetime rounds
+  // up to: there is no stale window, so the first read already waits for
+  // the fresh page, the special gone with nobody pressing anything.
+  await page.waitForTimeout(Math.max(0, ends.getTime() - Date.now()) + 3000);
+  const after = await served(page, bare);
+  expect(after.status).toBe(200);
+  expect(
+    after.html,
+    "the first read past the end shows the special gone",
+  ).not.toContain("Cup $5, 180 calories");
 
   // As it was: every day from 4 to 9 pm.
   await openOwner(page, restaurantDishPath(code, dishes.sizes.id));
@@ -247,6 +262,7 @@ test("Sold out today reaches diners without Publish, and the page's lifetime end
       5,
     );
     expect(read.maxAge ?? 0).toBeLessThanOrEqual(left + 2);
+    expect(read.staleFor, "no stale window").toBeNull();
   } finally {
     // As it was.
     await openOwner(page, restaurantDishPath(code, dishes.one.id));
@@ -354,6 +370,7 @@ test("a menu id that is not published shows the name, its line, and the way to t
     expect(read.html).toContain("noindex");
     expect(read.html).toContain(en.menu.footer.feedback);
     expect(read.maxAge).toBe(60);
+    expect(read.staleFor, "no stale window after the minute").toBeNull();
   }
   // The Drinks page by its id, as the switcher links it.
   const drinks = await served(page, menuPath(code, await menuId("Drinks")));
