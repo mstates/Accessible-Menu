@@ -47,8 +47,8 @@ type Served = {
 
 // A diner's read of a page: its status, its HTML, the s-maxage the server
 // set, which is the page's lifetime at the edge, and the
-// stale-while-revalidate window after it, which a page with a lifetime must
-// not have (Q-95): the edge waits for the fresh page instead.
+// stale-while-revalidate window after it, one second on a page with a
+// lifetime (Q-95): past it the edge waits for the fresh page.
 async function served(page: Page, path: string): Promise<Served> {
   const response = await page.request.get(path, {
     headers: { accept: "text/html" },
@@ -190,12 +190,12 @@ test("a special's hours ending ends the page's lifetime, and the page changes on
   expect(before.maxAge ?? 0).toBeGreaterThan(0);
   expect(
     before.staleFor,
-    "no stale window on a page that has a lifetime",
-  ).toBeNull();
+    "a one-second stale window on a page that has a lifetime",
+  ).toBe(1);
 
   // Past the end, with a margin for the whole second the lifetime rounds
-  // up to: there is no stale window, so the first read already waits for
-  // the fresh page, the special gone with nobody pressing anything.
+  // up to and the one-second window: the first read already waits for the
+  // fresh page, the special gone with nobody pressing anything.
   await page.waitForTimeout(Math.max(0, ends.getTime() - Date.now()) + 3000);
   const after = await served(page, bare);
   expect(after.status).toBe(200);
@@ -262,7 +262,7 @@ test("Sold out today reaches diners without Publish, and the page's lifetime end
       5,
     );
     expect(read.maxAge ?? 0).toBeLessThanOrEqual(left + 2);
-    expect(read.staleFor, "no stale window").toBeNull();
+    expect(read.staleFor, "a one-second stale window").toBe(1);
   } finally {
     // As it was.
     await openOwner(page, restaurantDishPath(code, dishes.one.id));
@@ -370,7 +370,7 @@ test("a menu id that is not published shows the name, its line, and the way to t
     expect(read.html).toContain("noindex");
     expect(read.html).toContain(en.menu.footer.feedback);
     expect(read.maxAge).toBe(60);
-    expect(read.staleFor, "no stale window after the minute").toBeNull();
+    expect(read.staleFor, "a one-second stale window after the minute").toBe(1);
   }
   // The Drinks page by its id, as the switcher links it.
   const drinks = await served(page, menuPath(code, await menuId("Drinks")));

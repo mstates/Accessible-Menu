@@ -7,7 +7,8 @@ import { workUnitAsyncStorage } from "next/dist/server/app-render/work-unit-asyn
 // every other file to that). The previous caching model, not Cache
 // Components: the diner route is an ISR page per path, the read runs inside
 // unstable_cache under the tag, and the page's lifetime ends at its next
-// timed change with no stale window after it (the diner page task, Q-95).
+// timed change with a one-second stale window after it, the one Vercel's
+// edge bounds (the diner page task, Q-95).
 // The day the Cache Components flag is turned on, cachedForRestaurant and
 // endLifetimeIn become cacheTag and cacheLife inside a "use cache" scope,
 // and nothing outside this module changes.
@@ -32,10 +33,16 @@ export function cachedForRestaurant<T>(
 }
 
 // Seconds a page may still be served after its lifetime ends while a fresh
-// one renders. Zero: the edge waits for the render at every timed end, so
-// nobody reads yesterday's page (Q-95). Above zero, Next adds a
-// stale-while-revalidate directive of this length to the page's header.
-export const STALE_WINDOW_SECONDS = 0;
+// one renders, sent as the stale-while-revalidate directive of the page's
+// header. One, measured on October 13, 2026 on two branch previews of Test
+// Bistro: with no directive at all, Vercel's edge served the old page STALE
+// at both timed ends and landed the fresh one about a second later; with
+// an explicit one-second window, the first read past each end was a MISS
+// that waited for the render (226 ms warm, 1.4 s cold) and showed the
+// change. A read inside that first second can still get the old copy,
+// accepted (Q-95). Zero sends no directive and falls back to the edge's
+// own default, which is to serve stale.
+export const STALE_WINDOW_SECONDS = 1;
 
 // Ends the page's lifetime after the given seconds, so a special's start
 // or end, a sold-out dish's return, or the restaurant's midnight re-renders
