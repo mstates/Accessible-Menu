@@ -4,9 +4,11 @@ import { menuSnapshot } from "./menu-snapshot.mjs";
 // The stand-in's rows (D-142), as CI Diner's data file leaves them (D-126):
 // three menus, Dinner's three sections, Starters' three dishes priced one
 // way each with their allergens, tags, schedule, calories, and the mark, a
-// second unchecked Soup of the day in Mains, the soup's two sizes, and the
-// two choice lists. Lives apart from the server so the unit test of the
-// snapshot builder can read the same rows (tests/unit/snapshot.test.ts).
+// second unchecked Soup of the day in Mains, the soup's two sizes, the two
+// choice lists, and Drinks' Soft drinks with Lemonade and its Kids section
+// with three dishes and two lists of eleven options in all (the diner page
+// task, Build 2, Q-74). Lives apart from the server so the unit test of
+// the snapshot builder can read the same rows (tests/unit/snapshot.test.ts).
 
 // A choice list and an option, as the stand-in makes them for its seed and
 // for a test that adds one elsewhere.
@@ -87,6 +89,22 @@ export function seedStore({ restaurant, user, stamp }, withDishes = true) {
     created_at: stamp(),
   };
   sections.push(soft);
+  // Kids, second under Drinks, as the data file gives it (Build 2, Q-74):
+  // three dishes with a short description each, at one price and checked,
+  // and two section lists of six and five options, every one checked, so a
+  // section's lists sit past the constant on the diner page and render
+  // once under the heading with a link in each dish.
+  const kids = {
+    id: randomUUID(),
+    menu_id: drinks.id,
+    restaurant_id: restaurant.id,
+    name: "Kids",
+    sort: 2,
+    note: null,
+    deleted_at: null,
+    created_at: stamp(),
+  };
+  sections.push(kids);
   // Priced one way each, as CI Diner's data file prices them (D-139): the
   // soup by size, the salad at one price, the bread at market price. With
   // their allergens, as the file lists them (D-148): the soup checked with
@@ -208,6 +226,55 @@ export function seedStore({ restaurant, user, stamp }, withDishes = true) {
       created_at: stamp(),
     });
   }
+  if (withDishes) {
+    const kidsDishes = [
+      {
+        name: "Kids burger",
+        price_cents: 700,
+        description: "A small beef patty on a soft bun.",
+        allergens: ["wheat"],
+      },
+      {
+        name: "Chicken tenders",
+        price_cents: 700,
+        description: "Three crispy tenders.",
+        allergens: ["wheat"],
+      },
+      {
+        name: "Grilled cheese",
+        price_cents: 600,
+        description: "Melted cheddar on white bread.",
+        allergens: ["milk", "wheat"],
+      },
+    ];
+    kidsDishes.forEach((dish, index) => {
+      items.push({
+        id: randomUUID(),
+        section_id: kids.id,
+        restaurant_id: restaurant.id,
+        name: dish.name,
+        description: dish.description,
+        price_kind: "one",
+        price_cents: dish.price_cents,
+        calories_low: null,
+        calories_high: null,
+        cooked_to_order: false,
+        note: null,
+        allergens: dish.allergens,
+        custom_allergens: [],
+        allergens_reviewed: true,
+        allergens_reviewed_by: user.id,
+        allergens_reviewed_at: stamp(),
+        dietary_tags: [],
+        available: true,
+        sold_out_at: null,
+        special_schedule: null,
+        sort: index + 1,
+        deleted_at: null,
+        created_at: stamp(),
+      });
+    });
+  }
   const soup = items[0];
   const salad = items[1];
   const sizes = (
@@ -260,6 +327,34 @@ export function seedStore({ restaurant, user, stamp }, withDishes = true) {
         checked: true,
       }),
     );
+  }
+  // Kids' two section lists, as the data file gives them: no Lemonade among
+  // the drinks, since the gate matches Soft drinks' dish by that exact name.
+  const sides = listRow({ section_id: kids.id }, "Choose one side", 1);
+  const kidsDrinks = listRow({ section_id: kids.id }, "Choose one drink", 2);
+  lists.push(sides, kidsDrinks);
+  const kidsOptions = [
+    [sides, "Fries", { calories_low: 320 }],
+    [sides, "Apple slices", { calories_low: 60 }],
+    [
+      sides,
+      "Mac and cheese",
+      { calories_low: 410, allergens: ["milk", "wheat"] },
+    ],
+    [sides, "Steamed broccoli", {}],
+    [sides, "Mashed potatoes", { allergens: ["milk"] }],
+    [sides, "Side salad", {}],
+    [kidsDrinks, "Milk", { allergens: ["milk"] }],
+    [kidsDrinks, "Chocolate milk", { allergens: ["milk"] }],
+    [kidsDrinks, "Apple juice", {}],
+    [kidsDrinks, "Orange juice", {}],
+    [kidsDrinks, "Water", {}],
+  ];
+  const placed = new Map();
+  for (const [list, name, given] of kidsOptions) {
+    const place = (placed.get(list.id) ?? 0) + 1;
+    placed.set(list.id, place);
+    options.push(optionRow(list, name, place, { ...given, checked: true }));
   }
 
   // Dinner published, as CI Diner's data file publishes it through

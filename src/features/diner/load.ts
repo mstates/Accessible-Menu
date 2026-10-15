@@ -1,6 +1,5 @@
 import { cache } from "react";
 import { en } from "@/copy";
-import { fill } from "@/copy/fill";
 import { cachedForRestaurant } from "@/core/cache";
 import { menuOrigin } from "@/core/config";
 import {
@@ -10,6 +9,7 @@ import {
 } from "@/core/supabase/diner";
 import { restaurantAllergenNote } from "@/domain/allergens";
 import {
+  menuNaming,
   timedDishes,
   visibleMenu,
   type DinerCopy,
@@ -61,6 +61,10 @@ export type MenuPageData = {
     note: string[];
   };
   menus: MenuLink[];
+  // The menu's words under the restaurant's name when it is the only one
+  // published, where the switcher would sit (Q-97); null with a switcher
+  // or for a menu with no name of its own.
+  menuLine: string | null;
   menu: DinerMenuView;
   title: string;
   canonical: string;
@@ -135,6 +139,7 @@ export const loadDinerPage = cache(
       lang: en.lang,
     });
     const first = menus[0];
+    const naming = menuNaming(menu.name, restaurant.name, en.menu);
     const links: MenuLink[] = menus.map((entry) => ({
       id: entry.id,
       name: entry.snapshot.menu.name,
@@ -168,14 +173,9 @@ export const loadDinerPage = cache(
           ),
         },
         menus: links,
+        menuLine: menus.length === 1 ? naming.line : null,
         menu,
-        title:
-          menus.length > 1
-            ? fill(en.menu.menuTitle, {
-                menu: menu.name,
-                restaurant: restaurant.name,
-              })
-            : fill(en.menu.title, { restaurant: restaurant.name }),
+        title: naming.title,
         // The bare code on the first menu's pages, the id URL on the others.
         canonical:
           first && current.id === first.id

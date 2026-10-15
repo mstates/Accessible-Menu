@@ -1289,9 +1289,16 @@ export const en = {
   // template and are never typed by an owner (D-167).
   menu: {
     title: "{restaurant} menu",
-    // With more than one menu, each page's title names its menu (the diner
-    // page task, Michael at the plan's tabs).
-    menuTitle: "{menu} menu, {restaurant}",
+    // Every menu page's title names its menu, whatever the number of menus
+    // (Q-97): menuName adds the word once to a name that lacks it ("Dinner
+    // menu"), a name that already ends in menuWord gets nothing ("Kids
+    // Menu"), and a name that is only the word reads as no name, the title
+    // above alone. Built by menuNaming() in domain/diner.ts, which also
+    // gives the line under the restaurant's name when one menu is
+    // published; title alone names the two unavailable pages.
+    menuTitle: "{menu}, {restaurant}",
+    menuName: "{menu} menu",
+    menuWord: "menu",
     menusLabel: "Menus",
     hoursLabel: "Hours",
     hours: {
@@ -1305,6 +1312,9 @@ export const en = {
     website: "Restaurant website",
     sectionsLabel: "Sections",
     sectionLink: "{section}, {items}",
+    // The link inside each dish of a section whose lists show once under
+    // the heading, and the name of that block (Q-74, D-81).
+    sectionChoicesLink: "Choices for every dish in {section}",
     items: {
       one: "{count} item",
       other: "{count} items",

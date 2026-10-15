@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
 import { soldOutEnd } from "../../src/domain/availability";
+import { menuNaming } from "../../src/domain/diner";
 import { parseHours } from "../../src/domain/hours";
 import { menuPath } from "../../src/domain/menu-url";
 import { parseSchedule } from "../../src/domain/schedule";
@@ -24,10 +25,13 @@ import { hearLog, heard } from "../a11y/owner-lists";
 // revalidate); availability and a schedule reaching diners without
 // Publish; a details save live; a failed read never cached; the two
 // unavailable pages (Q-84, Q-31); a made-up id's page; the second menu's
-// page by its id; the page whole with JavaScript off; and a new
-// restaurant's code answering at once. The stand-in seeds Dinner and
-// Drinks published as CI Diner's data file leaves them. Each check puts
-// the stand-in back as it found it.
+// page by its id; the page whole with JavaScript off; a new restaurant's
+// code answering at once; a section's lists past the constant once under
+// the heading with a link in each dish that moves focus to them (Build 2,
+// Q-74); and the menu named under the restaurant's name when it is the
+// only one published (Q-97). The stand-in seeds Dinner and Drinks
+// published as CI Diner's data file leaves them. Each check puts the
+// stand-in back as it found it.
 
 const { code } = ownerEnv();
 const bare = menuPath(code);
@@ -376,9 +380,111 @@ test("a menu id that is not published shows the name, its line, and the way to t
   const drinks = await served(page, menuPath(code, await menuId("Drinks")));
   expect(drinks.status).toBe(200);
   expect(drinks.html).toContain("Lemonade");
-  expect(drinks.html).toContain(
-    fill(en.menu.menuTitle, { menu: "Drinks", restaurant: name }),
+  expect(drinks.html).toContain(menuNaming("Drinks", name, en.menu).title);
+});
+
+test("a section's lists past the constant show once under the heading with a link in every dish, and the link moves focus with JavaScript and lands by fragment without it", async ({
+  page,
+  browser,
+}) => {
+  const kidsLink = fill(en.menu.sectionChoicesLink, { section: "Kids" });
+  const drinksPath = menuPath(code, await menuId("Drinks"));
+  await page.goto(drinksPath);
+  await page.waitForLoadState("networkidle");
+  // One block named by the link's words, holding the two lists and their
+  // eleven options; each of the three dishes holds one link to it and no
+  // list of its own.
+  const block = page.getByRole("group", { name: kidsLink, exact: true });
+  await expect(block).toHaveCount(1);
+  const id = (await block.getAttribute("id")) ?? "";
+  expect(id).toMatch(/-choices$/);
+  await expect(block.getByRole("list")).toHaveCount(2);
+  await expect(block.getByRole("listitem")).toHaveCount(11);
+  await expect(page.getByText("Choose one side", { exact: true })).toHaveCount(
+    1,
   );
+  await expect(page.getByText("Choose one drink", { exact: true })).toHaveCount(
+    1,
+  );
+  const links = page.getByRole("link", { name: kidsLink, exact: true });
+  await expect(links).toHaveCount(3);
+  for (const link of await links.all()) {
+    await expect(link).toHaveAttribute("href", `#${id}`);
+  }
+  await links.first().click();
+  await expect(block).toBeFocused();
+  expect(new URL(page.url()).hash).toBe(`#${id}`);
+
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  try {
+    const plain = await context.newPage();
+    await plain.goto(drinksPath);
+    await plain
+      .getByRole("link", { name: kidsLink, exact: true })
+      .first()
+      .click();
+    await plain.waitForURL((url) => url.hash === `#${id}`);
+    const box = await plain
+      .getByRole("group", { name: kidsLink, exact: true })
+      .boundingBox();
+    const height = plain.viewportSize()?.height ?? 0;
+    expect(box, "the block is in the viewport").not.toBeNull();
+    expect(box?.y ?? -1).toBeGreaterThanOrEqual(0);
+    expect(box?.y ?? height).toBeLessThan(height);
+  } finally {
+    await context.close();
+  }
+
+  // The repeated form on Dinner: Starters' roll list inside each shown
+  // dish after the dish's own list, no block, no link.
+  await page.goto(bare);
+  await page.waitForLoadState("networkidle");
+  const salad = page
+    .getByRole("listitem")
+    .filter({ has: page.getByText("House salad", { exact: true }) });
+  const saladText = await salad.innerText();
+  expect(saladText.indexOf("Add a buttered roll to any dish")).toBeGreaterThan(
+    saladText.indexOf("Vinaigrette, 90 calories"),
+  );
+  await expect(
+    salad.getByText("Buttered roll, +$2", { exact: true }),
+  ).toHaveCount(1);
+  await expect(page.getByRole("group")).toHaveCount(0);
+  await expect(
+    page.getByRole("link", {
+      name: fill(en.menu.sectionChoicesLink, { section: "Starters" }),
+    }),
+  ).toHaveCount(0);
+});
+
+test("with one menu published the page names it under the restaurant's name and in the title, and with two the switcher takes its place", async ({
+  page,
+}) => {
+  const name = "Stand-in Diner (test restaurant, not real)";
+  const drinks = await menuId("Drinks");
+  await openOwner(page, restaurantMenuPath(code, drinks));
+  await press(page, publishing.unpublish, publishing.spoken.unpublished);
+  try {
+    const alone = await served(page, bare);
+    expect(alone.status).toBe(200);
+    expect(alone.html).toContain(
+      `<title>${menuNaming("Dinner", name, en.menu).title}</title>`,
+    );
+    expect(alone.html).toContain(">Dinner menu<");
+    expect(alone.html).not.toContain(`aria-label="${en.menu.menusLabel}"`);
+  } finally {
+    await openOwner(page, restaurantMenuPath(code, drinks));
+    await press(page, publishing.publish, publishing.spoken.published);
+  }
+  await expect
+    .poll(async () => (await served(page, bare)).html)
+    .toContain(">Drinks<");
+  const both = await served(page, bare);
+  expect(both.html).toContain(
+    `<title>${menuNaming("Dinner", name, en.menu).title}</title>`,
+  );
+  expect(both.html).not.toContain(">Dinner menu<");
+  expect(both.html).toContain(`aria-label="${en.menu.menusLabel}"`);
 });
 
 test("with JavaScript off the page reads whole and points at no missing id", async ({

@@ -117,6 +117,50 @@ export type DinerSection = {
 
 export type DinerNotices = { calories: boolean; cookedToOrder: boolean };
 
+// The strings menuNaming() reads. The locale's menu copy satisfies it.
+export type MenuNamingCopy = {
+  title: string;
+  menuTitle: string;
+  menuName: string;
+  menuWord: string;
+};
+
+export type MenuNaming = { title: string; line: string | null };
+
+// The menu's words in the page title and under the restaurant's name
+// (Q-97, D-81): the name with the word "menu" added once, so "Dinner" reads
+// "Dinner menu" and "Kids Menu" stays as it is, in the title as "{words},
+// {restaurant}" whatever the number of menus, and as the line where the
+// switcher would sit when one menu is published. A name that is only the
+// word, in any case and with any outer space, is no name: the restaurant's
+// title alone and no line. One builder, so the title and the line never
+// differ, and the word is never doubled.
+export function menuNaming(
+  menu: string,
+  restaurant: string,
+  copy: MenuNamingCopy,
+): MenuNaming {
+  const name = menu.trim();
+  const word = copy.menuWord.trim().toLowerCase();
+  if (name.toLowerCase() === word) {
+    return {
+      title: copy.title.replace("{restaurant}", () => restaurant),
+      line: null,
+    };
+  }
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const endsWithWord = new RegExp(`(^|\\s)${escaped}$`, "i").test(name);
+  const words = endsWithWord
+    ? name
+    : copy.menuName.replace("{menu}", () => name);
+  return {
+    title: copy.menuTitle
+      .replace("{menu}", () => words)
+      .replace("{restaurant}", () => restaurant),
+    line: words,
+  };
+}
+
 export type DinerMenuView = {
   id: string;
   name: string;

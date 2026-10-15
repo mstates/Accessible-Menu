@@ -2,8 +2,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { en } from "../../src/copy";
+import { fill } from "../../src/copy/fill";
+import { caloriesOf } from "../../src/domain/calories";
+import { optionSentence } from "../../src/domain/choices";
 import {
   dishPriceWords,
+  menuNaming,
   SECTION_LISTS_REPEAT_UP_TO,
   timedDishes,
   visibleMenu,
@@ -14,6 +18,8 @@ import type { Hours } from "../../src/domain/hours";
 import {
   menuSnapshotSchema,
   type MenuSnapshot,
+  type SnapshotChoiceList,
+  type SnapshotOption,
 } from "../../src/domain/snapshot";
 
 // The diner page's view model against CI Diner's Dinner as publish_menu()
@@ -293,6 +299,9 @@ describe("what a diner sees at one moment (D-159, D-160, D-39)", () => {
       display: "Buttered roll, +$2",
       spoken: "Buttered roll, plus two dollars",
     });
+    expect(starters?.lists[0]?.options[0]?.allergen.text).toBe(
+      "Contains milk, wheat.",
+    );
     expect(starters?.repeatLists).toBe(true);
     expect(SECTION_LISTS_REPEAT_UP_TO).toBe(4);
     const salad = starters?.dishes[1];
@@ -300,6 +309,121 @@ describe("what a diner sees at one moment (D-159, D-160, D-39)", () => {
       "Ranch, 150 calories",
       "Vinaigrette, 90 calories",
     ]);
+  });
+
+  it("carries a dish's lists with every option's words and its own allergen sentence, the pieces of the one builder (D-166, rule 8)", () => {
+    const snapshot = dinner();
+    const menu = view(fivePm, snapshot);
+    const salad = menu.sections[0]?.dishes[1];
+    expect(salad?.lists.map((list) => list.lead)).toEqual([
+      "Choose a dressing",
+    ]);
+    const [ranch, vinaigrette] = salad?.lists[0]?.options ?? [];
+    expect(ranch?.words).toEqual({
+      display: "Ranch, 150 calories",
+      spoken: "Ranch, 150 calories",
+    });
+    expect(ranch?.allergen).toEqual({
+      kind: "contains",
+      lead: "Contains",
+      words: ["milk", "eggs"],
+      text: "Contains milk, eggs.",
+    });
+    expect(vinaigrette?.words.display).toBe("Vinaigrette, 90 calories");
+    expect(vinaigrette?.allergen.text).toBe("Checked. No major allergens.");
+    // Every option the page shows, read as its words then its sentence, is
+    // what optionSentence() builds from the same snapshot option.
+    const sources = new Map<string, SnapshotOption>(
+      snapshot.sections
+        .flatMap((section) => [
+          ...section.choice_lists,
+          ...section.items.flatMap((dish) => dish.choice_lists),
+        ])
+        .flatMap((list) => list.options)
+        .map((option) => [option.id, option]),
+    );
+    let checked = 0;
+    for (const section of menu.sections) {
+      const lists = [
+        ...section.lists,
+        ...section.dishes.flatMap((dish) => dish.lists),
+      ];
+      for (const list of lists) {
+        for (const option of list.options) {
+          const source = sources.get(option.id);
+          if (!source) throw new Error(`no option ${option.id}`);
+          const sentence = optionSentence(
+            {
+              name: source.name,
+              addedPriceCents: source.added_price_cents,
+              calories: caloriesOf(source.calories_low, source.calories_high),
+              allergens: source.allergens.checked ? source.allergens.major : [],
+              customAllergens: source.allergens.checked
+                ? source.allergens.other
+                : [],
+              allergensReviewed: source.allergens.checked,
+            },
+            copy,
+            "en",
+          );
+          expect(`${option.words.spoken}. ${option.allergen.text}`).toBe(
+            sentence.spoken,
+          );
+          expect(`${option.words.display}. ${option.allergen.text}`).toBe(
+            sentence.display,
+          );
+          checked += 1;
+        }
+      }
+    }
+    // The roll, Ranch, and Vinaigrette: every option the fixture holds.
+    expect(checked).toBe(3);
+  });
+
+  it("repeats a section's lists inside each dish while their options number the constant or fewer in all, and not past it (Q-74)", () => {
+    const at = SECTION_LISTS_REPEAT_UP_TO;
+    const option = (n: number): SnapshotOption => ({
+      id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+      name: `Option ${n}`,
+      added_price_cents: null,
+      calories_low: null,
+      calories_high: null,
+      allergens: { checked: true, major: [], other: [] },
+    });
+    const listOf = (
+      id: string,
+      count: number,
+      from: number,
+    ): SnapshotChoiceList => ({
+      id,
+      lead: `List ${id.slice(0, 1)}`,
+      options: Array.from({ length: count }, (_, index) =>
+        option(from + index),
+      ),
+    });
+    const one = "11111111-1111-4111-8111-111111111111";
+    const two = "22222222-2222-4222-8222-222222222222";
+    // Mains shows one dish, so its lists decide the form for that dish.
+    const mainsWith = (lists: SnapshotChoiceList[]) => {
+      const snapshot = dinner();
+      const mains = snapshot.sections[1];
+      if (!mains) throw new Error("no Mains");
+      mains.choice_lists = lists;
+      return view(fivePm, snapshot).sections[1];
+    };
+    expect(mainsWith([listOf(one, at, 1)])?.repeatLists).toBe(true);
+    expect(mainsWith([listOf(one, at + 1, 1)])?.repeatLists).toBe(false);
+    // The options are counted across the section's lists, not per list.
+    const first = Math.floor(at / 2);
+    expect(
+      mainsWith([listOf(one, first, 1), listOf(two, at - first, first + 1)])
+        ?.repeatLists,
+    ).toBe(true);
+    expect(
+      mainsWith([listOf(one, first, 1), listOf(two, at - first + 1, first + 1)])
+        ?.repeatLists,
+    ).toBe(false);
+    expect(mainsWith([])?.repeatLists).toBe(true);
   });
 
   it("lists every dish with its state for the timed ends", () => {
@@ -310,6 +434,43 @@ describe("what a diner sees at one moment (D-159, D-160, D-39)", () => {
     expect(dishes.filter((d) => !d.available)).toHaveLength(1);
     expect(timedDishes(snapshot, new Map()).every((d) => d.available)).toBe(
       true,
+    );
+  });
+});
+
+describe("the menu's name in the title and under the restaurant's name (Q-97)", () => {
+  const naming = (menu: string) => menuNaming(menu, "Test Bistro", en.menu);
+
+  it("names the menu with the word added once, whatever the number of menus", () => {
+    expect(naming("Dinner")).toEqual({
+      title: "Dinner menu, Test Bistro",
+      line: "Dinner menu",
+    });
+    expect(naming("Menudo")).toEqual({
+      title: "Menudo menu, Test Bistro",
+      line: "Menudo menu",
+    });
+  });
+
+  it("adds nothing to a name that already ends in the word, in any case", () => {
+    expect(naming("Kids Menu")).toEqual({
+      title: "Kids Menu, Test Bistro",
+      line: "Kids Menu",
+    });
+    expect(naming("DINNER MENU")).toEqual({
+      title: "DINNER MENU, Test Bistro",
+      line: "DINNER MENU",
+    });
+  });
+
+  it("reads a name that is only the word as no name: the restaurant's title and no line", () => {
+    expect(naming("Menu")).toEqual({ title: "Test Bistro menu", line: null });
+    expect(naming(" Menu ")).toEqual({
+      title: "Test Bistro menu",
+      line: null,
+    });
+    expect(naming("Menu").title).toBe(
+      fill(en.menu.title, { restaurant: "Test Bistro" }),
     );
   });
 });

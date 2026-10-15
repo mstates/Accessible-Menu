@@ -3,8 +3,9 @@ import { Fragment } from "react";
 import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
 import { InPageLinks } from "@/core/a11y/section-links";
-import type { DinerDish, DinerSection } from "@/domain/diner";
+import type { DinerChoiceList, DinerDish, DinerSection } from "@/domain/diner";
 import { feedbackPath, statementPath } from "@/domain/menu-url";
+import type { PriceText } from "@/domain/money";
 import { AllergenSentence } from "@/ui/AllergenSentence";
 import type { MenuPageData } from "./load";
 
@@ -17,8 +18,12 @@ type Props = { data: MenuPageData; copy: Copy };
 // confirmation line; the two navs sit inside it and the footer outside
 // (Michael, at the plan's approval). Every sentence comes from the view
 // model, which built it with the domain's one builder for it (rule 8).
+// Choice lists (D-166, Q-74) are real lists: a dish's own after its lines,
+// and a section's repeated inside every dish while they hold few options
+// in all, or once under the section heading past that, with a link in
+// each dish that lands on them.
 export function MenuPage({ data, copy }: Props) {
-  const { restaurant, menus, menu, code } = data;
+  const { restaurant, menus, menuLine, menu, code } = data;
   return (
     <>
       <main
@@ -47,6 +52,8 @@ export function MenuPage({ data, copy }: Props) {
               ))}
             </ul>
           </nav>
+        ) : menuLine ? (
+          <p className="mt-3">{menuLine}</p>
         ) : null}
         {restaurant.hoursLines.length > 0 ? (
           <div className="mt-4">
@@ -86,31 +93,51 @@ export function MenuPage({ data, copy }: Props) {
             </ul>
           </InPageLinks>
         ) : null}
-        {menu.sections.map((section) => (
-          <section
-            key={section.id}
-            aria-labelledby={`${section.id}-heading`}
-            className="pt-8"
-          >
-            <h3
-              id={section.id}
-              tabIndex={-1}
-              className="text-2xl font-bold outline-none focus-visible:outline"
+        <InPageLinks as="div">
+          {menu.sections.map((section) => (
+            <section
+              key={section.id}
+              aria-labelledby={`${section.id}-heading`}
+              className="pt-8"
             >
-              <span id={`${section.id}-heading`}>{section.name}</span>
-            </h3>
-            {section.note ? (
-              <p className="mt-1 text-foreground-muted">
-                <Lines text={section.note} />
-              </p>
-            ) : null}
-            <ul className="mt-2 divide-y divide-border">
-              {section.dishes.map((dish) => (
-                <Dish key={dish.id} dish={dish} copy={copy} />
-              ))}
-            </ul>
-          </section>
-        ))}
+              <h3
+                id={section.id}
+                tabIndex={-1}
+                className="text-2xl font-bold outline-none focus-visible:outline"
+              >
+                <span id={`${section.id}-heading`}>{section.name}</span>
+              </h3>
+              {section.note ? (
+                <p className="mt-1 text-foreground-muted">
+                  <Lines text={section.note} />
+                </p>
+              ) : null}
+              {!section.repeatLists && section.lists.length > 0 ? (
+                <div
+                  id={choicesId(section)}
+                  tabIndex={-1}
+                  role="group"
+                  aria-label={choicesWords(section, copy)}
+                  className="mt-3 outline-none focus-visible:outline"
+                >
+                  {section.lists.map((list) => (
+                    <ChoiceList key={list.id} list={list} />
+                  ))}
+                </div>
+              ) : null}
+              <ul className="mt-2 divide-y divide-border">
+                {section.dishes.map((dish) => (
+                  <Dish
+                    key={dish.id}
+                    dish={dish}
+                    section={section}
+                    copy={copy}
+                  />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </InPageLinks>
       </main>
       <footer className="mx-auto max-w-menu border-t border-border px-4 pt-6 pb-10 text-sm">
         {menu.notices.calories ? (
@@ -174,6 +201,18 @@ function sectionLink(section: DinerSection, copy: Copy): string {
   return fill(copy.menu.sectionLink, { section: section.name, items });
 }
 
+// The block a section's lists sit in when they show once under the
+// heading (Q-74), and the words of the link each dish carries to it and
+// of the block's own name, so a diner who follows the link hears where
+// they landed. The h3 keeps the section's id; the block has its own.
+function choicesId(section: DinerSection): string {
+  return `${section.id}-choices`;
+}
+
+function choicesWords(section: DinerSection, copy: Copy): string {
+  return fill(copy.menu.sectionChoicesLink, { section: section.name });
+}
+
 // A note or a description keeps its line breaks, inside one paragraph
 // (Q-47, D-121, D-144).
 function Lines({ text }: { text: string }) {
@@ -190,20 +229,67 @@ function Lines({ text }: { text: string }) {
   );
 }
 
+// Words that have a spoken form (Q-6): the numerals for the eye and the
+// words for a screen reader, or one run when they are the same, so nothing
+// is rendered twice for no reason. Either way the words are one element,
+// so an option's words stand apart from its allergen sentence.
+function Words({ text }: { text: PriceText }) {
+  if (text.display === text.spoken) return <span>{text.display}</span>;
+  return (
+    <>
+      <span aria-hidden="true">{text.display}</span>
+      <span className="sr-only">{text.spoken}</span>
+    </>
+  );
+}
+
+// One choice list (D-166): its lead, then its options as a real list, each
+// with its words (name, added price, calories) and its own allergen
+// sentence with the words in bold, read where the option is and never
+// behind a disclosure (D-40). The two together are what optionSentence()
+// builds; the pieces are drawn so the words can be bold.
+function ChoiceList({ list }: { list: DinerChoiceList }) {
+  return (
+    <div className="mt-2">
+      <p className="font-semibold">{list.lead}</p>
+      <ul className="mt-1 list-disc pl-5">
+        {list.options.map((option) => (
+          <li key={option.id}>
+            <Words text={option.words} />
+            {"."} <AllergenSentence sentence={option.allergen} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 // One dish (Spec 3.2): its name, its price in numerals with the words for
 // a screen reader (Q-6) and its calories beside it, its description in
 // full (D-39), its allergen sentence with the words in bold (D-35, D-40),
 // its tags, Cooked to order, Sold out today, its special's days and
-// hours, and its note. Its choice lists render in Build 2.
-function Dish({ dish, copy }: { dish: DinerDish; copy: Copy }) {
+// hours, and its note; then its own choice lists, and after them its
+// section's, repeated here while they hold few options in all, or one
+// link to the block under the section heading past that (Q-74). The
+// dish's own lines come first, so its allergen sentence stays beside its
+// name whatever its lists hold.
+function Dish({
+  dish,
+  section,
+  copy,
+}: {
+  dish: DinerDish;
+  section: DinerSection;
+  copy: Copy;
+}) {
+  const linked = !section.repeatLists && section.lists.length > 0;
   return (
     <li className="py-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4">
         <p className="min-w-0 text-lg font-semibold">{dish.name}</p>
         {dish.price ? (
           <p className="text-lg">
-            <span aria-hidden="true">{dish.price.display}</span>
-            <span className="sr-only">{dish.price.spoken}</span>
+            <Words text={dish.price} />
           </p>
         ) : null}
       </div>
@@ -229,6 +315,19 @@ function Dish({ dish, copy }: { dish: DinerDish; copy: Copy }) {
       ) : null}
       {dish.note ? (
         <p className="mt-1 text-foreground-muted">{dish.note}</p>
+      ) : null}
+      {dish.lists.map((list) => (
+        <ChoiceList key={list.id} list={list} />
+      ))}
+      {section.repeatLists
+        ? section.lists.map((list) => <ChoiceList key={list.id} list={list} />)
+        : null}
+      {linked ? (
+        <p className="mt-2">
+          <a href={`#${choicesId(section)}`} className="text-link underline">
+            {choicesWords(section, copy)}
+          </a>
+        </p>
       ) : null}
     </li>
   );
