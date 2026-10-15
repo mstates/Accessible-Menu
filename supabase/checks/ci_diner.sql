@@ -9,7 +9,8 @@
 -- delete on the screens if it gets in the gate's way. The gate itself never
 -- writes (D-100, D-108). Later tasks add their rows here.
 --
--- What the gate reads: the menus Lunch, Dinner, and Drinks, in that order;
+-- What the gate reads: the menus Lunch, Dinner, Drinks, and Brunch, in that
+-- order;
 -- Dinner holding the sections Starters, Mains, and Desserts, in that order;
 -- Starters holding the dishes Soup of the day, House salad, and Garlic
 -- bread, in that order, priced one way each (Soup of the day by size with
@@ -44,7 +45,11 @@
 -- diner page shows a section whose lists sit past the constant, once
 -- under the heading with a link in each dish (Build 2, Q-74), beside
 -- Starters' roll list repeated inside each dish and House salad's own
--- dressing list.
+-- dressing list; and Brunch, fourth, holding the section Eggs with the
+-- dish Shakshuka at one price with a description, checked with eggs, and
+-- off the menu for now, published beside Dinner and Drinks, so the diner
+-- page has a published menu that shows no dish and reads "Nothing on this
+-- menu is served right now." where its sections would be (D-177).
 
 do $$
 declare
@@ -82,6 +87,9 @@ declare
   list_lead text;
   list_place integer;
   option_names text[];
+  brunch uuid;
+  eggs uuid;
+  shakshuka uuid;
 begin
   select r.id into diner from public.restaurants r where r.code = '56097672';
   if diner is null then
@@ -111,7 +119,7 @@ begin
   -- 1. The menus. A name matches the way menus_name_key reads it, whatever
   -- the case or the outer spaces, among menus that are not deleted. A
   -- deleted menu stays deleted, and a new one takes its name.
-  foreach wanted in array array['Lunch', 'Dinner', 'Drinks'] loop
+  foreach wanted in array array['Lunch', 'Dinner', 'Drinks', 'Brunch'] loop
     if not exists (
       select 1 from public.menus m
       where m.restaurant_id = diner
@@ -124,7 +132,7 @@ begin
     end if;
   end loop;
 
-  -- The three come first, in that order, and anything else after them, in
+  -- The four come first, in that order, and anything else after them, in
   -- the order the Menus screen shows it. Only a place that is wrong is
   -- written, so a second run leaves every row as it was.
   update public.menus m
@@ -133,7 +141,7 @@ begin
     select m2.id,
       row_number() over (
         order by
-          array_position(array['lunch', 'dinner', 'drinks'],
+          array_position(array['lunch', 'dinner', 'drinks', 'brunch'],
             lower(btrim(m2.name))) nulls last,
           m2.sort, m2.created_at, m2.id
       )::integer as place
@@ -806,13 +814,88 @@ begin
     end if;
   end loop;
 
-  -- 3h. Dinner and Drinks published (migration 12, the Publish task): the
-  -- gate reads Dinner's page as a published menu and the dashboard's
-  -- sentence, and never presses Publish. Each press goes through
-  -- publish_menu() as CI Diner's owner, and only when the menu is not
-  -- published or its draft differs from what was published, so a second
-  -- run writes nothing. Lunch stays unpublished, so the gate reads an
-  -- unpublished menu's page too.
+  -- 3j. Brunch's section Eggs with the dish Shakshuka (D-177): at one
+  -- price with a description, checked with eggs, and off the menu for now,
+  -- so once Brunch is published the diner page has a menu that shows no
+  -- dish and reads "Nothing on this menu is served right now." where its
+  -- sections would be, and claims nothing about allergens; set Available
+  -- on the screens, the dish shows and the page reads "Allergens confirmed
+  -- for every dish." Each written only when it differs, as Starters' are.
+  select m.id into brunch from public.menus m
+  where m.restaurant_id = diner
+    and m.deleted_at is null
+    and lower(btrim(m.name)) = 'brunch';
+  if not exists (
+    select 1 from public.sections s
+    where s.menu_id = brunch
+      and s.deleted_at is null
+      and lower(btrim(s.name)) = 'eggs'
+  ) then
+    insert into public.sections (menu_id, name, sort)
+    values (brunch, 'Eggs', 1);
+    raise notice 'added the section Eggs to Brunch';
+  end if;
+  select s.id into eggs from public.sections s
+  where s.menu_id = brunch
+    and s.deleted_at is null
+    and lower(btrim(s.name)) = 'eggs';
+  select i.id into shakshuka from public.items i
+  where i.section_id = eggs
+    and i.deleted_at is null
+    and lower(btrim(i.name)) = 'shakshuka';
+  if shakshuka is null then
+    insert into public.items (section_id, name, sort)
+    values (eggs, 'Shakshuka', 1) returning id into shakshuka;
+    raise notice 'added the dish Shakshuka to Eggs';
+  end if;
+  update public.items i
+  set price_kind = 'one', price_cents = 1200
+  where i.id = shakshuka
+    and (i.price_kind <> 'one' or i.price_cents is distinct from 1200);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'priced Shakshuka at one price';
+  end if;
+  update public.items i
+  set description = 'Eggs poached in a spiced tomato sauce.'
+  where i.id = shakshuka
+    and i.description is distinct from 'Eggs poached in a spiced tomato sauce.';
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'described Shakshuka';
+  end if;
+  update public.items i
+  set allergens = '{eggs}', custom_allergens = '{}'
+  where i.id = shakshuka
+    and (i.allergens is distinct from '{eggs}'::public.allergen[]
+      or i.custom_allergens is distinct from '{}'::text[]);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'listed the allergens of Shakshuka';
+  end if;
+  update public.items i
+  set allergens_reviewed = true
+  where i.id = shakshuka and not i.allergens_reviewed;
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'checked the allergens of Shakshuka';
+  end if;
+  update public.items i
+  set available = false, sold_out_at = null
+  where i.id = shakshuka and (i.available or i.sold_out_at is not null);
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'took Shakshuka off the menu for now';
+  end if;
+
+  -- 3h. Dinner, Drinks, and Brunch published (migration 12, the Publish
+  -- task; D-177): the gate reads Dinner's page as a published menu and the
+  -- dashboard's sentence, and never presses Publish. Each press goes
+  -- through publish_menu() as CI Diner's owner, and only when the menu is
+  -- not published or its draft differs from what was published, so a
+  -- second run writes nothing. Lunch stays unpublished, so the gate reads
+  -- an unpublished menu's page too, one with no dishes, which Publish
+  -- refuses by the menu (migration 14).
   if exists (
     select 1 from public.menu_publish_states(diner) s
     where s.menu = dinner and (not s.published or s.changed)
@@ -826,6 +909,13 @@ begin
   ) then
     perform public.publish_menu(drinks);
     raise notice 'published Drinks';
+  end if;
+  if exists (
+    select 1 from public.menu_publish_states(diner) s
+    where s.menu = brunch and (not s.published or s.changed)
+  ) then
+    perform public.publish_menu(brunch);
+    raise notice 'published Brunch';
   end if;
 end $$;
 
@@ -924,6 +1014,14 @@ kids_lists as (
   join kids on ll.section_id = kids.id
   where ll.on_section
 ),
+brunch as (
+  select lm.id from live_menus lm where lower(btrim(lm.name)) = 'brunch'
+),
+eggs as (
+  select ls.id from live_sections ls
+  join brunch on ls.menu_id = brunch.id
+  where ls.place = 1 and lower(btrim(ls.name)) = 'eggs'
+),
 starters as (
   select ls.id from live_sections ls
   join dinner on ls.menu_id = dinner.id
@@ -953,8 +1051,8 @@ dressing as (
 verdict as (
   select
     (select coalesce(array_agg(lower(btrim(lm.name)) order by lm.place), '{}')
-       from live_menus lm where lm.place <= 3)
-      = array['lunch', 'dinner', 'drinks'] as menus_ok,
+       from live_menus lm where lm.place <= 4)
+      = array['lunch', 'dinner', 'drinks', 'brunch'] as menus_ok,
     (select coalesce(array_agg(lower(btrim(ls.name)) order by ls.place), '{}')
        from live_sections ls join dinner on ls.menu_id = dinner.id
        where ls.place <= 3)
@@ -1066,6 +1164,9 @@ verdict as (
       and (select m.published and m.published_at is not null
          and m.published_snapshot is not null
        from public.menus m join drinks on m.id = drinks.id)
+      and (select m.published and m.published_at is not null
+         and m.published_snapshot is not null
+       from public.menus m join brunch on m.id = brunch.id)
       and not exists (
         select 1 from public.menus m
         join live_menus lm on lm.id = m.id
@@ -1105,6 +1206,17 @@ verdict as (
          from live_options lo join kids_lists kl on lo.choice_list_id = kl.id),
       false) as drinks_ok,
     coalesce(
+      exists (select 1 from eggs)
+      and (select li.price_kind = 'one' and li.price_cents = 1200
+         and li.description is not null
+         and li.allergens_reviewed
+         and li.allergens = '{eggs}'::public.allergen[]
+         and cardinality(li.custom_allergens) = 0
+         and not li.available and li.sold_out_at is null
+       from live_items li join eggs on li.section_id = eggs.id
+       where li.place = 1 and lower(btrim(li.name)) = 'shakshuka'),
+      false) as brunch_ok,
+    coalesce(
       (select r.timezone = 'America/New_York'
          and r.prep_notes = '{shared-fryer}'::public.prep_note[]
          and r.allergen_note is null
@@ -1132,7 +1244,7 @@ from (
     'CI Diner (56097672)' as item,
     case
       when not v.menus_ok then
-        'not ready: Lunch, Dinner, and Drinks are not the first three menus'
+        'not ready: Lunch, Dinner, Drinks, and Brunch are not the first four menus'
       when not v.sections_ok then
         'not ready: Starters, Mains, and Desserts are not Dinner''s first three sections'
       when not v.one_empty then
@@ -1153,10 +1265,12 @@ from (
         'not ready: House salad is not tagged vegetarian and made without gluten ingredients, Garlic bread is not off the menu for now, or Soup of the day is not a special every day from 4 to 9 pm'
       when not v.drinks_ok then
         'not ready: Drinks does not hold Soft drinks with Lemonade at $3.00 checked with none, or Kids second with its three dishes, its two lists, and their eleven options, all checked'
+      when not v.brunch_ok then
+        'not ready: Brunch does not hold Eggs first with Shakshuka at $12.00, described, checked with eggs, and off the menu for now'
       when not v.details_ok then
         'not ready: CI Diner''s time zone, hours, preparation sentence, or allergen note is not as the diner page expects'
       when not v.published_ok then
-        'not ready: Dinner or Drinks is not published, or Lunch is'
+        'not ready: Dinner, Drinks, or Brunch is not published, or Lunch is'
       else 'ready for the owner gate'
     end as status
   from verdict v
@@ -1167,8 +1281,8 @@ from (
         when m.published then ', published ' || m.published_at::date::text
         else ', not published' end,
     case
-      when lm.place <= 3
-        and lower(btrim(lm.name)) in ('lunch', 'dinner', 'drinks')
+      when lm.place <= 4
+        and lower(btrim(lm.name)) in ('lunch', 'dinner', 'drinks', 'brunch')
         then 'needed'
       else 'extra, left as it is'
     end
@@ -1189,6 +1303,10 @@ from (
       when lower(btrim(lm.name)) = 'drinks'
         and ls.place = 2
         and lower(btrim(ls.name)) = 'kids'
+        then 'needed'
+      when lower(btrim(lm.name)) = 'brunch'
+        and ls.place = 1
+        and lower(btrim(ls.name)) = 'eggs'
         then 'needed'
       else 'extra, left as it is'
     end
@@ -1234,6 +1352,11 @@ from (
         and li.place <= 3
         and lower(btrim(li.name))
           in ('kids burger', 'chicken tenders', 'grilled cheese')
+        then 'needed'
+      when lower(btrim(lm.name)) = 'brunch'
+        and lower(btrim(ls.name)) = 'eggs'
+        and li.place = 1
+        and lower(btrim(li.name)) = 'shakshuka'
         then 'needed'
       else 'extra, left as it is'
     end
