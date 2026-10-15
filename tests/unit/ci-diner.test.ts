@@ -33,7 +33,7 @@ describe("CI Diner's data file (D-126)", () => {
     expect(code).not.toMatch(/\b(create|alter|grant|revoke)\b/i);
   });
 
-  it("writes only through inserts, the details, sort updates, the four dishes' prices, three dishes' allergens, the roll's price, lists, and check, the three dishes' tags, availability, and schedule, and the calories, the dressing options, and the mark", () => {
+  it("writes only through inserts, the details, sort updates, the seven dishes' prices, six dishes' allergens, the roll's price, lists, and check, the three dishes' tags, availability, and schedule, the calories, the dressing options, the mark, and Kids' descriptions and options", () => {
     const updates = code.match(/\bupdate\s+public\.\w+\s+\w+\s+set\s+\w+/gi);
     expect(updates).toEqual([
       "update public.restaurants r\n  set timezone",
@@ -61,6 +61,15 @@ describe("CI Diner's data file (D-126)", () => {
       "update public.items i\n  set price_kind",
       "update public.items i\n  set allergens",
       "update public.items i\n  set allergens_reviewed",
+      "update public.sections s\n  set sort",
+      "update public.items i\n    set price_kind",
+      "update public.items i\n    set description",
+      "update public.items i\n    set allergens",
+      "update public.items i\n    set allergens_reviewed",
+      "update public.items i\n  set sort",
+      "update public.choice_options o\n      set calories_low",
+      "update public.choice_options o\n      set allergens_reviewed",
+      "update public.choice_options o\n    set sort",
     ]);
   });
 
@@ -95,36 +104,47 @@ describe("CI Diner's data file (D-126)", () => {
     }
   });
 
-  // The price updates touch only Starters' three dishes and Drinks'
-  // Lemonade, by id, and write only the choice and the price (D-139).
-  it("prices the four dishes by id and writes nothing else to them", () => {
+  // The price updates touch only Starters' three dishes, Drinks' Lemonade,
+  // and Kids' three dishes, by id, and write only the choice and the price
+  // (D-139); a Kids dish's description is its own statement.
+  it("prices the seven dishes by id and writes nothing else to them", () => {
     const prices = [
-      ...code.matchAll(/update public\.items i\n  set price_kind[^;]*;/g),
+      ...code.matchAll(/update public\.items i\n\s+set price_kind[^;]*;/g),
     ].map((match) => match[0]);
-    expect(prices).toHaveLength(4);
+    expect(prices).toHaveLength(5);
     for (const statement of prices) {
-      expect(statement).toMatch(/where i\.id = (soup|salad|bread|lemonade)/);
+      expect(statement).toMatch(
+        /where i\.id = (soup|salad|bread|lemonade|dish_id)/,
+      );
       expect(statement).not.toMatch(/\b(name|sort|description|note)\s*=/);
     }
+    const descriptions = [
+      ...code.matchAll(/update public\.items i\n\s+set description[^;]*;/g),
+    ].map((match) => match[0]);
+    expect(descriptions).toHaveLength(1);
+    expect(descriptions[0]).toMatch(/where i\.id = dish_id/);
+    expect(descriptions[0]).not.toMatch(
+      /\b(name|sort|note|price_kind|price_cents|allergens)\s*=/,
+    );
   });
 
-  // The allergen writes touch the soup, the salad, and the lemonade, by
-  // id, write only the two lists and the check, and check in a statement
-  // of their own, since one statement that changes a list and checks it
-  // ends unchecked (D-148).
-  it("lists and checks three dishes' allergens by id, the check in its own statement, as CI Diner's owner", () => {
+  // The allergen writes touch the soup, the salad, the lemonade, and Kids'
+  // three dishes, by id, write only the two lists and the check, and check
+  // in a statement of their own, since one statement that changes a list
+  // and checks it ends unchecked (D-148).
+  it("lists and checks six dishes' allergens by id, the check in its own statement, as CI Diner's owner", () => {
     const lists = [
-      ...code.matchAll(/update public\.items i\n  set allergens =[^;]*;/g),
+      ...code.matchAll(/update public\.items i\n\s+set allergens =[^;]*;/g),
     ].map((match) => match[0]);
     const checks = [
       ...code.matchAll(
-        /update public\.items i\n  set allergens_reviewed = true[^;]*;/g,
+        /update public\.items i\n\s+set allergens_reviewed = true[^;]*;/g,
       ),
     ].map((match) => match[0]);
-    expect(lists).toHaveLength(3);
-    expect(checks).toHaveLength(3);
+    expect(lists).toHaveLength(4);
+    expect(checks).toHaveLength(4);
     for (const statement of [...lists, ...checks]) {
-      expect(statement).toMatch(/where i\.id = (soup|salad|lemonade)/);
+      expect(statement).toMatch(/where i\.id = (soup|salad|lemonade|dish_id)/);
       expect(statement).not.toMatch(
         /\b(name|sort|description|note|price_kind|price_cents|allergens_reviewed_by|allergens_reviewed_at)\s*=/,
       );
@@ -145,12 +165,14 @@ describe("CI Diner's data file (D-126)", () => {
     );
   });
 
-  // The choice lists (migration 11, task 7): the roll list on Starters and
-  // the dressing list on House salad, each option's lists in one statement
-  // and its check in its own, by id, as CI Diner's owner, and never the
-  // stamps. No lead or option names a dish in Starters, since the gate
-  // matches names by substring.
-  it("gives Starters its roll list and House salad its dressing list, each option checked in its own statement by id, naming no dish", () => {
+  // The choice lists (migration 11, task 7, and Build 2 of the diner page
+  // task): the roll list on Starters, the dressing list on House salad,
+  // and Kids' two lists, each option's lists in one statement and its
+  // check in its own, by id, as CI Diner's owner, and never the stamps. No
+  // lead or option names a dish in Starters, since the gate matches names
+  // by substring, and no Kids drink is Lemonade, which the gate matches
+  // exactly on the Drinks page.
+  it("gives Starters its roll list, House salad its dressing list, and Kids its two lists, each option checked in its own statement by id, naming no dish", () => {
     const lists = [
       ...code.matchAll(
         /update public\.choice_options o\n\s+set (added_price_cents|calories_low) =[^;]*;/g,
@@ -161,8 +183,8 @@ describe("CI Diner's data file (D-126)", () => {
         /update public\.choice_options o\n\s+set allergens_reviewed = true[^;]*;/g,
       ),
     ].map((match) => match[0]);
-    expect(lists).toHaveLength(2);
-    expect(checks).toHaveLength(2);
+    expect(lists).toHaveLength(3);
+    expect(checks).toHaveLength(3);
     for (const statement of [...lists, ...checks]) {
       expect(statement).toMatch(/where o\.id = (roll|option_id)/);
       expect(statement).not.toMatch(
@@ -182,6 +204,8 @@ describe("CI Diner's data file (D-126)", () => {
       "options: choice_list_id, name, sort",
       "lists: item_id, lead, sort",
       "options: choice_list_id, name, sort",
+      "lists: section_id, lead, sort",
+      "options: choice_list_id, name, sort",
     ]);
     const leads = [
       ...text.matchAll(/values \((?:starters|salad), '([^']+)', 1\)/g),
@@ -190,7 +214,25 @@ describe("CI Diner's data file (D-126)", () => {
       "Add a buttered roll to any dish",
       "Choose a dressing",
     ]);
-    for (const words of [...leads, "Buttered roll", "Ranch", "Vinaigrette"]) {
+    const kidsLeads = [...text.matchAll(/\('(Choose one \w+)', [12]\)/g)].map(
+      (match) => match[1],
+    );
+    expect(kidsLeads).toEqual(["Choose one side", "Choose one drink"]);
+    const kidsOptions = [
+      ...text.matchAll(/\('Choose one \w+', '([^']+)', /g),
+    ].map((match) => match[1] ?? "");
+    expect(kidsOptions).toHaveLength(11);
+    expect(kidsOptions.map((name) => name.toLowerCase())).not.toContain(
+      "lemonade",
+    );
+    for (const words of [
+      ...leads,
+      ...kidsLeads,
+      ...kidsOptions,
+      "Buttered roll",
+      "Ranch",
+      "Vinaigrette",
+    ]) {
       for (const dish of ["soup of the day", "house salad", "garlic bread"]) {
         expect((words ?? "").toLowerCase()).not.toContain(dish);
       }

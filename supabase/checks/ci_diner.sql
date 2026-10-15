@@ -37,7 +37,14 @@
 -- Sunday, the shared-fryer sentence, and no allergen note of its own; and
 -- Drinks holding the section Soft drinks with the dish Lemonade at one
 -- price, checked with none, published beside Dinner, so the diner page
--- has a menu switcher and a second menu's page.
+-- has a menu switcher and a second menu's page; and Drinks' second
+-- section, Kids, with three dishes at one price with a short description
+-- each, checked, and two section choice lists, "Choose one side" with six
+-- options and "Choose one drink" with five, every option checked, so the
+-- diner page shows a section whose lists sit past the constant, once
+-- under the heading with a link in each dish (Build 2, Q-74), beside
+-- Starters' roll list repeated inside each dish and House salad's own
+-- dressing list.
 
 do $$
 declare
@@ -64,6 +71,17 @@ declare
   option_allergens public.allergen[];
   option_place integer;
   placed integer;
+  kids uuid;
+  dish_id uuid;
+  dish_name text;
+  dish_price integer;
+  dish_description text;
+  dish_allergens public.allergen[];
+  dish_place integer;
+  kids_list uuid;
+  list_lead text;
+  list_place integer;
+  option_names text[];
 begin
   select r.id into diner from public.restaurants r where r.code = '56097672';
   if diner is null then
@@ -583,6 +601,211 @@ begin
     raise notice 'checked the allergens of Lemonade';
   end if;
 
+  -- 3i. Drinks' Kids section (the diner page task, Build 2, Q-74): three
+  -- dishes with a short description each, priced at one price and checked,
+  -- and two section choice lists, "Choose one side" with six options and
+  -- "Choose one drink" with five, eleven in all and every one checked, so
+  -- the Drinks page carries a section whose lists sit past the constant:
+  -- once under the heading with a link in each dish, in every engine the
+  -- gate runs. Kids sits second, after Soft drinks. Each row added only
+  -- when missing, each value written only when it differs, each check in
+  -- its own statement as CI Diner's owner, and no name here is a dish name
+  -- in Starters. The drinks hold no Lemonade, since the gate matches Soft
+  -- drinks' dish by that exact name.
+  if not exists (
+    select 1 from public.sections s
+    where s.menu_id = drinks
+      and s.deleted_at is null
+      and lower(btrim(s.name)) = 'kids'
+  ) then
+    insert into public.sections (menu_id, name, sort)
+    values (drinks, 'Kids', 2);
+    raise notice 'added the section Kids to Drinks';
+  end if;
+  update public.sections s
+  set sort = ranked.place
+  from (
+    select s2.id,
+      row_number() over (
+        order by
+          array_position(array['soft drinks', 'kids'],
+            lower(btrim(s2.name))) nulls last,
+          s2.sort, s2.created_at, s2.id
+      )::integer as place
+    from public.sections s2
+    where s2.menu_id = drinks and s2.deleted_at is null
+  ) ranked
+  where s.id = ranked.id and s.sort is distinct from ranked.place;
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'put % of Drinks'' sections in place', placed;
+  end if;
+  select s.id into kids from public.sections s
+  where s.menu_id = drinks
+    and s.deleted_at is null
+    and lower(btrim(s.name)) = 'kids';
+
+  for dish_name, dish_price, dish_description, dish_allergens, dish_place in
+    select v.n, v.p, v.d, v.a, v.o from (values
+      ('Kids burger', 700, 'A small beef patty on a soft bun.',
+        '{wheat}'::public.allergen[], 1),
+      ('Chicken tenders', 700, 'Three crispy tenders.',
+        '{wheat}'::public.allergen[], 2),
+      ('Grilled cheese', 600, 'Melted cheddar on white bread.',
+        '{milk,wheat}'::public.allergen[], 3)
+    ) as v (n, p, d, a, o)
+  loop
+    select i.id into dish_id from public.items i
+    where i.section_id = kids
+      and i.deleted_at is null
+      and lower(btrim(i.name)) = lower(dish_name);
+    if dish_id is null then
+      insert into public.items (section_id, name, sort)
+      values (kids, dish_name, dish_place) returning id into dish_id;
+      raise notice 'added the dish % to Kids', dish_name;
+    end if;
+    update public.items i
+    set price_kind = 'one', price_cents = dish_price
+    where i.id = dish_id
+      and (i.price_kind <> 'one' or i.price_cents is distinct from dish_price);
+    get diagnostics placed = row_count;
+    if placed > 0 then
+      raise notice 'priced % at one price', dish_name;
+    end if;
+    update public.items i
+    set description = dish_description
+    where i.id = dish_id
+      and i.description is distinct from dish_description;
+    get diagnostics placed = row_count;
+    if placed > 0 then
+      raise notice 'described %', dish_name;
+    end if;
+    update public.items i
+    set allergens = dish_allergens, custom_allergens = '{}'
+    where i.id = dish_id
+      and (i.allergens is distinct from dish_allergens
+        or i.custom_allergens is distinct from '{}'::text[]);
+    get diagnostics placed = row_count;
+    if placed > 0 then
+      raise notice 'listed the allergens of %', dish_name;
+    end if;
+    update public.items i
+    set allergens_reviewed = true
+    where i.id = dish_id and not i.allergens_reviewed;
+    get diagnostics placed = row_count;
+    if placed > 0 then
+      raise notice 'checked the allergens of %', dish_name;
+    end if;
+  end loop;
+  update public.items i
+  set sort = ranked.place
+  from (
+    select i2.id,
+      row_number() over (
+        order by
+          array_position(
+            array['kids burger', 'chicken tenders', 'grilled cheese'],
+            lower(btrim(i2.name))) nulls last,
+          i2.sort, i2.created_at, i2.id
+      )::integer as place
+    from public.items i2
+    where i2.section_id = kids and i2.deleted_at is null
+  ) ranked
+  where i.id = ranked.id and i.sort is distinct from ranked.place;
+  get diagnostics placed = row_count;
+  if placed > 0 then
+    raise notice 'put % of Kids'' dishes in place', placed;
+  end if;
+
+  for list_lead, list_place in
+    select v.l, v.p from (values
+      ('Choose one side', 1), ('Choose one drink', 2)
+    ) as v (l, p)
+  loop
+    select l.id into kids_list from public.choice_lists l
+    where l.section_id = kids
+      and l.deleted_at is null
+      and lower(btrim(l.lead)) = lower(list_lead);
+    if kids_list is null then
+      insert into public.choice_lists (section_id, lead, sort)
+      values (kids, list_lead, list_place) returning id into kids_list;
+      raise notice 'added the choice list % to Kids', list_lead;
+    end if;
+    for option_name, option_calories, option_allergens, option_place in
+      select v.n, v.c, v.a, v.p from (values
+        ('Choose one side', 'Fries', 320, '{}'::public.allergen[], 1),
+        ('Choose one side', 'Apple slices', 60, '{}', 2),
+        ('Choose one side', 'Mac and cheese', 410, '{milk,wheat}', 3),
+        ('Choose one side', 'Steamed broccoli', null::integer, '{}', 4),
+        ('Choose one side', 'Mashed potatoes', null, '{milk}', 5),
+        ('Choose one side', 'Side salad', null, '{}', 6),
+        ('Choose one drink', 'Milk', null, '{milk}', 1),
+        ('Choose one drink', 'Chocolate milk', null, '{milk}', 2),
+        ('Choose one drink', 'Apple juice', null, '{}', 3),
+        ('Choose one drink', 'Orange juice', null, '{}', 4),
+        ('Choose one drink', 'Water', null, '{}', 5)
+      ) as v (l, n, c, a, p)
+      where v.l = list_lead
+    loop
+      select o.id into option_id from public.choice_options o
+      where o.choice_list_id = kids_list
+        and o.deleted_at is null
+        and lower(btrim(o.name)) = lower(option_name);
+      if option_id is null then
+        insert into public.choice_options (choice_list_id, name, sort)
+        values (kids_list, option_name, option_place)
+        returning id into option_id;
+        raise notice 'added the option % to %', option_name, list_lead;
+      end if;
+      update public.choice_options o
+      set calories_low = option_calories, calories_high = null,
+          added_price_cents = null,
+          allergens = option_allergens, custom_allergens = '{}'
+      where o.id = option_id
+        and (o.calories_low is distinct from option_calories
+          or o.calories_high is not null
+          or o.added_price_cents is not null
+          or o.allergens is distinct from option_allergens
+          or o.custom_allergens is distinct from '{}'::text[]);
+      get diagnostics placed = row_count;
+      if placed > 0 then
+        raise notice 'gave % its calories and allergens', option_name;
+      end if;
+      update public.choice_options o
+      set allergens_reviewed = true
+      where o.id = option_id and not o.allergens_reviewed;
+      get diagnostics placed = row_count;
+      if placed > 0 then
+        raise notice 'checked the allergens of %', option_name;
+      end if;
+    end loop;
+    -- The options in the order above, then anything else, in the order
+    -- the list page shows it. Only a place that is wrong is written.
+    option_names := case list_lead
+      when 'Choose one side' then array['fries', 'apple slices',
+        'mac and cheese', 'steamed broccoli', 'mashed potatoes', 'side salad']
+      else array['milk', 'chocolate milk', 'apple juice', 'orange juice',
+        'water']
+      end;
+    update public.choice_options o
+    set sort = ranked.place
+    from (
+      select o2.id,
+        row_number() over (
+          order by
+            array_position(option_names, lower(btrim(o2.name))) nulls last,
+            o2.sort, o2.created_at, o2.id
+        )::integer as place
+      from public.choice_options o2
+      where o2.choice_list_id = kids_list and o2.deleted_at is null
+    ) ranked
+    where o.id = ranked.id and o.sort is distinct from ranked.place;
+    get diagnostics placed = row_count;
+    if placed > 0 then
+      raise notice 'put % of %''s options in place', placed, list_lead;
+    end if;
+  end loop;
+
   -- 3h. Dinner and Drinks published (migration 12, the Publish task): the
   -- gate reads Dinner's page as a published menu and the dashboard's
   -- sentence, and never presses Publish. Each press goes through
@@ -630,8 +853,8 @@ live_sections as (
   where s.deleted_at is null
 ),
 live_items as (
-  select i.id, i.section_id, i.name, i.price_kind, i.price_cents,
-    i.calories_low, i.calories_high, i.cooked_to_order,
+  select i.id, i.section_id, i.name, i.description, i.price_kind,
+    i.price_cents, i.calories_low, i.calories_high, i.cooked_to_order,
     i.allergens, i.custom_allergens, i.allergens_reviewed,
     i.dietary_tags, i.available, i.sold_out_at, i.special_schedule,
     row_number() over (
@@ -689,6 +912,17 @@ soft as (
   select ls.id from live_sections ls
   join drinks on ls.menu_id = drinks.id
   where ls.place = 1 and lower(btrim(ls.name)) = 'soft drinks'
+),
+kids as (
+  select ls.id from live_sections ls
+  join drinks on ls.menu_id = drinks.id
+  where ls.place = 2 and lower(btrim(ls.name)) = 'kids'
+),
+-- Kids' two section lists, in place.
+kids_lists as (
+  select ll.id, ll.lead, ll.place from live_lists ll
+  join kids on ll.section_id = kids.id
+  where ll.on_section
 ),
 starters as (
   select ls.id from live_sections ls
@@ -845,7 +1079,30 @@ verdict as (
          and cardinality(li.allergens) = 0
          and cardinality(li.custom_allergens) = 0
        from live_items li join soft on li.section_id = soft.id
-       where li.place = 1 and lower(btrim(li.name)) = 'lemonade'),
+       where li.place = 1 and lower(btrim(li.name)) = 'lemonade')
+      and exists (select 1 from kids)
+      and (select coalesce(array_agg(lower(btrim(li.name)) order by li.place), '{}')
+         from live_items li join kids on li.section_id = kids.id
+         where li.place <= 3)
+        = array['kids burger', 'chicken tenders', 'grilled cheese']
+      and (select bool_and(li.price_kind = 'one' and li.price_cents is not null
+             and li.description is not null and li.allergens_reviewed)
+         from live_items li join kids on li.section_id = kids.id
+         where li.place <= 3)
+      and (select coalesce(array_agg(lower(btrim(kl.lead)) order by kl.place), '{}')
+         from kids_lists kl where kl.place <= 2)
+        = array['choose one side', 'choose one drink']
+      and (select coalesce(array_agg(lower(btrim(lo.name)) order by lo.place), '{}')
+         from live_options lo join kids_lists kl on lo.choice_list_id = kl.id
+         where kl.place = 1 and lo.place <= 6)
+        = array['fries', 'apple slices', 'mac and cheese', 'steamed broccoli',
+          'mashed potatoes', 'side salad']
+      and (select coalesce(array_agg(lower(btrim(lo.name)) order by lo.place), '{}')
+         from live_options lo join kids_lists kl on lo.choice_list_id = kl.id
+         where kl.place = 2 and lo.place <= 5)
+        = array['milk', 'chocolate milk', 'apple juice', 'orange juice', 'water']
+      and (select bool_and(lo.allergens_reviewed)
+         from live_options lo join kids_lists kl on lo.choice_list_id = kl.id),
       false) as drinks_ok,
     coalesce(
       (select r.timezone = 'America/New_York'
@@ -895,7 +1152,7 @@ from (
       when not v.showing_ok then
         'not ready: House salad is not tagged vegetarian and made without gluten ingredients, Garlic bread is not off the menu for now, or Soup of the day is not a special every day from 4 to 9 pm'
       when not v.drinks_ok then
-        'not ready: Drinks does not hold Soft drinks with Lemonade at $3.00 checked with none'
+        'not ready: Drinks does not hold Soft drinks with Lemonade at $3.00 checked with none, or Kids second with its three dishes, its two lists, and their eleven options, all checked'
       when not v.details_ok then
         'not ready: CI Diner''s time zone, hours, preparation sentence, or allergen note is not as the diner page expects'
       when not v.published_ok then
@@ -928,6 +1185,10 @@ from (
       when lower(btrim(lm.name)) = 'drinks'
         and ls.place = 1
         and lower(btrim(ls.name)) = 'soft drinks'
+        then 'needed'
+      when lower(btrim(lm.name)) = 'drinks'
+        and ls.place = 2
+        and lower(btrim(ls.name)) = 'kids'
         then 'needed'
       else 'extra, left as it is'
     end
@@ -968,6 +1229,12 @@ from (
         and li.place = 1
         and lower(btrim(li.name)) = 'lemonade'
         then 'needed'
+      when lower(btrim(lm.name)) = 'drinks'
+        and lower(btrim(ls.name)) = 'kids'
+        and li.place <= 3
+        and lower(btrim(li.name))
+          in ('kids burger', 'chicken tenders', 'grilled cheese')
+        then 'needed'
       else 'extra, left as it is'
     end
   from live_items li
@@ -1002,6 +1269,7 @@ from (
     case
       when ll.id in (select roll_list.id from roll_list) then 'needed'
       when ll.id in (select dressing.id from dressing) then 'needed'
+      when ll.id in (select kl.id from kids_lists kl) then 'needed'
       else 'extra, left as it is'
     end
   from live_lists ll
@@ -1021,6 +1289,16 @@ from (
         then 'needed'
       when ll.id in (select dressing.id from dressing)
         and lo.place <= 2 and lower(btrim(lo.name)) in ('ranch', 'vinaigrette')
+        then 'needed'
+      when ll.id in (select kl.id from kids_lists kl where kl.place = 1)
+        and lo.place <= 6
+        and lower(btrim(lo.name)) in ('fries', 'apple slices',
+          'mac and cheese', 'steamed broccoli', 'mashed potatoes', 'side salad')
+        then 'needed'
+      when ll.id in (select kl.id from kids_lists kl where kl.place = 2)
+        and lo.place <= 5
+        and lower(btrim(lo.name)) in ('milk', 'chocolate milk', 'apple juice',
+          'orange juice', 'water')
         then 'needed'
       else 'extra, left as it is'
     end
