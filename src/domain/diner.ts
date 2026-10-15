@@ -165,7 +165,9 @@ export type DinerMenuView = {
   id: string;
   name: string;
   sections: DinerSection[];
-  confirmation: ConfirmationLine;
+  // Null when no dish shows (D-177): the page then says nothing about
+  // allergens and renders one line where its sections would be.
+  confirmation: ConfirmationLine | null;
   notices: DinerNotices;
 };
 
@@ -329,10 +331,13 @@ export function timedDishes(
 // a dish off the menu, or outside its schedule, is hidden. A section with
 // nothing to show is hidden whole, note and lists included, and leaves the
 // section list, so the list never reads "Specials, 0 items" (Q-89,
-// defaulted); it returns at the next timed end.
+// defaulted); it returns at the next timed end. When no dish shows at all,
+// the view has no sections and no confirmation line (D-177): zero of zero
+// is not every dish, and the page says so in one line instead.
 export function visibleMenu(inputs: VisibleMenuInputs): DinerMenuView {
   const { snapshot, states, now, hours, zone, copy, lang } = inputs;
   const today = todayIn(zone, now);
+  let shownDishes = 0;
   let unconfirmedDishes = 0;
   let unconfirmedOptions = 0;
   let calories = false;
@@ -353,6 +358,7 @@ export function visibleMenu(inputs: VisibleMenuInputs): DinerMenuView {
         copy.time,
       );
     }
+    shownDishes += 1;
     if (!dish.allergens.checked) unconfirmedDishes += 1;
     unconfirmedOptions += uncheckedOptions(dish.choice_lists);
     calories ||= priceShowsCalories(dish.price);
@@ -404,7 +410,11 @@ export function visibleMenu(inputs: VisibleMenuInputs): DinerMenuView {
     name: snapshot.menu.name,
     sections,
     confirmation: confirmationLine(
-      { dishes: unconfirmedDishes, options: unconfirmedOptions },
+      {
+        shown: shownDishes,
+        dishes: unconfirmedDishes,
+        options: unconfirmedOptions,
+      },
       copy.allergens,
     ),
     notices: { calories, cookedToOrder },

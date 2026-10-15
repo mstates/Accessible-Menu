@@ -28,10 +28,11 @@ import { hearLog, heard } from "../a11y/owner-lists";
 // page by its id; the page whole with JavaScript off; a new restaurant's
 // code answering at once; a section's lists past the constant once under
 // the heading with a link in each dish that moves focus to them (Build 2,
-// Q-74); and the menu named under the restaurant's name when it is the
-// only one published (Q-97). The stand-in seeds Dinner and Drinks
-// published as CI Diner's data file leaves them. Each check puts the
-// stand-in back as it found it.
+// Q-74); the menu named under the restaurant's name when it is the only
+// one published (Q-97); and a published menu that shows no dish reading
+// one line where its sections would be (D-177). The stand-in seeds
+// Dinner, Drinks, and Brunch published as CI Diner's data file leaves
+// them. Each check puts the stand-in back as it found it.
 
 const { code } = ownerEnv();
 const bare = menuPath(code);
@@ -108,7 +109,7 @@ async function press(page: Page, name: string, sentence: string) {
   await expect.poll(() => said(page, sentence)).toBe(1);
 }
 
-// Menus by name, from the stand-in's rows.
+// Menus and dishes by name, from the stand-in's rows.
 async function menuId(name: string): Promise<string> {
   const rows = (await (await knob("menus")).json()) as {
     id: string;
@@ -117,6 +118,17 @@ async function menuId(name: string): Promise<string> {
   }[];
   const found = rows.find((row) => row.name === name && !row.deleted_at);
   if (!found) throw new Error(`no menu ${name}`);
+  return found.id;
+}
+
+async function dishId(name: string): Promise<string> {
+  const rows = (await (await knob("items")).json()) as {
+    id: string;
+    name: string;
+    deleted_at: string | null;
+  }[];
+  const found = rows.find((row) => row.name === name && !row.deleted_at);
+  if (!found) throw new Error(`no dish ${name}`);
   return found.id;
 }
 
@@ -330,9 +342,12 @@ test("a known code with nothing published shows the name and one line, never a 4
 }) => {
   const { withSections } = ownerFixture();
   const drinks = await menuId("Drinks");
+  const brunch = await menuId("Brunch");
   await openOwner(page, restaurantMenuPath(code, withSections.id));
   await press(page, publishing.unpublish, publishing.spoken.unpublished);
   await openOwner(page, restaurantMenuPath(code, drinks));
+  await press(page, publishing.unpublish, publishing.spoken.unpublished);
+  await openOwner(page, restaurantMenuPath(code, brunch));
   await press(page, publishing.unpublish, publishing.spoken.unpublished);
 
   const read = await served(page, bare);
@@ -354,6 +369,11 @@ test("a known code with nothing published shows the name and one line, never a 4
   await expect
     .poll(async () => (await served(page, bare)).html)
     .toContain(">Drinks<");
+  await openOwner(page, restaurantMenuPath(code, brunch));
+  await press(page, publishing.publish, publishing.spoken.published);
+  await expect
+    .poll(async () => (await served(page, bare)).html)
+    .toContain(">Brunch<");
 });
 
 test("a menu id that is not published shows the name, its line, and the way to the menu, for a minute at a time", async ({
@@ -462,7 +482,10 @@ test("with one menu published the page names it under the restaurant's name and 
 }) => {
   const name = "Stand-in Diner (test restaurant, not real)";
   const drinks = await menuId("Drinks");
+  const brunch = await menuId("Brunch");
   await openOwner(page, restaurantMenuPath(code, drinks));
+  await press(page, publishing.unpublish, publishing.spoken.unpublished);
+  await openOwner(page, restaurantMenuPath(code, brunch));
   await press(page, publishing.unpublish, publishing.spoken.unpublished);
   try {
     const alone = await served(page, bare);
@@ -475,16 +498,70 @@ test("with one menu published the page names it under the restaurant's name and 
   } finally {
     await openOwner(page, restaurantMenuPath(code, drinks));
     await press(page, publishing.publish, publishing.spoken.published);
+    await openOwner(page, restaurantMenuPath(code, brunch));
+    await press(page, publishing.publish, publishing.spoken.published);
   }
   await expect
     .poll(async () => (await served(page, bare)).html)
-    .toContain(">Drinks<");
+    .toContain(">Brunch<");
   const both = await served(page, bare);
   expect(both.html).toContain(
     `<title>${menuNaming("Dinner", name, en.menu).title}</title>`,
   );
   expect(both.html).not.toContain(">Dinner menu<");
   expect(both.html).toContain(`aria-label="${en.menu.menusLabel}"`);
+});
+
+test("a published menu whose every dish is off the menu says nothing is served where its sections would be, keeps the note, and shows its dishes again when one is available (D-177)", async ({
+  page,
+}) => {
+  const name = "Stand-in Diner (test restaurant, not real)";
+  const brunch = menuPath(code, await menuId("Brunch"));
+  const shakshuka = await dishId("Shakshuka");
+  const line = en.menu.nothingServed;
+
+  const empty = await served(page, brunch);
+  expect(empty.status).toBe(200);
+  expect(empty.html).toContain(
+    `<title>${menuNaming("Brunch", name, en.menu).title}</title>`,
+  );
+  expect(empty.html).toContain(line);
+  expect(empty.html).toContain(en.allergens.noteDefault);
+  expect(empty.html).toContain(en.allergens.prepNotes["shared-fryer"]);
+  expect(
+    empty.html.indexOf(en.allergens.noteDefault),
+    "the note comes before the line",
+  ).toBeLessThan(empty.html.indexOf(line));
+  expect(empty.html).not.toContain(en.allergens.confirmedAll);
+  expect(empty.html).not.toContain("still confirming allergens");
+  expect(empty.html).not.toContain(`aria-label="${en.menu.sectionsLabel}"`);
+  expect(empty.html).not.toContain("Shakshuka");
+  // The switcher stays, Brunch among its menus, so its link lands somewhere.
+  expect(empty.html).toContain(`aria-label="${en.menu.menusLabel}"`);
+  expect(empty.html).toContain(">Brunch<");
+  // No timed change: the page lives until a write, as Drinks' page does.
+  const drinks = await served(page, menuPath(code, await menuId("Drinks")));
+  expect(empty.maxAge).toBe(drinks.maxAge);
+  expect(empty.staleFor).toBe(drinks.staleFor);
+
+  // Available again through its dish page, which clears the restaurant's
+  // pages: Eggs is back with its dish and the confirmation line, and the
+  // line is gone.
+  await openOwner(page, restaurantDishPath(code, shakshuka));
+  await choose(page, dish.availability.available);
+  try {
+    const shown = await served(page, brunch);
+    expect(shown.html).toContain("Shakshuka");
+    expect(shown.html).toContain(`aria-label="${en.menu.sectionsLabel}"`);
+    expect(shown.html).toContain(en.allergens.confirmedAll);
+    expect(shown.html).not.toContain(line);
+  } finally {
+    await openOwner(page, restaurantDishPath(code, shakshuka));
+    await choose(page, dish.availability.off);
+  }
+  await expect
+    .poll(async () => (await served(page, brunch)).html)
+    .toContain(line);
 });
 
 test("with JavaScript off the page reads whole and points at no missing id", async ({

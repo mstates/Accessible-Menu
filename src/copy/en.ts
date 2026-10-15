@@ -361,7 +361,9 @@ export const en = {
     // the menu's own page, and the dashboard's summary of a restaurant's
     // menus. Publish sends the menu's content to diners as a snapshot; a
     // sold-out mark and a special's schedule reach diners on their own
-    // (D-84). A size with no name or no price blocks Publish (D-139).
+    // (D-84). A size with no name or no price blocks Publish (D-139), and
+    // so does a menu with no dishes in any of its sections (D-177), which
+    // the list names by the menu alone.
     publishing: {
       heading: "Publishing",
       state: {
@@ -374,6 +376,7 @@ export const en = {
       problems: {
         sizeUnnamed: "{dish} in {section} has a size with no name.",
         sizeUnpriced: "{dish} in {section} has a size with no price.",
+        noDishes: "{menu} has no dishes.",
       },
       publish: "Publish",
       unpublish: "Unpublish",
@@ -387,6 +390,8 @@ export const en = {
           "{menu} was not published. {dish} has a size with no name. Name it or remove it, then publish again.",
         sizeUnpriced:
           "{menu} was not published. {dish} has a size with no price. Give it a price or remove it, then publish again.",
+        noDishes:
+          "{menu} was not published. It has no dishes. Add a dish, then publish again.",
         gone: "{menu} was not published. It is not there any more.",
         notPublished: "{menu} was not published.",
         notUnpublishedGone:
@@ -1326,6 +1331,11 @@ export const en = {
     unavailable: "This menu isn't available right now.",
     menuUnavailable: "That menu isn't available right now.",
     menuUnavailableLink: "See {restaurant}'s menu.",
+    // A published menu that shows no dish right now, every dish off the menu
+    // for now or every special outside its hours (D-177): one line where the
+    // sections would be; the restaurant's note above it stays, and nothing
+    // claims its allergens are confirmed.
+    nothingServed: "Nothing on this menu is served right now.",
     notices: {
       calories:
         "2,000 calories a day is used for general nutrition advice, but calorie needs vary.",

@@ -15,10 +15,11 @@ import { expectWrites, guardWrites } from "./write-guard";
 // test restaurant (D-126): the menu with sections is published and the
 // empty one is not, set by the data file through publish_menu(), since the
 // gate never writes (D-115). What is checked here is what the page shows
-// and says in each state and what a press does when it cannot land; the
-// presses that land run in tests/local against the stand-in. The arrival
-// pass for the menu page, with Publish and Unpublish among its controls,
-// runs from owner-sections.spec.ts.
+// and says in each state, the empty menu's page naming what blocks Publish
+// (D-177), and what a press does when it cannot land; the presses that
+// land run in tests/local against the stand-in. The arrival pass for the
+// menu page, with Publish and Unpublish among its controls, runs from
+// owner-sections.spec.ts.
 
 const { code } = ownerEnv();
 const strings = en.owner.publishing;
@@ -65,12 +66,18 @@ test("a published menu's page says when it was published, shows Publish and Unpu
   await expectNoAxeViolations(page);
 });
 
-test("an unpublished menu's page says so and shows Publish alone, before the sections", async ({
+test("an unpublished menu's page says so and shows Publish alone, before the sections, and a menu with no dishes names that as what Publish waits on", async ({
   page,
 }) => {
   const { empty } = ownerFixture();
   await open(page, restaurantMenuPath(code, empty.id));
   await expect(group(page).getByText(strings.state.notPublished)).toBeVisible();
+  // The empty menu has no dishes, so Publish waits on the menu itself
+  // (D-177, migration 14): one sentence naming it, and nothing else.
+  await expect(group(page).getByText(strings.waitingLead)).toBeVisible();
+  await expect(group(page).getByRole("listitem")).toHaveText([
+    fill(strings.problems.noDishes, { menu: empty.name }),
+  ]);
   await expect(button(page, strings.publish)).toBeVisible();
   await expect(button(page, strings.unpublish)).toHaveCount(0);
   // The group comes first after the h1, then the lead, then the status.

@@ -10,15 +10,16 @@ import { ownerEnv, ownerFixture } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
 
 // Publish and Unpublish with the presses landing for real against the
-// stand-in (D-82, migration 12), which seeds Dinner published as CI Diner's
-// data file does: a rename on the same page turning the state into changes
-// not published yet and the dashboard saying so, Publish said once and the
-// state read back, Unpublish, Publish again, and a blank size added on the
-// dish's page blocking Publish with the sentence said once and nothing
-// written. The gate cannot land a press, so this runs here. Each check
+// stand-in (D-82, migration 12), which seeds Dinner, Drinks, and Brunch
+// published as CI Diner's data file does: a rename on the same page turning
+// the state into changes not published yet and the dashboard saying so,
+// Publish said once and the state read back, Unpublish, Publish again, a
+// blank size added on the dish's page blocking Publish with the sentence
+// said once and nothing written, and a menu with no dishes blocked by the
+// menu (D-177). The gate cannot land a press, so this runs here. Each check
 // leaves the stand-in as it found it: Dinner published with nothing
 // changed since, its first section with its name, the soup with its two
-// sizes.
+// sizes, Lunch not published.
 
 const { code } = ownerEnv();
 const strings = en.owner.publishing;
@@ -48,8 +49,14 @@ function status(page: Page) {
   return page.locator('main [role="status"]');
 }
 
+// The first section's name field. The Publishing region lists what blocks
+// Publish in a list of its own (D-171, D-177), so a list inside a section
+// is left out.
 function firstSectionName(page: Page) {
-  return page.locator("main ul > li").first().locator('input[id$="-name"]');
+  return page
+    .locator("main ul:not(section ul) > li")
+    .first()
+    .locator('input[id$="-name"]');
 }
 
 const list = new Intl.ListFormat("en", { type: "conjunction" });
@@ -76,13 +83,14 @@ test("a rename makes changes not published yet, Publish is said once and clears 
   await renameFirstSection(page, `${original} renamed`);
   await expect(group(page).getByText(changedNow)).toBeVisible();
 
-  // Dinner and Drinks are published, as the data file leaves CI Diner.
+  // Dinner, Drinks, and Brunch are published, as the data file leaves CI
+  // Diner.
   await page.goto(dashboardPath);
   await page.waitForLoadState("networkidle");
   await expect(
     page.getByText(
       fill(strings.summary.published.other, {
-        names: list.format([withSections.name, "Drinks"]),
+        names: list.format([withSections.name, "Drinks", "Brunch"]),
       }),
       { exact: true },
     ),
@@ -112,13 +120,16 @@ test("a rename makes changes not published yet, Publish is said once and clears 
     "focus stays in the group, on Publish, once Unpublish has gone",
   ).toBeFocused();
 
-  // Drinks stays published on its own.
+  // Drinks and Brunch stay published on their own.
   await page.goto(dashboardPath);
   await page.waitForLoadState("networkidle");
   await expect(
-    page.getByText(fill(strings.summary.published.one, { names: "Drinks" }), {
-      exact: true,
-    }),
+    page.getByText(
+      fill(strings.summary.published.other, {
+        names: list.format(["Drinks", "Brunch"]),
+      }),
+      { exact: true },
+    ),
   ).toBeVisible();
 
   // As it was: the name back, then published with nothing changed since.
@@ -128,6 +139,57 @@ test("a rename makes changes not published yet, Publish is said once and clears 
   await expect.poll(() => said(page, strings.spoken.published)).toBe(1);
   await expect(group(page).getByText(publishedNow)).toBeVisible();
   await expect(button(page, strings.unpublish)).toBeVisible();
+});
+
+test("a menu with no dishes blocks Publish: the page names the menu, the press is refused once with nothing written, and the status shows the sentence with no Try again (D-177)", async ({
+  page,
+}) => {
+  const { empty } = ownerFixture();
+  const standin = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const writesSoFar = async () =>
+    ((await (await fetch(`${standin}/__test/writes`)).json()) as unknown[])
+      .length;
+
+  await page.goto(restaurantMenuPath(code, empty.id));
+  await page.waitForLoadState("networkidle");
+  await hearLog(page);
+  try {
+    await expect(
+      group(page).getByText(strings.state.notPublished),
+    ).toBeVisible();
+    await expect(group(page).getByText(strings.waitingLead)).toBeVisible();
+    await expect(group(page).getByRole("listitem")).toHaveText([
+      fill(strings.problems.noDishes, { menu: empty.name }),
+    ]);
+
+    const before = await writesSoFar();
+    await button(page, strings.publish).click();
+    const refused = fill(strings.refused.noDishes, { menu: empty.name });
+    await expect.poll(() => said(page, refused)).toBe(1);
+    await expect(status(page)).toHaveText(refused);
+    await expect(
+      page.getByRole("button", { name: editing.tryAgain, exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      group(page).getByText(strings.state.notPublished),
+    ).toBeVisible();
+    expect(await said(page, strings.spoken.published)).toBe(0);
+    expect(
+      (await writesSoFar()) - before,
+      "the press reached the stand-in once and wrote nothing",
+    ).toBe(1);
+    // The problems read back after the refusal: the list still names the menu.
+    await expect(group(page).getByRole("listitem")).toHaveText([
+      fill(strings.problems.noDishes, { menu: empty.name }),
+    ]);
+  } finally {
+    // On a build that still publishes an empty menu, put it back as the
+    // owner setup needs it: not published.
+    if ((await button(page, strings.unpublish).count()) > 0) {
+      await button(page, strings.unpublish).click();
+      await expect.poll(() => said(page, strings.spoken.unpublished)).toBe(1);
+    }
+  }
 });
 
 test("a size with no name blocks Publish: the page names it, the press is refused once with nothing written, and the status shows the sentence with no Try again", async ({

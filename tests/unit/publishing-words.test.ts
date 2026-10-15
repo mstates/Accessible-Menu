@@ -70,19 +70,25 @@ describe("the state sentence", () => {
 describe("what blocks Publish", () => {
   it("names the dish and its section", () => {
     expect(
-      blockerSentence(strings, {
-        kind: "size-unnamed",
-        dish: "Soup of the day",
-        section: "Starters",
-      }),
+      blockerSentence(
+        strings,
+        { kind: "size-unnamed", dish: "Soup of the day", section: "Starters" },
+        "Dinner",
+      ),
     ).toBe("Soup of the day in Starters has a size with no name.");
     expect(
-      blockerSentence(strings, {
-        kind: "size-unpriced",
-        dish: "Soup of the day",
-        section: "Starters",
-      }),
+      blockerSentence(
+        strings,
+        { kind: "size-unpriced", dish: "Soup of the day", section: "Starters" },
+        "Dinner",
+      ),
     ).toBe("Soup of the day in Starters has a size with no price.");
+  });
+
+  it("names the menu when it has no dishes (D-177)", () => {
+    expect(blockerSentence(strings, { kind: "no-dishes" }, "Lunch")).toBe(
+      "Lunch has no dishes.",
+    );
   });
 });
 
@@ -98,6 +104,17 @@ describe("why a press did not land", () => {
       }),
     ).toBe(
       "Dinner was not published. Soup of the day has a size with no price. Give it a price or remove it, then publish again.",
+    );
+  });
+
+  it("tells the owner to add a dish when the menu has none (D-177)", () => {
+    expect(
+      refusedSentence(strings, editing, "Lunch", "publish", {
+        kind: "blocked",
+        blockers: [{ kind: "no-dishes" }],
+      }),
+    ).toBe(
+      "Lunch was not published. It has no dishes. Add a dish, then publish again.",
     );
   });
 

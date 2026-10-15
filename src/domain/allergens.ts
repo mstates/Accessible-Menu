@@ -122,12 +122,16 @@ function count(n: number, words: { one: string; other: string }): string {
 }
 
 // The header line under the note (D-36). "Allergens confirmed for every
-// dish." only when no shown dish and no shown option is unchecked.
+// dish." only when no shown dish and no shown option is unchecked, and
+// nothing at all when no dish shows (D-177): zero of zero is not every
+// dish, and a diner reading the line over an empty page would be told
+// something no person said (rule 9).
 export function confirmationLine(
-  counts: ConfirmationCounts,
+  counts: ConfirmationCounts & { shown: number },
   copy: AllergenCopy,
-): ConfirmationLine {
-  const { dishes, options } = counts;
+): ConfirmationLine | null {
+  const { shown, dishes, options } = counts;
+  if (shown === 0) return null;
   const { confirming } = copy;
   let text: string;
   if (dishes === 0 && options === 0) {

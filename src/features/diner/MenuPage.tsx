@@ -21,7 +21,10 @@ type Props = { data: MenuPageData; copy: Copy };
 // Choice lists (D-166, Q-74) are real lists: a dish's own after its lines,
 // and a section's repeated inside every dish while they hold few options
 // in all, or once under the section heading past that, with a link in
-// each dish that lands on them.
+// each dish that lands on them. A menu that shows no dish right now, every
+// dish off the menu or every special outside its hours, keeps everything
+// above the note and reads one line where its sections would be, with no
+// section list and no confirmation line (D-177).
 export function MenuPage({ data, copy }: Props) {
   const { restaurant, menus, menuLine, menu, code } = data;
   return (
@@ -78,8 +81,13 @@ export function MenuPage({ data, copy }: Props) {
               {paragraph}
             </p>
           ))}
-          <p className="mt-2 font-semibold">{menu.confirmation.text}</p>
+          {menu.confirmation ? (
+            <p className="mt-2 font-semibold">{menu.confirmation.text}</p>
+          ) : null}
         </div>
+        {menu.sections.length === 0 ? (
+          <p className="pt-6">{copy.menu.nothingServed}</p>
+        ) : null}
         {menu.sections.length > 0 ? (
           <InPageLinks label={copy.menu.sectionsLabel} className="pt-6">
             <ul className="flex flex-wrap gap-x-4 gap-y-2">
@@ -93,58 +101,60 @@ export function MenuPage({ data, copy }: Props) {
             </ul>
           </InPageLinks>
         ) : null}
-        <InPageLinks as="div">
-          {menu.sections.map((section) => (
-            <section
-              key={section.id}
-              aria-labelledby={`${section.id}-heading`}
-              className="pt-8"
-            >
-              {/* A section link lands here (D-81). The focus ring is the one
+        {menu.sections.length > 0 ? (
+          <InPageLinks as="div">
+            {menu.sections.map((section) => (
+              <section
+                key={section.id}
+                aria-labelledby={`${section.id}-heading`}
+                className="pt-8"
+              >
+                {/* A section link lands here (D-81). The focus ring is the one
                   every Tab stop wears, from app/globals.css (Q-100), and the
                   scroll margin keeps its top edge on the screen. */}
-              <h3
-                id={section.id}
-                tabIndex={-1}
-                className="scroll-mt-4 text-2xl font-bold"
-              >
-                <span id={`${section.id}-heading`}>{section.name}</span>
-              </h3>
-              {section.note ? (
-                <p className="mt-1 text-foreground-muted">
-                  <Lines text={section.note} />
-                </p>
-              ) : null}
-              {/* A dish's link lands here (Q-74), with the same ring. The
+                <h3
+                  id={section.id}
+                  tabIndex={-1}
+                  className="scroll-mt-4 text-2xl font-bold"
+                >
+                  <span id={`${section.id}-heading`}>{section.name}</span>
+                </h3>
+                {section.note ? (
+                  <p className="mt-1 text-foreground-muted">
+                    <Lines text={section.note} />
+                  </p>
+                ) : null}
+                {/* A dish's link lands here (Q-74), with the same ring. The
                   scroll margin leaves room above for the section's heading
                   and a note of up to two lines, so a diner sees whose
                   choices these are (Q-100). */}
-              {!section.repeatLists && section.lists.length > 0 ? (
-                <div
-                  id={choicesId(section)}
-                  tabIndex={-1}
-                  role="group"
-                  aria-label={choicesWords(section, copy)}
-                  className="mt-3 scroll-mt-24"
-                >
-                  {section.lists.map((list) => (
-                    <ChoiceList key={list.id} list={list} />
+                {!section.repeatLists && section.lists.length > 0 ? (
+                  <div
+                    id={choicesId(section)}
+                    tabIndex={-1}
+                    role="group"
+                    aria-label={choicesWords(section, copy)}
+                    className="mt-3 scroll-mt-24"
+                  >
+                    {section.lists.map((list) => (
+                      <ChoiceList key={list.id} list={list} />
+                    ))}
+                  </div>
+                ) : null}
+                <ul className="mt-2 divide-y divide-border">
+                  {section.dishes.map((dish) => (
+                    <Dish
+                      key={dish.id}
+                      dish={dish}
+                      section={section}
+                      copy={copy}
+                    />
                   ))}
-                </div>
-              ) : null}
-              <ul className="mt-2 divide-y divide-border">
-                {section.dishes.map((dish) => (
-                  <Dish
-                    key={dish.id}
-                    dish={dish}
-                    section={section}
-                    copy={copy}
-                  />
-                ))}
-              </ul>
-            </section>
-          ))}
-        </InPageLinks>
+                </ul>
+              </section>
+            ))}
+          </InPageLinks>
+        ) : null}
       </main>
       <footer className="mx-auto max-w-menu border-t border-border px-4 pt-6 pb-10 text-sm">
         {menu.notices.calories ? (

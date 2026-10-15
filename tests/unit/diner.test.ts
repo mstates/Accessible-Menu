@@ -149,19 +149,19 @@ describe("what a diner sees at one moment (D-159, D-160, D-39)", () => {
     const ranch = salad?.choice_lists[0]?.options[0];
     if (!ranch) throw new Error("no Ranch in the fixture");
     ranch.allergens = { checked: false };
-    expect(view(fivePm, snapshot).confirmation.text).toBe(
+    expect(view(fivePm, snapshot).confirmation?.text).toBe(
       "We're still confirming allergens for 1 dish and 1 option. Ask your server about those.",
     );
     // Mains' soup checked too: options alone.
     const mainsSoup = snapshot.sections[1]?.items[0];
     if (!mainsSoup) throw new Error("no soup in Mains");
     mainsSoup.allergens = { checked: true, major: [], other: [] };
-    expect(view(fivePm, snapshot).confirmation.text).toBe(
+    expect(view(fivePm, snapshot).confirmation?.text).toBe(
       "We're still confirming allergens for 1 option. Ask your server about that.",
     );
     // Every dish and option checked: confirmed for every dish.
     ranch.allergens = { checked: true, major: ["milk", "eggs"], other: [] };
-    expect(view(fivePm, snapshot).confirmation.text).toBe(
+    expect(view(fivePm, snapshot).confirmation?.text).toBe(
       "Allergens confirmed for every dish.",
     );
   });
@@ -171,7 +171,7 @@ describe("what a diner sees at one moment (D-159, D-160, D-39)", () => {
     const snapshot = dinner();
     const bread = snapshot.sections[0]?.items[2];
     expect(bread?.allergens.checked).toBe(false);
-    expect(view(fivePm, snapshot).confirmation.dishes).toBe(1);
+    expect(view(fivePm, snapshot).confirmation?.dishes).toBe(1);
     // Desserts given an unchecked section list, with nothing to show: not
     // counted either.
     const desserts = snapshot.sections[2];
@@ -192,7 +192,52 @@ describe("what a diner sees at one moment (D-159, D-160, D-39)", () => {
         ],
       },
     ];
-    expect(view(fivePm, snapshot).confirmation.options).toBe(0);
+    expect(view(fivePm, snapshot).confirmation?.options).toBe(0);
+  });
+
+  it("shows nothing, says nothing about allergens, and flags no notice when every dish is off the menu (D-177)", () => {
+    const snapshot = dinner();
+    const off: DishState = {
+      available: false,
+      soldOutAt: null,
+      schedule: null,
+    };
+    const states = new Map<string, DishState>(
+      snapshot.sections.flatMap((section) =>
+        section.items.map((dish) => [dish.id, off] as const),
+      ),
+    );
+    const menu = view(fivePm, snapshot, states);
+    expect(menu.name).toBe("Dinner");
+    expect(menu.sections).toEqual([]);
+    expect(menu.confirmation).toBeNull();
+    expect(menu.notices).toEqual({ calories: false, cookedToOrder: false });
+  });
+
+  it("shows nothing and says nothing about allergens when the only dish left is a special outside its hours (D-177)", () => {
+    const snapshot = dinner();
+    const states = ciStates(snapshot);
+    const off: DishState = {
+      available: false,
+      soldOutAt: null,
+      schedule: null,
+    };
+    states.set(dishId(snapshot, "Starters", "House salad"), off);
+    states.set(dishId(snapshot, "Mains", "Soup of the day"), off);
+    // 5 pm: the special shows, alone, and it is checked.
+    const inHours = view(fivePm, snapshot, states);
+    expect(inHours.sections.map((s) => s.name)).toEqual(["Starters"]);
+    expect(inHours.sections[0]?.dishes.map((d) => d.name)).toEqual([
+      "Soup of the day",
+    ]);
+    expect(inHours.confirmation?.text).toBe(
+      "Allergens confirmed for every dish.",
+    );
+    // 10 pm: its hours are over, and nothing is left to claim anything for.
+    const after = view(tenPm, snapshot, states);
+    expect(after.sections).toEqual([]);
+    expect(after.confirmation).toBeNull();
+    expect(after.notices).toEqual({ calories: false, cookedToOrder: false });
   });
 
   it("shows a dish with no state row as available, with no special", () => {

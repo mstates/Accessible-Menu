@@ -36,7 +36,9 @@ import { menuCode } from "./pages";
 // Dinner, and Kids' two lists once under the heading on Drinks with a link
 // in each dish that moves focus to them. The soup is a special every day
 // from 4 to 9 pm New York, so the checks that read it compute whether it
-// shows now.
+// shows now. Brunch, the third published menu, holds one dish off the menu
+// for now, so its page shows no dish and reads one line where its sections
+// would be (D-177).
 
 const bare = menuPath(menuCode);
 const madeUp = menuPath(menuCode, "00000000-0000-4000-8000-000000000000");
@@ -45,11 +47,12 @@ const soupShows = () =>
   showingAt({ hours: { open: "16:00", close: "21:00" } }, new Date(), zone)
     .showing;
 
-// The second published menu's page, found from the switcher before the
-// checks that need it run. A failure says what the fetch got, its status,
-// x-vercel-cache, and age, and the menus the switcher named, so a stale
-// edge copy reads as one at a glance (attempt 2 on 2ef6227).
+// The second and third published menus' pages, found from the switcher
+// before the checks that need them run. A failure says what the fetch got,
+// its status, x-vercel-cache, and age, and the menus the switcher named,
+// so a stale edge copy reads as one at a glance (attempt 2 on 2ef6227).
 let drinksPath = "";
+let brunchPath = "";
 
 test.beforeAll(async ({ request }) => {
   const response = await request.get(bare);
@@ -66,6 +69,9 @@ test.beforeAll(async ({ request }) => {
   const drinks = found.find((menu) => menu.name === "Drinks");
   if (!drinks) throw new Error(`${got}: the switcher names no Drinks page`);
   drinksPath = drinks.path;
+  const brunch = found.find((menu) => menu.name === "Brunch");
+  if (!brunch) throw new Error(`${got}: the switcher names no Brunch page`);
+  brunchPath = brunch.path;
 });
 
 // The section's choices block and the link each dish carries to it (Q-74).
@@ -111,6 +117,10 @@ test.describe(bare, () => {
 
 test.describe("the second menu's page", () => {
   pageChecks(() => drinksPath);
+});
+
+test.describe("the third menu's page", () => {
+  pageChecks(() => brunchPath);
 });
 
 test.describe(madeUp, () => {
@@ -227,7 +237,7 @@ test("no diner response sets a cookie and nothing is requested from another orig
       cookies.push(response.url());
     }
   });
-  for (const path of [bare, drinksPath, madeUp]) {
+  for (const path of [bare, drinksPath, brunchPath, madeUp]) {
     const response = await open(page, path);
     expect(response.headers()["set-cookie"]).toBeUndefined();
     await page.waitForLoadState("networkidle");
@@ -326,7 +336,11 @@ test("the sentences on CI Diner's Dinner come from the builders, and the hidden 
   // naming the menu, since the switcher does (Q-97).
   await expect(page.getByText("Dinner menu", { exact: true })).toHaveCount(0);
   const menus = page.getByRole("navigation", { name: en.menu.menusLabel });
-  await expect(menus.getByRole("link")).toHaveText(["Dinner", "Drinks"]);
+  await expect(menus.getByRole("link")).toHaveText([
+    "Dinner",
+    "Drinks",
+    "Brunch",
+  ]);
   await expect(
     menus.getByRole("link", { name: "Dinner", exact: true }),
   ).toHaveAttribute("aria-current", "page");
@@ -488,6 +502,8 @@ test("the menu pages carry their permanent address as their canonical link, and 
   expect(first.hash).toBe("");
   const second = await canonical(drinksPath);
   expect(second.pathname).toBe(drinksPath);
+  const third = await canonical(brunchPath);
+  expect(third.pathname).toBe(brunchPath);
   await open(page, madeUp);
   await expect(page.locator('head meta[name="robots"]')).toHaveAttribute(
     "content",
@@ -676,6 +692,73 @@ test("the second menu's page shows that menu as current, and a made-up id shows 
   await expect(
     page.getByRole("link", { name: en.menu.footer.statement, exact: true }),
   ).toBeVisible();
+});
+
+test("a published menu with nothing to show says so where its sections would be, keeps the note, and claims nothing about allergens (D-177)", async ({
+  page,
+}) => {
+  await open(page, brunchPath);
+  const name = await page.getByRole("heading", { level: 2 }).textContent();
+  await expect(page).toHaveTitle(
+    menuNaming("Brunch", name ?? "", en.menu).title,
+  );
+  // The headings list is the h1 and the restaurant's name alone.
+  const list = await headings(page);
+  expect(list.map((heading) => heading.level)).toEqual([1, 2]);
+  // The switcher stays, Brunch current, so its link lands somewhere.
+  const menus = page.getByRole("navigation", { name: en.menu.menusLabel });
+  await expect(menus.getByRole("link")).toHaveText([
+    "Dinner",
+    "Drinks",
+    "Brunch",
+  ]);
+  await expect(
+    menus.getByRole("link", { name: "Brunch", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  // No section list, no section, no choices block.
+  await expect(
+    page.getByRole("navigation", { name: en.menu.sectionsLabel }),
+  ).toHaveCount(0);
+  await expect(page.locator("main section")).toHaveCount(0);
+  await expect(page.getByRole("group")).toHaveCount(0);
+  // The note and its preparation sentence stay, then the one line, once.
+  await expect(page.getByText(en.allergens.noteDefault)).toBeVisible();
+  await expect(
+    page.getByText(en.allergens.prepNotes["shared-fryer"]),
+  ).toBeVisible();
+  const line = page.getByText(en.menu.nothingServed, { exact: true });
+  await expect(line).toHaveCount(1);
+  await expect(line).toBeVisible();
+  const paragraphs = await page
+    .locator("main p")
+    .evaluateAll((all) => all.map((p) => (p.textContent ?? "").trim()));
+  expect(
+    paragraphs.indexOf(en.allergens.noteDefault),
+    "the note comes before the line",
+  ).toBeLessThan(paragraphs.indexOf(en.menu.nothingServed));
+  // Nothing claims the allergens are confirmed, or still being confirmed.
+  await expect(
+    page.getByText(en.allergens.confirmedAll, { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText(/^We're still confirming allergens for /),
+  ).toHaveCount(0);
+  // The footer: no notice, since nothing shows, and the two quiet links.
+  const footer = page.locator("footer");
+  await expect(footer.getByText(en.menu.notices.calories)).toHaveCount(0);
+  await expect(footer.getByText(en.menu.notices.advisory)).toHaveCount(0);
+  await expect(
+    footer.getByRole("link", { name: en.menu.footer.feedback, exact: true }),
+  ).toBeVisible();
+  await expect(
+    footer.getByRole("link", { name: en.menu.footer.statement, exact: true }),
+  ).toBeVisible();
+  // The served HTML holds the line and no section list, so the page reads
+  // the same with JavaScript off (rule 1).
+  const served = await (await page.request.get(brunchPath)).text();
+  expect(served).toContain(en.menu.nothingServed);
+  expect(served).not.toContain(`aria-label="${en.menu.sectionsLabel}"`);
+  expect(served).not.toContain(en.allergens.confirmedAll);
 });
 
 test("at a 53px root, no horizontal scroll and nothing cut off", async ({

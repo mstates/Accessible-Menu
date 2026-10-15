@@ -36,12 +36,12 @@ export type MenuPublishState = {
 
 // What would block Publish, as publish_problems() reports it: a size with
 // no name or no price under a live dish by size (D-139, D-144), named by
-// the dish and its section, in the order the pages show them.
-export type PublishBlocker = {
-  kind: "size-unnamed" | "size-unpriced";
-  dish: string;
-  section: string;
-};
+// the dish and its section, in the order the pages show them; or the menu
+// itself, with no live dish in any of its sections (D-177, migration 14),
+// which the page names since it knows its menu.
+export type PublishBlocker =
+  | { kind: "size-unnamed" | "size-unpriced"; dish: string; section: string }
+  | { kind: "no-dishes" };
 
 // A delete that takes content with it asks first (D-119): a row that holds
 // anything opens the confirmation, an empty one goes at once.

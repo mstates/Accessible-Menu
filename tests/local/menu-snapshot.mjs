@@ -125,38 +125,55 @@ export function menuSnapshot(store, menuId) {
 }
 
 // What would block Publish: a live size with no name or no price under a
-// live dish by size, in page order, as publish_problems() reports it.
+// live dish by size, in page order, as publish_problems() reports it
+// (migration 12); or the menu itself, with nothing named, while no live
+// dish sits in a live section of it (migration 14, D-177). Availability
+// and schedules are not read, as in the database.
 export function publishProblems(store, menuId) {
   const menu = store.menus.find((row) => row.id === menuId && live(row));
   if (!menu) return [];
-  return store.sections
-    .filter((section) => section.menu_id === menu.id && live(section))
-    .sort(byOrder)
-    .flatMap((section) =>
-      store.items
-        .filter(
-          (dish) =>
-            dish.section_id === section.id &&
-            live(dish) &&
-            dish.price_kind === "sizes",
-        )
-        .sort(byOrder)
-        .flatMap((dish) =>
-          store.sizes
-            .filter(
-              (size) =>
-                size.item_id === dish.id &&
-                live(size) &&
-                (size.name === null || size.price_cents === null),
-            )
-            .sort(bySizeOrder)
-            .map((size) => ({
-              problem: size.name === null ? "size_unnamed" : "size_unpriced",
-              dish: dish.id,
-              dish_name: dish.name,
-              section_name: section.name,
-              size: size.id,
-            })),
-        ),
-    );
+  const sections = store.sections.filter(
+    (section) => section.menu_id === menu.id && live(section),
+  );
+  const hasDish = sections.some((section) =>
+    store.items.some((dish) => dish.section_id === section.id && live(dish)),
+  );
+  if (!hasDish) {
+    return [
+      {
+        problem: "no_dishes",
+        dish: null,
+        dish_name: null,
+        section_name: null,
+        size: null,
+      },
+    ];
+  }
+  return sections.sort(byOrder).flatMap((section) =>
+    store.items
+      .filter(
+        (dish) =>
+          dish.section_id === section.id &&
+          live(dish) &&
+          dish.price_kind === "sizes",
+      )
+      .sort(byOrder)
+      .flatMap((dish) =>
+        store.sizes
+          .filter(
+            (size) =>
+              size.item_id === dish.id &&
+              live(size) &&
+              (size.name === null || size.price_cents === null),
+          )
+          .sort(bySizeOrder)
+          .map((size) => ({
+            problem: size.name === null ? "size_unnamed" : "size_unpriced",
+            dish: dish.id,
+            dish_name: dish.name,
+            section_name: section.name,
+            size: size.id,
+          })),
+      ),
+  );
 }

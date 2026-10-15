@@ -20,8 +20,9 @@ export type PublishFailure =
   // The menu is no longer here, or is no longer this owner's.
   | { kind: "gone" }
   | { kind: "parent-gone" }
-  // A size with no name or no price blocks it (D-139, D-144); the list
-  // names each one, read back after the refusal.
+  // A size with no name or no price blocks it (D-139, D-144), and so does
+  // a menu with no dishes (D-177); the list names each one, read back after
+  // the refusal.
   | { kind: "blocked"; blockers: PublishBlocker[] }
   | { kind: "failed" }
   | { kind: "unreachable" }
@@ -56,11 +57,17 @@ export function stateSentence(
   });
 }
 
-// "Soup of the day in Starters has a size with no name."
+// "Soup of the day in Starters has a size with no name.", or, for a menu
+// with no dishes, "Lunch has no dishes." (D-177), named by the menu since
+// the row names nothing.
 export function blockerSentence(
   strings: PublishingStrings,
   blocker: PublishBlocker,
+  menu: string,
 ): string {
+  if (blocker.kind === "no-dishes") {
+    return fill(strings.problems.noDishes, { menu });
+  }
   const template =
     blocker.kind === "size-unnamed"
       ? strings.problems.sizeUnnamed
@@ -70,7 +77,8 @@ export function blockerSentence(
 
 // What a press that did not land says, once: "Dinner was not published.
 // Soup of the day has a size with no name. Name it or remove it, then
-// publish again."
+// publish again.", or "Lunch was not published. It has no dishes. Add a
+// dish, then publish again." (D-177).
 export function refusedSentence(
   strings: PublishingStrings,
   editing: EditingStrings,
@@ -99,6 +107,7 @@ export function refusedSentence(
       const first = failure.blockers[0];
       if (!first)
         return `${fill(refused.notPublished, { menu })} ${editing.problems.failed}`;
+      if (first.kind === "no-dishes") return fill(refused.noDishes, { menu });
       const template =
         first.kind === "size-unnamed"
           ? refused.sizeUnnamed

@@ -2,13 +2,15 @@ import { randomUUID } from "node:crypto";
 import { menuSnapshot } from "./menu-snapshot.mjs";
 
 // The stand-in's rows (D-142), as CI Diner's data file leaves them (D-126):
-// three menus, Dinner's three sections, Starters' three dishes priced one
+// four menus, Dinner's three sections, Starters' three dishes priced one
 // way each with their allergens, tags, schedule, calories, and the mark, a
 // second unchecked Soup of the day in Mains, the soup's two sizes, the two
-// choice lists, and Drinks' Soft drinks with Lemonade and its Kids section
+// choice lists, Drinks' Soft drinks with Lemonade and its Kids section
 // with three dishes and two lists of eleven options in all (the diner page
-// task, Build 2, Q-74). Lives apart from the server so the unit test of
-// the snapshot builder can read the same rows (tests/unit/snapshot.test.ts).
+// task, Build 2, Q-74), and Brunch's Eggs with Shakshuka off the menu for
+// now, a published menu that shows no dish (D-177). Lives apart from the
+// server so the unit test of the snapshot builder can read the same rows
+// (tests/unit/snapshot.test.ts).
 
 // A choice list and an option, as the stand-in makes them for its seed and
 // for a test that adds one elsewhere.
@@ -50,7 +52,7 @@ export function rowMakers({ restaurant, user, stamp }) {
 
 export function seedStore({ restaurant, user, stamp }, withDishes = true) {
   const { listRow, optionRow } = rowMakers({ restaurant, user, stamp });
-  const menus = ["Lunch", "Dinner", "Drinks"].map((name, index) => ({
+  const menus = ["Lunch", "Dinner", "Drinks", "Brunch"].map((name, index) => ({
     id: randomUUID(),
     restaurant_id: restaurant.id,
     name,
@@ -105,6 +107,22 @@ export function seedStore({ restaurant, user, stamp }, withDishes = true) {
     created_at: stamp(),
   };
   sections.push(kids);
+  // Brunch, fourth and published, holds Eggs with its one dish off the menu
+  // for now, as the data file gives it (D-177): a published menu that shows
+  // no dish, so the diner page reads "Nothing on this menu is served right
+  // now." where its sections would be, and the gate can read that page.
+  const brunch = menus[3];
+  const eggs = {
+    id: randomUUID(),
+    menu_id: brunch.id,
+    restaurant_id: restaurant.id,
+    name: "Eggs",
+    sort: 1,
+    note: null,
+    deleted_at: null,
+    created_at: stamp(),
+  };
+  sections.push(eggs);
   // Priced one way each, as CI Diner's data file prices them (D-139): the
   // soup by size, the salad at one price, the bread at market price. With
   // their allergens, as the file lists them (D-148): the soup checked with
@@ -275,6 +293,33 @@ export function seedStore({ restaurant, user, stamp }, withDishes = true) {
       });
     });
   }
+  if (withDishes) {
+    items.push({
+      id: randomUUID(),
+      section_id: eggs.id,
+      restaurant_id: restaurant.id,
+      name: "Shakshuka",
+      description: "Eggs poached in a spiced tomato sauce.",
+      price_kind: "one",
+      price_cents: 1200,
+      calories_low: null,
+      calories_high: null,
+      cooked_to_order: false,
+      note: null,
+      allergens: ["eggs"],
+      custom_allergens: [],
+      allergens_reviewed: true,
+      allergens_reviewed_by: user.id,
+      allergens_reviewed_at: stamp(),
+      dietary_tags: [],
+      available: false,
+      sold_out_at: null,
+      special_schedule: null,
+      sort: 1,
+      deleted_at: null,
+      created_at: stamp(),
+    });
+  }
   const soup = items[0];
   const salad = items[1];
   const sizes = (
@@ -357,10 +402,10 @@ export function seedStore({ restaurant, user, stamp }, withDishes = true) {
     options.push(optionRow(list, name, place, { ...given, checked: true }));
   }
 
-  // Dinner published, as CI Diner's data file publishes it through
-  // publish_menu() (migration 12): the gate reads a published menu's page
-  // and an unpublished one's. The snapshot is the builder's, so the stand-in
-  // reads as nothing changed until a save lands.
+  // Dinner, Drinks, and Brunch published, as CI Diner's data file publishes
+  // them through publish_menu() (migration 12): the gate reads a published
+  // menu's page and an unpublished one's. The snapshot is the builder's, so
+  // the stand-in reads as nothing changed until a save lands.
   const store = { menus, sections, items, sizes, lists, options };
   dinner.published = true;
   dinner.published_at = stamp();
@@ -368,5 +413,8 @@ export function seedStore({ restaurant, user, stamp }, withDishes = true) {
   drinks.published = true;
   drinks.published_at = stamp();
   drinks.published_snapshot = menuSnapshot(store, drinks.id);
+  brunch.published = true;
+  brunch.published_at = stamp();
+  brunch.published_snapshot = menuSnapshot(store, brunch.id);
   return store;
 }

@@ -311,17 +311,28 @@ export async function listOwnerMenuPublishStates(
   }));
 }
 
-// What would block Publish on one menu, from publish_problems() (migration
-// 12): each live size with no name or no price under a live dish by size,
-// named by the dish and its section, in page order. A read that fails
-// throws.
-const blockerSchema = z.object({
+// What would block Publish on one menu, from publish_problems() (migrations
+// 12 and 14): each live size with no name or no price under a live dish by
+// size, named by the dish and its section, in page order; or the menu
+// itself, with nothing named, while it has no live dish in any live
+// section (D-177). A read that fails throws.
+const sizeBlockerSchema = z.object({
   problem: z.enum(["size_unnamed", "size_unpriced"]),
   dish: z.string(),
   dish_name: z.string(),
   section_name: z.string(),
   size: z.string(),
 });
+
+const menuBlockerSchema = z.object({
+  problem: z.literal("no_dishes"),
+  dish: z.null(),
+  dish_name: z.null(),
+  section_name: z.null(),
+  size: z.null(),
+});
+
+const blockerSchema = z.union([sizeBlockerSchema, menuBlockerSchema]);
 
 export async function listPublishBlockers(
   client: SupabaseClient,
@@ -333,23 +344,28 @@ export async function listPublishBlockers(
   if (error) throw new Error("the publish problems could not be read");
   const rows = shaped(z.array(blockerSchema), data, "publish_problems");
   if (!rows) throw new Error("the publish problems could not be read");
-  return rows.map((row) => ({
-    kind: row.problem === "size_unnamed" ? "size-unnamed" : "size-unpriced",
-    dish: row.dish_name,
-    section: row.section_name,
-  }));
+  return rows.map((row): PublishBlocker => {
+    if (row.problem === "no_dishes") return { kind: "no-dishes" };
+    return {
+      kind: row.problem === "size_unnamed" ? "size-unnamed" : "size-unpriced",
+      dish: row.dish_name,
+      section: row.section_name,
+    };
+  });
 }
 
 export type PublishError =
-  // A size with no name or no price blocks it; the database wrote nothing.
+  // A size with no name or no price, or a menu with no dishes, blocks it;
+  // the database wrote nothing.
   { kind: "blocked" } | { kind: "not-found" } | { kind: "failed" };
 
 export type PublishResult = { ok: true } | { ok: false; error: PublishError };
 
 // Publishes the menu through publish_menu() (migration 12): the database
-// checks the caller, refuses by name while a size is incomplete, and writes
-// the flag, the time, and the snapshot in one statement. A menu that is not
-// this owner's, is deleted, or matches nothing is not found.
+// checks the caller, refuses by name while a size is incomplete or the menu
+// has no dishes (migration 14), and writes the flag, the time, and the
+// snapshot in one statement. A menu that is not this owner's, is deleted,
+// or matches nothing is not found.
 export async function publishOwnerMenu(
   client: SupabaseClient,
   menuId: string,

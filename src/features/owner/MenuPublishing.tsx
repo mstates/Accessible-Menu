@@ -50,8 +50,9 @@ type Press = "publish" | "unpublish";
 // to Publish beside it before the button goes, and never falls to the body.
 // Publish stays enabled while something blocks it (D-111 never disables):
 // the press refuses with the first problem's sentence, and the list above
-// the buttons says what to fix. Neither press is an Undo entry: each is its
-// own reversible button, and Undo stays about content.
+// the buttons says what to fix, a size with no name or no price (D-139) or
+// the menu with no dishes at all (D-177). Neither press is an Undo entry:
+// each is its own reversible button, and Undo stays about content.
 export function MenuPublishing({
   strings,
   editing,
@@ -122,7 +123,7 @@ export function MenuPublishing({
           <ul className="list-disc pl-6">
             {blockers.map((blocker, index) => (
               <li key={`${blocker.kind}-${index}`}>
-                {blockerSentence(strings, blocker)}
+                {blockerSentence(strings, blocker, menu.name)}
               </li>
             ))}
           </ul>

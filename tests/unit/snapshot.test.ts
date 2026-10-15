@@ -253,6 +253,66 @@ describe("the stand-in's snapshot builder", () => {
     ).toBe(false);
   });
 
+  it("reports a menu with no dishes once, by the menu, with no sections, a section with no dish, or only deleted dishes, and nothing for a dish off the menu or past its schedule (D-177)", () => {
+    const noDishes = [
+      {
+        problem: "no_dishes",
+        dish: null,
+        dish_name: null,
+        section_name: null,
+        size: null,
+      },
+    ];
+    const lunchId = store.menus[0]?.id ?? "";
+    expect(store.menus[0]?.name).toBe("Lunch");
+    expect(publishProblems(store, lunchId)).toEqual(noDishes);
+    // A section with no dish is still no dish.
+    const emptySection = {
+      ...store,
+      sections: [
+        ...store.sections,
+        {
+          id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+          menu_id: lunchId,
+          restaurant_id: store.sections[0]?.restaurant_id ?? "",
+          name: "Boundary empty",
+          sort: 1,
+          note: null,
+          deleted_at: null,
+          created_at: "2026-10-15T12:00:00.000Z",
+        },
+      ],
+    };
+    expect(publishProblems(emptySection, lunchId)).toEqual(noDishes);
+    // Dinner with every dish deleted reads the same, by the menu.
+    const deleted = {
+      ...store,
+      items: store.items.map((dish) => ({
+        ...dish,
+        deleted_at: "2026-10-15T12:00:00.000Z",
+      })),
+    };
+    expect(publishProblems(deleted, dinnerId)).toEqual(noDishes);
+    // Availability and schedules are not read: the bread off the menu, and a
+    // soup whose last day is past, still count as dishes.
+    expect(publishProblems(store, dinnerId)).toEqual([]);
+    const soup = store.items[0];
+    const past = {
+      ...store,
+      items: store.items.map((dish) =>
+        dish.id === soup?.id
+          ? { ...dish, special_schedule: { until: "2026-01-01" } }
+          : dish,
+      ),
+    };
+    expect(publishProblems(past, dinnerId)).toEqual([]);
+    // An empty menu's snapshot is still a shape the schema accepts, which is
+    // why the refusal is Publish's and not the reader's.
+    expect(
+      menuSnapshotSchema.safeParse(menuSnapshot(store, lunchId)).success,
+    ).toBe(true);
+  });
+
   it("builds null for a menu that is missing or deleted", () => {
     expect(menuSnapshot(store, "nope")).toBeNull();
     const deleted = {
