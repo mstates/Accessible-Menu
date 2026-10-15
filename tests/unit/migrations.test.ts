@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -2366,6 +2366,69 @@ describe("the diner's lookup (migration 13, Q-84, Q-31)", () => {
     );
     expect(grants).toEqual([
       "grant execute on function public.restaurant_name_by_code(text) to anon;",
+    ]);
+  });
+});
+
+describe("Publish refuses a menu with no dishes (migration 14, D-177, Q-101)", () => {
+  const name = "20261015000001_publish_no_dishes.sql";
+  const path = join(dir, name);
+  const noDishes = existsSync(path) ? readFileSync(path, "utf8") : "";
+
+  it("is the fourteenth migration and replaces publish_problems() and nothing else", () => {
+    expect(files.indexOf(name)).toBe(13);
+    expect(noDishes).not.toMatch(/create (table|view|policy|trigger|type)/);
+    expect(noDishes).not.toMatch(/alter table/);
+    expect(noDishes).not.toMatch(/drop /);
+    const callable = [
+      ...noDishes.matchAll(/create (?:or replace )?function public\.(\w+)/g),
+    ].map((match) => match[1]);
+    expect(callable).toEqual(["publish_problems"]);
+    // The same five columns as twelve, so create or replace is allowed and
+    // the owner pages' reader keeps its shape; still the caller's function.
+    expect(noDishes).toMatch(
+      /create or replace function public\.publish_problems\(p_menu uuid\) returns table \(\s*problem text, dish uuid, dish_name text, section_name text, size uuid\s*\)\s*language sql stable set search_path = ''/,
+    );
+    expect(noDishes).not.toMatch(/security definer/);
+  });
+
+  it("keeps the size rule and adds one row for a live menu the caller can read with no live dish in a live section", () => {
+    expect(noDishes).toMatch(/'size_unnamed' else 'size_unpriced'/);
+    expect(noDishes).toMatch(/i\.price_kind = 'sizes'/);
+    expect(noDishes).toMatch(/z\.name is null or z\.price_cents is null/);
+    expect(noDishes).toMatch(/'no_dishes'/);
+    expect(noDishes).toMatch(/union all/);
+    expect(noDishes).toMatch(/not exists \(/);
+    for (const table of ["s", "i", "z", "m"]) {
+      expect(noDishes).toMatch(new RegExp(`\\b${table}\\.deleted_at is null`));
+    }
+  });
+
+  it("reads neither availability, nor a schedule, nor the published flag, so a menu of specials or of dishes off the menu still publishes", () => {
+    const statements = noDishes
+      .split("\n")
+      .map((line) => line.replace(/--.*$/, ""))
+      .join("\n")
+      .replace(/'(?:[^']|'')*'/g, "''");
+    for (const word of [
+      "available",
+      "sold_out_at",
+      "special_schedule",
+      "published",
+    ]) {
+      expect(statements, word).not.toMatch(new RegExp(`\\b${word}\\b`));
+    }
+  });
+
+  it("is revoked by name from public and anon, and open to authenticated alone", () => {
+    expect(noDishes).toMatch(
+      /revoke all on function public\.publish_problems\(uuid\) from public, anon;\s*grant execute on function public\.publish_problems\(uuid\) to authenticated;/,
+    );
+    const grants = [...noDishes.matchAll(/grant [^;]*;/g)].map(
+      (match) => match[0],
+    );
+    expect(grants).toEqual([
+      "grant execute on function public.publish_problems(uuid) to authenticated;",
     ]);
   });
 });

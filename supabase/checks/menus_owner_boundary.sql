@@ -1,7 +1,8 @@
 -- Owner boundary check for menus. Run in the Supabase SQL editor after every
 -- migration that touches menus, Publish, or the published views
--- (migration 12). Everything rolls back. Replace the uid below with your
--- own auth.users id. A run that ends without an error passed every check.
+-- (migrations 12 and 14). Everything rolls back. Replace the uid below with
+-- your own auth.users id. A run that ends without an error passed every
+-- check.
 begin;
 
 -- As the table owner: what no role may do, and what the Data API roles hold.
@@ -271,6 +272,11 @@ declare
   target uuid := current_setting('boundary.restaurant')::uuid;
   pub uuid;
   two uuid;
+  two_section uuid;
+  two_dish uuid;
+  empty_menu uuid;
+  empty_section uuid;
+  empty_dish uuid;
   gone_menu uuid;
   live_section uuid;
   gone_section uuid;
@@ -534,8 +540,95 @@ begin
   end;
   raise notice 'ok: a deleted menu can be neither published nor unpublished';
 
+  -- A menu with no dishes (migration 14, D-177): no sections, a section
+  -- with no dish, and a section whose only dish is deleted each report the
+  -- menu itself, once, with nothing named, and Publish refuses with nothing
+  -- written; a dish off the menu for now, and one past its last day, still
+  -- count, since availability and schedules are not read; an emptied menu
+  -- reads as no dishes again, and a deleted menu reports nothing. The
+  -- stranger block below reads the empty menu's id.
+  insert into public.menus (restaurant_id, name, sort)
+  values (target, 'Boundary check publish empty', 9013) returning id into empty_menu;
+  perform set_config('boundary.empty_menu', empty_menu::text, true);
+  select count(*) into n from public.publish_problems(empty_menu);
+  select s.problem, s.dish, s.dish_name, s.section_name, s.size into st
+  from public.publish_problems(empty_menu) s;
+  if n <> 1 or st.problem is distinct from 'no_dishes' or st.dish is not null
+     or st.dish_name is not null or st.section_name is not null
+     or st.size is not null then
+    raise exception 'FAIL: a menu with no sections is not reported as the one problem, no_dishes with nothing named';
+  end if;
+  begin
+    perform public.publish_menu(empty_menu);
+    raise exception 'FAIL: a menu with no sections was published';
+  exception when raise_exception then
+    if sqlerrm <> 'publish_blocked' then raise; end if;
+  end;
+  if (select m.published or m.published_at is not null
+        or m.published_snapshot is not null
+      from public.menus m where m.id = empty_menu) then
+    raise exception 'FAIL: a blocked Publish of an empty menu wrote the flag, the time, or the snapshot';
+  end if;
+  insert into public.sections (menu_id, name, sort)
+  values (empty_menu, 'Boundary empty section', 1) returning id into empty_section;
+  select count(*) into n from public.publish_problems(empty_menu);
+  select s.problem into st from public.publish_problems(empty_menu) s;
+  if n <> 1 or st.problem is distinct from 'no_dishes' then
+    raise exception 'FAIL: a section with no dish is not reported as no_dishes';
+  end if;
+  insert into public.items (section_id, name, sort)
+  values (empty_section, 'Boundary empty dish', 1) returning id into empty_dish;
+  update public.items set deleted_at = now() where id = empty_dish;
+  select count(*) into n from public.publish_problems(empty_menu);
+  select s.problem into st from public.publish_problems(empty_menu) s;
+  if n <> 1 or st.problem is distinct from 'no_dishes' then
+    raise exception 'FAIL: a section whose only dish is deleted is not reported as no_dishes';
+  end if;
+  begin
+    perform public.publish_menu(empty_menu);
+    raise exception 'FAIL: a menu whose only dish is deleted was published';
+  exception when raise_exception then
+    if sqlerrm <> 'publish_blocked' then raise; end if;
+  end;
+  raise notice 'ok: a menu with no dishes blocks Publish by the menu, with no sections, a section with no dish, or only a deleted dish, and nothing is written';
+
+  update public.items set deleted_at = null, available = false where id = empty_dish;
+  if exists (select 1 from public.publish_problems(empty_menu)) then
+    raise exception 'FAIL: a dish off the menu for now is not counted as a dish';
+  end if;
+  perform public.publish_menu(empty_menu);
+  if not jsonb_path_exists(
+    (select m.published_snapshot from public.menus m where m.id = empty_menu),
+    '$.sections[*].items[*] ? (@.name == "Boundary empty dish")') then
+    raise exception 'FAIL: the menu published with its dish off the menu lacks the dish in its snapshot';
+  end if;
+  update public.items
+  set available = true, special_schedule = '{"until":"2026-01-01"}'::jsonb
+  where id = empty_dish;
+  if exists (select 1 from public.publish_problems(empty_menu)) then
+    raise exception 'FAIL: a dish past its last day is not counted as a dish';
+  end if;
+  perform public.publish_menu(empty_menu);
+  raise notice 'ok: a dish off the menu for now or past its last day still counts, so the menu publishes';
+
+  perform public.unpublish_menu(empty_menu);
+  update public.items set deleted_at = now() where id = empty_dish;
+  select count(*) into n from public.publish_problems(empty_menu);
+  select s.problem into st from public.publish_problems(empty_menu) s;
+  if n <> 1 or st.problem is distinct from 'no_dishes' then
+    raise exception 'FAIL: an emptied menu is not reported as no_dishes again';
+  end if;
+  if exists (select 1 from public.publish_problems(gone_menu)) then
+    raise exception 'FAIL: a deleted menu reports a problem';
+  end if;
+  raise notice 'ok: an emptied menu reads as no dishes again, and a deleted menu reports nothing';
+
   insert into public.menus (restaurant_id, name, sort)
   values (target, 'Boundary check publish two', 9012) returning id into two;
+  insert into public.sections (menu_id, name, sort)
+  values (two, 'Boundary two section', 1) returning id into two_section;
+  insert into public.items (section_id, name, sort)
+  values (two_section, 'Boundary two dish', 1) returning id into two_dish;
   perform public.publish_menu(two);
   update public.menus set deleted_at = now() where id = two;
   if exists (select 1 from public.published_menus pm where pm.id = two) then
@@ -549,6 +642,23 @@ begin
     raise exception 'FAIL: a restored menu did not come back as published';
   end if;
   raise notice 'ok: a deleted published menu is off at once, and a restore brings it back as it was published';
+
+  -- A published menu whose dishes are all deleted after Publish stays as
+  -- diners last read it, and the next press is refused by the menu
+  -- (migration 14, D-177).
+  update public.items set deleted_at = now() where id = two_dish;
+  select m.published_snapshot into snap from public.menus m where m.id = two;
+  begin
+    perform public.publish_menu(two);
+    raise exception 'FAIL: a published menu whose dishes are all deleted was published again';
+  exception when raise_exception then
+    if sqlerrm <> 'publish_blocked' then raise; end if;
+  end;
+  if (select m.published_snapshot from public.menus m where m.id = two) <> snap
+     or not exists (select 1 from public.published_menus pm where pm.id = two) then
+    raise exception 'FAIL: a refused press on a published menu changed what diners read';
+  end if;
+  raise notice 'ok: a published menu whose dishes are all deleted stays published as it was, and a new press is refused by the menu';
 end;
 $$;
 
@@ -560,6 +670,7 @@ do $$
 declare
   target uuid := current_setting('boundary.restaurant')::uuid;
   pub uuid := current_setting('boundary.publish_menu')::uuid;
+  empty_menu uuid := current_setting('boundary.empty_menu')::uuid;
   seen integer;
   touched integer;
 begin
@@ -604,10 +715,11 @@ begin
   end;
   if public.menu_snapshot(pub) is not null
      or exists (select 1 from public.publish_problems(pub))
+     or exists (select 1 from public.publish_problems(empty_menu))
      or exists (select 1 from public.menu_publish_states(target)) then
     raise exception 'FAIL: a stranger read a snapshot, a problem, or a state';
   end if;
-  raise notice 'ok: a stranger publishes and unpublishes nothing, and reads no snapshot, problem, or state';
+  raise notice 'ok: a stranger publishes and unpublishes nothing, and reads no snapshot, problem, or state, not even an empty menu''s';
 
   raise notice 'ok: a stranger reads and updates zero menus';
 end;
