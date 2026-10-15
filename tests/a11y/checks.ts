@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { expectChromeNamesAgree } from "./chrome-names";
 
 // The checks every page gets (D-62, D-103, D-107), shared by the public pages
@@ -291,6 +292,92 @@ export async function expectKeyboardWalk(
     MAX_TABS,
   );
   expect([...reached].sort()).toEqual([...expected].sort());
+}
+
+// Moves focus to a control the way a keyboard user does: from the top of the
+// page by Tab (Option+Tab in macOS WebKit), so the focus the control moves
+// next is judged as keyboard focus in every engine (Q-100).
+export async function tabTo(page: Page, target: Locator) {
+  await page.locator("[data-focus-reset]").focus();
+  for (let tabs = 0; tabs < MAX_TABS; tabs += 1) {
+    await page.keyboard.press(tabKey(page));
+    const there = await target.evaluate(
+      (element) => element === document.activeElement,
+    );
+    if (there) return;
+  }
+  throw new Error(`${tabKey(page)} never reached the control`);
+}
+
+// The app's one focus ring (Q-100), read from its rule in app/globals.css,
+// which every Tab stop wears. The gate runs from the repository's root, as
+// the config reads .env.local from it.
+type Ring = { width: string; offset: string };
+let ring: Ring | null = null;
+
+function focusRing(): Ring {
+  if (ring) return ring;
+  const css = readFileSync("app/globals.css", "utf8");
+  const rule = /:focus-visible\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+  const width = /outline:\s*(\d+(?:\.\d+)?px)\s+solid\s/.exec(rule)?.[1];
+  const offset = /outline-offset:\s*(\d+(?:\.\d+)?px)/.exec(rule)?.[1];
+  if (!width || !offset) {
+    throw new Error(
+      "app/globals.css has no :focus-visible rule with a solid outline and an offset",
+    );
+  }
+  ring = { width, offset };
+  return ring;
+}
+
+// Focus that code placed, after a key press or on a page's arrival, shows
+// the ring every Tab stop shows (Q-100): the element matches :focus-visible,
+// its outline is solid at the ring's width and offset, in the focus color
+// outside forced colors, and the ring's top edge is on the screen.
+export async function expectLandedOutline(page: Page) {
+  const { width, offset } = focusRing();
+  const landed = await page.evaluate(() => {
+    const element = document.activeElement;
+    if (!(element instanceof HTMLElement) || element === document.body) {
+      return null;
+    }
+    const style = getComputedStyle(element);
+    const probe = document.createElement("span");
+    probe.style.color = "var(--focus)";
+    document.body.append(probe);
+    const focusColor = getComputedStyle(probe).color;
+    probe.remove();
+    const words = (element.getAttribute("aria-label") ?? element.textContent)
+      ?.trim()
+      .slice(0, 40);
+    return {
+      what: `${element.tagName.toLowerCase()} "${words ?? ""}"`,
+      visible: element.matches(":focus-visible"),
+      style: style.outlineStyle,
+      width: style.outlineWidth,
+      offset: style.outlineOffset,
+      color: style.outlineColor,
+      focusColor,
+      forced: matchMedia("(forced-colors: active)").matches,
+      top: element.getBoundingClientRect().top,
+    };
+  });
+  if (!landed) throw new Error("nothing holds focus");
+  const { what } = landed;
+  expect(landed.visible, `${what} matches :focus-visible`).toBe(true);
+  expect(landed.style, `${what} draws its outline`).toBe("solid");
+  expect(landed.width, `${what}'s outline is the ring's width`).toBe(width);
+  expect(landed.offset, `${what}'s outline is the ring's offset`).toBe(offset);
+  if (!landed.forced) {
+    expect(landed.color, `${what}'s outline is the focus color`).toBe(
+      landed.focusColor,
+    );
+  }
+  const reach = parseFloat(width) + parseFloat(offset);
+  expect(
+    landed.top - reach,
+    `the top of ${what}'s ring is on the screen`,
+  ).toBeGreaterThanOrEqual(0);
 }
 
 export async function expectNoHorizontalScroll(page: Page) {
@@ -623,6 +710,23 @@ async function forcedPaints(
         }
       }
     }
+    // The ring of whatever holds focus while it shows (Q-100). A target that
+    // code focused is no Tab stop, so the keyboard walk never sees it.
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      active !== document.body &&
+      active.matches(":focus-visible")
+    ) {
+      const style = getComputedStyle(active);
+      const drawn =
+        style.outlineStyle !== "none" && parseFloat(style.outlineWidth) >= 1;
+      paints.push({
+        what: `the focus ring of ${active.tagName.toLowerCase()} "${named(active)}"`,
+        color: drawn ? style.outlineColor : "none",
+        behind: behind(active),
+      });
+    }
     const missing: string[] = [];
     for (const mark of marks) {
       const found = [...document.querySelectorAll(mark.selector)].filter(shown);
@@ -651,8 +755,9 @@ function rgb(color: string): string {
 }
 
 // Every field, button, and checkbox keeps an edge, and every drawn mark
-// shows, in a color of the forced palette with 3:1 against what is behind
-// it. The marks named in the list must be on the page as well.
+// shows, as does the ring of whatever holds focus while it shows, in a color
+// of the forced palette with 3:1 against what is behind it. The marks named
+// in the list must be on the page as well.
 export async function expectForcedColorsKept(
   page: Page,
   marks: readonly Mark[] = [],

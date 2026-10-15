@@ -10,12 +10,15 @@ import {
 import { showingAt } from "../../src/domain/schedule";
 import {
   expectControlsShown,
+  expectForcedColorsKept,
+  expectLandedOutline,
   expectNoHorizontalScroll,
   expectNoMissingIds,
   expectRootAt,
   open,
   pageChecks,
   setRootText,
+  tabTo,
 } from "./checks";
 import { menuCode } from "./pages";
 
@@ -67,6 +70,31 @@ test.beforeAll(async ({ request }) => {
 
 // The section's choices block and the link each dish carries to it (Q-74).
 const kidsLink = fill(en.menu.sectionChoicesLink, { section: "Kids" });
+
+// The section's name is on the screen above its landed choices block (Q-100,
+// the block's scroll margin), so a diner who followed the link sees whose
+// choices these are.
+async function expectSectionNameAbove(page: Page, section: string) {
+  const heading = await page
+    .getByRole("heading", { level: 3, name: section, exact: true })
+    .boundingBox();
+  const block = await page
+    .getByRole("group", {
+      name: fill(en.menu.sectionChoicesLink, { section }),
+      exact: true,
+    })
+    .boundingBox();
+  expect(heading, `${section}'s heading is drawn`).not.toBeNull();
+  expect(block, `${section}'s choices block is drawn`).not.toBeNull();
+  expect(
+    heading?.y ?? -1,
+    `${section}'s heading starts on the screen`,
+  ).toBeGreaterThanOrEqual(0);
+  expect(
+    (heading?.y ?? 0) + (heading?.height ?? 0),
+    `${section}'s heading sits above the block`,
+  ).toBeLessThanOrEqual(block?.y ?? 0);
+}
 
 async function headings(page: Page) {
   return page.getByRole("heading").evaluateAll((nodes) =>
@@ -152,6 +180,35 @@ test("a section link puts focus on its heading with JavaScript, and lands there 
     await context.close();
   }
 });
+
+// Q-100: a section link pressed from the keyboard lands on its heading with
+// the ring every Tab stop shows, the ring's top on the screen (the heading's
+// scroll margin). In forced colors, in both palettes, the ring is in a system
+// color; the link's own ring passes the same check first, so the check is
+// seen to read a forced ring.
+for (const forced of [false, true]) {
+  test(
+    `a section link pressed from the keyboard lands on its heading, which shows the focus ring${forced ? " in a system color" : ""}`,
+    forced ? { tag: "@forced" } : {},
+    async ({ page }) => {
+      await open(page, bare);
+      await page.waitForLoadState("networkidle");
+      const link = page
+        .getByRole("navigation", { name: en.menu.sectionsLabel })
+        .getByRole("link")
+        .first();
+      const name = (await link.textContent())?.split(", ")[0] ?? "";
+      await tabTo(page, link);
+      if (forced) await expectForcedColorsKept(page);
+      await page.keyboard.press("Enter");
+      await expect(
+        page.getByRole("heading", { level: 3, name, exact: true }),
+      ).toBeFocused();
+      await expectLandedOutline(page);
+      if (forced) await expectForcedColorsKept(page);
+    },
+  );
+}
 
 test("no diner response sets a cookie and nothing is requested from another origin", async ({
   page,
@@ -545,10 +602,36 @@ test("a dish's link to its section's choices puts focus on the block with JavaSc
     expect(box, "the block is in the viewport").not.toBeNull();
     expect(box?.y ?? -1).toBeGreaterThanOrEqual(0);
     expect(box?.y ?? height).toBeLessThan(height);
+    await expectSectionNameAbove(plain, "Kids");
   } finally {
     await context.close();
   }
 });
+
+// Q-100: the same from a dish's link to its section's choices: the block
+// shows the ring, and its section's name shows above it.
+for (const forced of [false, true]) {
+  test(
+    `a dish's link to its section's choices pressed from the keyboard lands on the block, which shows the focus ring${forced ? " in a system color" : ""} under its section's name`,
+    forced ? { tag: "@forced" } : {},
+    async ({ page }) => {
+      await open(page, drinksPath);
+      await page.waitForLoadState("networkidle");
+      const link = page
+        .getByRole("link", { name: kidsLink, exact: true })
+        .first();
+      await tabTo(page, link);
+      if (forced) await expectForcedColorsKept(page);
+      await page.keyboard.press("Enter");
+      await expect(
+        page.getByRole("group", { name: kidsLink, exact: true }),
+      ).toBeFocused();
+      await expectLandedOutline(page);
+      await expectSectionNameAbove(page, "Kids");
+      if (forced) await expectForcedColorsKept(page);
+    },
+  );
+}
 
 test("the second menu's page shows that menu as current, and a made-up id shows the restaurant's name with a way to its menu", async ({
   page,

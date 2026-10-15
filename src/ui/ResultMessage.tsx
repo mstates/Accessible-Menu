@@ -70,7 +70,7 @@ export function ResultMessage({ message, fromUrl, className }: Props) {
     <p
       ref={ref}
       tabIndex={-1}
-      className={`rounded bg-background-raised p-4 outline-none focus-visible:outline-3 ${className ?? ""}`}
+      className={`rounded bg-background-raised p-4 ${className ?? ""}`}
     >
       {message}
     </p>

@@ -100,10 +100,13 @@ export function MenuPage({ data, copy }: Props) {
               aria-labelledby={`${section.id}-heading`}
               className="pt-8"
             >
+              {/* A section link lands here (D-81). The focus ring is the one
+                  every Tab stop wears, from app/globals.css (Q-100), and the
+                  scroll margin keeps its top edge on the screen. */}
               <h3
                 id={section.id}
                 tabIndex={-1}
-                className="text-2xl font-bold outline-none focus-visible:outline"
+                className="scroll-mt-4 text-2xl font-bold"
               >
                 <span id={`${section.id}-heading`}>{section.name}</span>
               </h3>
@@ -112,13 +115,17 @@ export function MenuPage({ data, copy }: Props) {
                   <Lines text={section.note} />
                 </p>
               ) : null}
+              {/* A dish's link lands here (Q-74), with the same ring. The
+                  scroll margin leaves room above for the section's heading
+                  and a note of up to two lines, so a diner sees whose
+                  choices these are (Q-100). */}
               {!section.repeatLists && section.lists.length > 0 ? (
                 <div
                   id={choicesId(section)}
                   tabIndex={-1}
                   role="group"
                   aria-label={choicesWords(section, copy)}
-                  className="mt-3 outline-none focus-visible:outline"
+                  className="mt-3 scroll-mt-24"
                 >
                   {section.lists.map((list) => (
                     <ChoiceList key={list.id} list={list} />

@@ -30,11 +30,7 @@ export default function OwnerError() {
       loadingLabel={en.ui.loading}
     >
       <title>{pageTitle(en, strings.title)}</title>
-      <h1
-        ref={heading}
-        tabIndex={-1}
-        className="text-3xl font-bold outline-none focus-visible:outline-3"
-      >
+      <h1 ref={heading} tabIndex={-1} className="text-3xl font-bold">
         {strings.heading}
       </h1>
       <p className="mt-4">{strings.lead}</p>

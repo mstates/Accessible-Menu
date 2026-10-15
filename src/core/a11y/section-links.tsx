@@ -4,10 +4,12 @@ import { useEffect, useRef, type ReactNode } from "react";
 
 // In-page links that land focus on their target (D-81). A fragment link
 // scrolls to its section, but VoiceOver does not move to the heading on its
-// own, so after the browser has followed the link the heading, which
-// carries tabIndex -1, takes focus. With JavaScript off the plain fragment
-// link does the scrolling and nothing else, which is the fallback D-81
-// names. The listener sits on the wrapper once the page has hydrated, so
+// own, so after the browser has followed the link the heading, or a
+// section's choices block (Q-74), which carries tabIndex -1, takes focus.
+// It takes it without scrolling, so the target's scroll margin, kept by the
+// browser's own scroll, still shows above it (Q-100). With JavaScript off
+// the plain fragment link does the scrolling and nothing else, which is the
+// fallback D-81 names. The listener sits on the wrapper once the page has hydrated, so
 // every link inside it enhances, and the links stay plain anchors in the
 // served HTML.
 type Props = {

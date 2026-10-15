@@ -16,6 +16,7 @@ import {
   expectFocusResetThenSkipLink,
   expectForcedColorsKept,
   expectKeyboardWalk,
+  expectLandedOutline,
   expectNoAxeViolations,
   expectNoHorizontalScroll,
   expectNoMissingIds,
@@ -360,6 +361,7 @@ test("a saved result takes focus on arrival and is not read again on reload or B
   const message = page.getByText(strings.details.saved, { exact: true });
   await open(page, restaurantDetailsPath(code, { saved: 1 }));
   await expect(message).toBeFocused();
+  await expectLandedOutline(page);
   await page.reload();
   await expect(message).toHaveCount(0);
 
@@ -716,6 +718,32 @@ test("at the largest phone text size, the error page does not scroll sideways", 
   await expectNoHorizontalScroll(page);
 });
 
+// Q-100: a save sent from the keyboard, Enter in the name field (D-108),
+// that the server cannot take lands on the error page's heading, which shows
+// the ring every Tab stop shows; in forced colors, in both palettes, in a
+// system color. The guard answers the save inside the browser.
+for (const forced of [false, true]) {
+  test(
+    `a save sent from the keyboard that the server cannot take lands on the error page's heading, which shows the focus ring${forced ? " in a system color" : ""}`,
+    forced ? { tag: "@forced" } : {},
+    async ({ page }) => {
+      const writes = expectWrites(page);
+      await open(page, details);
+      await page.waitForLoadState("networkidle");
+      await page
+        .getByRole("textbox", { name: strings.fields.name, exact: true })
+        .press("Enter");
+      await expect(errorHeading(page)).toBeFocused();
+      await expectLandedOutline(page);
+      if (forced) await expectForcedColorsKept(page);
+      expect(
+        writes.answered.length,
+        "the save was sent and answered in the browser",
+      ).toBeGreaterThan(0);
+    },
+  );
+}
+
 // D-110: a result that arrives with the page takes focus once. The query
 // value repeats, so each arrival is keyed by its render: a reload, with the
 // query stripped, and Back, replaying the same render, read nothing, and a
@@ -734,6 +762,7 @@ test("a checkout result takes focus on arrival, once for each arrival", async ({
     const message = page.getByText(text, { exact: true });
     await open(page, path);
     await expect(message).toBeFocused();
+    await expectLandedOutline(page);
     await page.reload();
     await expect(message).toHaveCount(0);
     await open(page, path);

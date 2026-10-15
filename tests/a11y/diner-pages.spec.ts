@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { en } from "../../src/copy";
-import { expectFocusResetThenSkipLink, open, pageChecks } from "./checks";
+import {
+  expectFocusResetThenSkipLink,
+  expectLandedOutline,
+  open,
+  pageChecks,
+} from "./checks";
 import { pages } from "./pages";
 
 // Every public page, scanned signed out. The checks live in checks.ts and
@@ -23,7 +28,7 @@ test("the sign-in page carries an empty status region", async ({ page }) => {
 // D-110: a sign-in that failed before the page loaded takes focus once. The
 // query value repeats, so each arrival is keyed by its render: a reload, with
 // the query stripped, and Back, replaying the same render, read nothing, and
-// a second arrival is read again.
+// a second arrival is read again. The message shows the focus ring (Q-100).
 const signInFailures = [
   ["link", en.owner.signIn.failures.link],
   ["google", en.owner.signIn.failures.google],
@@ -37,6 +42,7 @@ test("a sign-in failure takes focus on arrival, once for each arrival", async ({
     const message = page.getByText(text, { exact: true });
     await open(page, path);
     await expect(message).toBeFocused();
+    await expectLandedOutline(page);
     await page.reload();
     await expect(message).toHaveCount(0);
     await open(page, path);

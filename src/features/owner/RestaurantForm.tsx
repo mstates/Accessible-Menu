@@ -272,7 +272,7 @@ export function RestaurantForm({
           })}
           defaultValue={defaultValues?.allergenNote ?? undefined}
         />
-        <div id={fieldId("prepNotes")} tabIndex={-1} className="outline-none">
+        <div id={fieldId("prepNotes")} tabIndex={-1}>
           <CheckboxGroup
             name="prepNotes"
             label={strings.fields.prepNotes}
@@ -331,7 +331,7 @@ function ErrorSummary({ ref, heading, errors, failure }: SummaryProps) {
     <div
       ref={ref}
       tabIndex={-1}
-      className="rounded border-2 border-foreground p-4 outline-none focus-visible:outline-3"
+      className="rounded border-2 border-foreground p-4"
     >
       <h2 className="text-lg font-bold">{heading}</h2>
       {failure ? <p className="mt-2">{failure}</p> : null}
@@ -445,7 +445,7 @@ function DayHours({
       id={fieldId(`hours.${day}`)}
       tabIndex={-1}
       aria-describedby={describedBy}
-      className="flex flex-col gap-3 rounded border border-border p-3 outline-none focus-visible:outline-3"
+      className="flex flex-col gap-3 rounded border border-border p-3"
     >
       <legend className="px-1 font-semibold">{label}</legend>
       {/* Named whole on the box, the visible words first. A label with
