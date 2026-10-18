@@ -7,7 +7,7 @@ import {
 } from "./allergens";
 import { availabilityAt } from "./availability";
 import { caloriesOf, caloriesWords, type CaloriesCopy } from "./calories";
-import { optionWords } from "./choices";
+import { optionSentence, type OptionReading } from "./choices";
 import { todayIn } from "./date";
 import {
   dietarySentence,
@@ -77,11 +77,14 @@ export type DinerCopy = {
   soldOut: string;
 };
 
+// An option as its line reads (D-166, D-182): its words (name, added price,
+// calories) then its own allergen sentence, the two forms optionSentence()
+// builds, the numerals for the eye and the words for a screen reader, the
+// same string when nothing in it has a spoken form. One run, so one stop.
 export type DinerOption = {
   id: string;
   name: string;
-  words: PriceText;
-  allergen: AllergenSentence;
+  line: PriceText;
 };
 
 export type DinerChoiceList = {
@@ -173,20 +176,25 @@ export type DinerMenuView = {
 
 type Allergens = SnapshotItem["allergens"];
 
+// A dish's or an option's allergens as the builders read them: the lists
+// when a person checked them, nothing and unreviewed when not.
+function readingOf(
+  allergens: Allergens,
+): Pick<OptionReading, "allergens" | "customAllergens" | "allergensReviewed"> {
+  return allergens.checked
+    ? {
+        allergens: allergens.major,
+        customAllergens: allergens.other,
+        allergensReviewed: true,
+      }
+    : { allergens: [], customAllergens: [], allergensReviewed: false };
+}
+
 function sentenceOf(
   allergens: Allergens,
   copy: AllergenCopy,
 ): AllergenSentence {
-  return allergenSentence(
-    allergens.checked
-      ? {
-          allergens: allergens.major,
-          customAllergens: allergens.other,
-          allergensReviewed: true,
-        }
-      : { allergens: [], customAllergens: [], allergensReviewed: false },
-    copy,
-  );
+  return allergenSentence(readingOf(allergens), copy);
 }
 
 function withCalories(
@@ -262,6 +270,8 @@ export function dishPriceWords(
   }
 }
 
+// A list as the page draws it: its lead, and each option's one line in
+// both forms (D-182).
 function listView(
   list: SnapshotChoiceList,
   copy: DinerCopy,
@@ -270,20 +280,19 @@ function listView(
   return {
     id: list.id,
     lead: list.lead,
-    options: list.options.map((option) => ({
-      id: option.id,
-      name: option.name,
-      words: optionWords(
+    options: list.options.map((option) => {
+      const { display, spoken } = optionSentence(
         {
           name: option.name,
           addedPriceCents: option.added_price_cents,
           calories: caloriesOf(option.calories_low, option.calories_high),
+          ...readingOf(option.allergens),
         },
         copy,
         lang,
-      ),
-      allergen: sentenceOf(option.allergens, copy.allergens),
-    })),
+      );
+      return { id: option.id, name: option.name, line: { display, spoken } };
+    }),
   };
 }
 

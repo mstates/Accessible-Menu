@@ -6,14 +6,16 @@ import { InPageLinks } from "@/core/a11y/section-links";
 import type { DinerChoiceList, DinerDish, DinerSection } from "@/domain/diner";
 import { feedbackPath, statementPath } from "@/domain/menu-url";
 import type { PriceText } from "@/domain/money";
-import { AllergenSentence } from "@/ui/AllergenSentence";
 import type { MenuPageData } from "./load";
 
 type Props = { data: MenuPageData; copy: Copy };
 
 // The diner menu (Spec 3.1, 3.2, 3.4): static HTML, readable with
 // JavaScript off (module rule 1). The headings are "Accessible menu", the
-// restaurant's name, then one per section, and nothing else (D-81). main
+// restaurant's name, one per section, and one per dish inside its list
+// item, and nothing else (D-81, D-181). Every allergen sentence is one plain
+// run of text with no element inside it, so a screen reader reads it as one
+// stop (D-182). main
 // starts at the h1, so the skip link never passes the allergen note or the
 // confirmation line; the two navs sit inside it and the footer outside
 // (Michael, at the plan's approval). Every sentence comes from the view
@@ -247,11 +249,11 @@ function Lines({ text }: { text: string }) {
 }
 
 // Words that have a spoken form (Q-6): the numerals for the eye and the
-// words for a screen reader, or one run when they are the same, so nothing
-// is rendered twice for no reason. Either way the words are one element,
-// so an option's words stand apart from its allergen sentence.
+// words for a screen reader, drawn once and spoken once, or the bare text
+// when the two are the same, so nothing is rendered twice for no reason
+// and a line with no spoken form is one text node in its element (D-182).
 function Words({ text }: { text: PriceText }) {
-  if (text.display === text.spoken) return <span>{text.display}</span>;
+  if (text.display === text.spoken) return <>{text.display}</>;
   return (
     <>
       <span aria-hidden="true">{text.display}</span>
@@ -261,10 +263,11 @@ function Words({ text }: { text: PriceText }) {
 }
 
 // One choice list (D-166): its lead, then its options as a real list, each
-// with its words (name, added price, calories) and its own allergen
-// sentence with the words in bold, read where the option is and never
-// behind a disclosure (D-40). The two together are what optionSentence()
-// builds; the pieces are drawn so the words can be bold.
+// one line in regular weight, its words (name, added price, calories) then
+// its own allergen sentence, the two forms optionSentence() builds, read
+// where the option is and never behind a disclosure (D-40). The line is one
+// text node, or the drawn-once, spoken-once pair when the words have a
+// spoken form, and nothing else, so it is one stop (D-182).
 function ChoiceList({ list }: { list: DinerChoiceList }) {
   return (
     <div className="mt-2">
@@ -272,8 +275,7 @@ function ChoiceList({ list }: { list: DinerChoiceList }) {
       <ul className="mt-1 list-disc pl-5">
         {list.options.map((option) => (
           <li key={option.id}>
-            <Words text={option.words} />
-            {"."} <AllergenSentence sentence={option.allergen} />
+            <Words text={option.line} />
           </li>
         ))}
       </ul>
@@ -281,15 +283,16 @@ function ChoiceList({ list }: { list: DinerChoiceList }) {
   );
 }
 
-// One dish (Spec 3.2): its name, its price in numerals with the words for
-// a screen reader (Q-6) and its calories beside it, its description in
-// full (D-39), its allergen sentence with the words in bold (D-35, D-40),
-// its tags, Cooked to order, Sold out today, its special's days and
-// hours, and its note; then its own choice lists, and after them its
-// section's, repeated here while they hold few options in all, or one
-// link to the block under the section heading past that (Q-74). The
-// dish's own lines come first, so its allergen sentence stays beside its
-// name whatever its lists hold.
+// One dish (Spec 3.2): its name as an h4, the last heading level (D-181),
+// its price in numerals with the words for a screen reader (Q-6) and its
+// calories beside it, its description in full (D-39), its allergen
+// sentence as one semibold line whatever it says (D-35, D-40, D-182), its
+// tags, Cooked to order, Sold out today, its special's days and hours, and
+// its note; then its own choice lists, and after them its section's,
+// repeated here while they hold few options in all, or one link to the
+// block under the section heading past that (Q-74). The dish's own lines
+// come first, so its allergen sentence stays beside its name whatever its
+// lists hold.
 function Dish({
   dish,
   section,
@@ -303,7 +306,7 @@ function Dish({
   return (
     <li className="py-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4">
-        <p className="min-w-0 text-lg font-semibold">{dish.name}</p>
+        <h4 className="min-w-0 text-lg font-semibold">{dish.name}</h4>
         {dish.price ? (
           <p className="text-lg">
             <Words text={dish.price} />
@@ -315,9 +318,7 @@ function Dish({
           <Lines text={dish.description} />
         </p>
       ) : null}
-      <p className="mt-2">
-        <AllergenSentence sentence={dish.allergen} />
-      </p>
+      <p className="mt-2 font-semibold">{dish.allergen.text}</p>
       {dish.dietary ? (
         <p className="mt-1 text-foreground-muted">{dish.dietary.text}</p>
       ) : null}

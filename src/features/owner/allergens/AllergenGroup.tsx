@@ -1,12 +1,7 @@
 "use client";
 
 import { handToBox } from "../editing/hand-to-box";
-import {
-  US_MAJOR_ALLERGENS,
-  type AllergenCopy,
-  type AllergenSentence,
-} from "@/domain/allergens";
-import { AllergenSentence as SentenceWords } from "@/ui/AllergenSentence";
+import { US_MAJOR_ALLERGENS, type AllergenCopy } from "@/domain/allergens";
 import { Button } from "@/ui/Button";
 import { Checkbox, CheckboxGroup } from "@/ui/CheckboxGroup";
 import { ComboBox } from "@/ui/ComboBox";
@@ -46,8 +41,8 @@ type Props = {
 // allergens as rows named by their place, each a field that suggests names
 // and a Remove button; one box that checks the list; under it, always, the
 // sentence diners will read, from the one builder (D-35, module rule 8),
-// with the words in bold as the diner page draws them, and who checked it
-// and when; and, while the subject is checked, a line and a button for each
+// as one plain line, the builder's text (D-182), and who checked it and
+// when; and, while the subject is checked, a line and a button for each
 // same-named dish or option elsewhere in the restaurant (D-129). The check box is
 // described by its hint, by that sentence, which is always on the page, so
 // nothing ever points at a gone id (D-147), and by its error while one
@@ -67,6 +62,7 @@ export function AllergenGroup({
   const { ids } = group;
   const sentence = dinerSentence(allergenCopy, group.lists, group.check.shown);
   const stamp = stampLine(strings, group.check.stamp, timeZone, lang);
+  const line = `${dinersReadText(strings, sentence)} ${stamp}`;
   const shownMajors = new Set<string>(group.allergens.shown);
   const Heading = headingLevel === 2 ? "h2" : "h3";
 
@@ -205,8 +201,10 @@ export function AllergenGroup({
             {group.check.error}
           </span>
         ) : null}
+        {/* One text node, so a screen reader reads the line as one stop,
+            as on the diner page (D-182). */}
         <p id={ids.sentence} className="pl-9">
-          <DinersRead strings={strings} sentence={sentence} /> {stamp}
+          {line}
         </p>
       </div>
 
@@ -229,27 +227,6 @@ export function AllergenGroup({
         </ul>
       ) : null}
     </div>
-  );
-}
-
-// 'Diners read: "Contains milk, wheat."', with the allergen words in bold,
-// as the diner page draws them (D-35), through the one component in src/ui.
-// Its text is exactly the words a reader is handed as the check box's
-// description.
-function DinersRead({
-  strings,
-  sentence,
-}: {
-  strings: AllergenStrings;
-  sentence: AllergenSentence;
-}) {
-  const [before = "", after = ""] = strings.dinersRead.split("{sentence}");
-  return (
-    <>
-      {before}
-      <SentenceWords sentence={sentence} />
-      {after}
-    </>
   );
 }
 

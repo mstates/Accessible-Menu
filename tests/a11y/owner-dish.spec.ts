@@ -229,13 +229,21 @@ function sentenceLine(page: Page) {
   return page.locator("#dish-allergen-sentence");
 }
 
-// The check box is described by its hint and by the sentence under it, the
-// sentence diners will read and then the stamp line.
-function checkDescription(sentence: string, stamp: string | RegExp) {
-  const head = `${allergens.checkHint} ${sentence} `;
+// The line under the check box, the sentence diners will read and then the
+// stamp, is one plain line (D-182); the check box is described by its hint
+// and by that line. Each as a string, or as a RegExp when the stamp is one.
+function lineText(sentence: string, stamp: string | RegExp) {
   return stamp instanceof RegExp
-    ? new RegExp(`^${escape(head)}${stamp.source}$`)
-    : `${head}${stamp}`;
+    ? new RegExp(`^${escape(`${sentence} `)}${stamp.source}$`)
+    : `${sentence} ${stamp}`;
+}
+
+function checkDescription(sentence: string, stamp: string | RegExp) {
+  const line = lineText(sentence, stamp);
+  const hint = `${allergens.checkHint} `;
+  return line instanceof RegExp
+    ? new RegExp(`^${escape(hint)}${line.source.slice(1)}`)
+    : `${hint}${line}`;
 }
 
 function escape(text: string): string {
@@ -984,10 +992,21 @@ test("the allergen group shows the nine with their hints, the other allergens as
       checkedByYou,
     ),
   );
-  await expect(
-    sentenceLine(page).locator("strong"),
-    "the allergen words are bold, as on the diner page",
-  ).toHaveText(["milk", "wheat", "celery"]);
+  // The line is one plain run of text, as on the diner page (D-182).
+  await expect(sentenceLine(page)).toHaveText(
+    lineText(
+      reads({ allergens: ["milk", "wheat"], others: ["celery"] }, true),
+      checkedByYou,
+    ),
+  );
+  expect(
+    await sentenceLine(page).evaluate(
+      (line) =>
+        line.childNodes.length === 1 &&
+        line.childNodes[0]?.nodeType === Node.TEXT_NODE,
+    ),
+    "the line holds one text node",
+  ).toBe(true);
   // The same-named line (D-129): the data file's second Soup of the day,
   // in Mains, not checked.
   const line = page

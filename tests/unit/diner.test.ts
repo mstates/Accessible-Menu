@@ -306,8 +306,6 @@ describe("what a diner sees at one moment (D-159, D-160, D-39)", () => {
     });
     expect(soup?.allergen).toEqual({
       kind: "contains",
-      lead: "Contains",
-      words: ["milk", "wheat", "celery"],
       text: "Contains milk, wheat, celery.",
     });
     expect(salad?.price).toEqual({
@@ -340,23 +338,20 @@ describe("what a diner sees at one moment (D-159, D-160, D-39)", () => {
     expect(starters?.lists.map((list) => list.lead)).toEqual([
       "Add a buttered roll to any dish",
     ]);
-    expect(starters?.lists[0]?.options[0]?.words).toEqual({
-      display: "Buttered roll, +$2",
-      spoken: "Buttered roll, plus two dollars",
+    expect(starters?.lists[0]?.options[0]?.line).toEqual({
+      display: "Buttered roll, +$2. Contains milk, wheat.",
+      spoken: "Buttered roll, plus two dollars. Contains milk, wheat.",
     });
-    expect(starters?.lists[0]?.options[0]?.allergen.text).toBe(
-      "Contains milk, wheat.",
-    );
     expect(starters?.repeatLists).toBe(true);
     expect(SECTION_LISTS_REPEAT_UP_TO).toBe(4);
     const salad = starters?.dishes[1];
-    expect(salad?.lists[0]?.options.map((o) => o.words.display)).toEqual([
-      "Ranch, 150 calories",
-      "Vinaigrette, 90 calories",
+    expect(salad?.lists[0]?.options.map((o) => o.line.display)).toEqual([
+      "Ranch, 150 calories. Contains milk, eggs.",
+      "Vinaigrette, 90 calories. Checked. No major allergens.",
     ]);
   });
 
-  it("carries a dish's lists with every option's words and its own allergen sentence, the pieces of the one builder (D-166, rule 8)", () => {
+  it("carries a dish's lists with every option's line, the one builder's two forms, which differ only where its price has a spoken form (D-166, D-182, rule 8)", () => {
     const snapshot = dinner();
     const menu = view(fivePm, snapshot);
     const salad = menu.sections[0]?.dishes[1];
@@ -364,20 +359,21 @@ describe("what a diner sees at one moment (D-159, D-160, D-39)", () => {
       "Choose a dressing",
     ]);
     const [ranch, vinaigrette] = salad?.lists[0]?.options ?? [];
-    expect(ranch?.words).toEqual({
-      display: "Ranch, 150 calories",
-      spoken: "Ranch, 150 calories",
+    // No added price, so the two forms are the same: one text node on the
+    // page.
+    expect(ranch?.line).toEqual({
+      display: "Ranch, 150 calories. Contains milk, eggs.",
+      spoken: "Ranch, 150 calories. Contains milk, eggs.",
     });
-    expect(ranch?.allergen).toEqual({
-      kind: "contains",
-      lead: "Contains",
-      words: ["milk", "eggs"],
-      text: "Contains milk, eggs.",
-    });
-    expect(vinaigrette?.words.display).toBe("Vinaigrette, 90 calories");
-    expect(vinaigrette?.allergen.text).toBe("Checked. No major allergens.");
-    // Every option the page shows, read as its words then its sentence, is
-    // what optionSentence() builds from the same snapshot option.
+    expect(vinaigrette?.line.display).toBe(
+      "Vinaigrette, 90 calories. Checked. No major allergens.",
+    );
+    expect(vinaigrette?.line.spoken).toBe(vinaigrette?.line.display);
+    // The roll has an added price, so its two forms differ: the pair.
+    const roll = menu.sections[0]?.lists[0]?.options[0];
+    expect(roll?.line.display).not.toBe(roll?.line.spoken);
+    // Every option the page shows, its one line in both forms, is what
+    // optionSentence() builds from the same snapshot option.
     const sources = new Map<string, SnapshotOption>(
       snapshot.sections
         .flatMap((section) => [
@@ -411,12 +407,8 @@ describe("what a diner sees at one moment (D-159, D-160, D-39)", () => {
             copy,
             "en",
           );
-          expect(`${option.words.spoken}. ${option.allergen.text}`).toBe(
-            sentence.spoken,
-          );
-          expect(`${option.words.display}. ${option.allergen.text}`).toBe(
-            sentence.display,
-          );
+          expect(option.line.spoken).toBe(sentence.spoken);
+          expect(option.line.display).toBe(sentence.display);
           checked += 1;
         }
       }

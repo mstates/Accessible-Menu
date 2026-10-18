@@ -25,7 +25,7 @@ import { menuCode } from "./pages";
 // The diner page from real data (the diner page task), on CI Diner's
 // published Dinner and Drinks as its data file leaves them (D-126), or on
 // the stand-in's when `npm run local -- --public-gate` names it: the
-// headings exactly as the Phase 1 acceptance line reads them (D-81), a
+// headings exactly as the Phase 1 acceptance line reads them (D-81, D-181), a
 // section link landing on its heading with JavaScript and by fragment
 // without it, no cookie set and no request to any other origin (rule 7),
 // the page whole with scripts off (rule 1, Q-67), the sentences from the
@@ -38,7 +38,9 @@ import { menuCode } from "./pages";
 // from 4 to 9 pm New York, so the checks that read it compute whether it
 // shows now. Brunch, the third published menu, holds one dish off the menu
 // for now, so its page shows no dish and reads one line where its sections
-// would be (D-177).
+// would be (D-177). Every allergen sentence is one plain run of text: a
+// dish's line one semibold text node, an option's line one text node or the
+// drawn-once, spoken-once pair (D-182).
 
 const bare = menuPath(menuCode);
 const madeUp = menuPath(menuCode, "00000000-0000-4000-8000-000000000000");
@@ -127,7 +129,7 @@ test.describe(madeUp, () => {
   pageChecks(madeUp);
 });
 
-test("the headings list is exactly Accessible menu, the restaurant's name, then the sections", async ({
+test("the headings list is exactly Accessible menu, the restaurant's name, then each section with its dishes (D-181)", async ({
   page,
 }) => {
   await open(page, bare);
@@ -135,10 +137,18 @@ test("the headings list is exactly Accessible menu, the restaurant's name, then 
   expect(list[0]).toEqual({ level: 1, text: en.site.descriptor });
   expect(list[1]?.level).toBe(2);
   expect(list[1]?.text).not.toBe("");
-  const sections = list.slice(2);
-  expect(sections.length).toBeGreaterThan(0);
-  for (const heading of sections) expect(heading.level).toBe(3);
-  // The section list names the same sections, in order, with their counts.
+  // After the h2, a section's h3 and then its dishes' h4s, nothing else: no
+  // other level, no two h3s in a row, and no h3 without a dish after it.
+  const rest = list.slice(2);
+  expect(rest.length).toBeGreaterThan(0);
+  expect(rest[0]?.level).toBe(3);
+  for (const heading of rest) expect([3, 4]).toContain(heading.level);
+  rest.forEach((heading, index) => {
+    if (heading.level === 3) expect(rest[index + 1]?.level).toBe(4);
+  });
+  // The section list names the same sections, in order, with their counts,
+  // and each count is the number of dish headings under that section.
+  const sections = rest.filter((heading) => heading.level === 3);
   const links = await page
     .getByRole("navigation", { name: en.menu.sectionsLabel })
     .getByRole("link")
@@ -146,6 +156,19 @@ test("the headings list is exactly Accessible menu, the restaurant's name, then 
   expect(links.map((text) => text.split(", ")[0])).toEqual(
     sections.map((heading) => heading.text),
   );
+  const counts: number[] = [];
+  for (const heading of rest) {
+    if (heading.level === 3) counts.push(0);
+    else counts[counts.length - 1] = (counts[counts.length - 1] ?? 0) + 1;
+  }
+  expect(counts).toEqual(
+    links.map((text) => Number(/, (\d+) item/.exec(text)?.[1] ?? -1)),
+  );
+  // Every dish heading sits inside its list item.
+  const dishes = rest.filter((heading) => heading.level === 4).length;
+  await expect(
+    page.getByRole("listitem").getByRole("heading", { level: 4 }),
+  ).toHaveCount(dishes);
 });
 
 test("a section link puts focus on its heading with JavaScript, and lands there by fragment without it", async ({
@@ -396,7 +419,6 @@ test("the sentences on CI Diner's Dinner come from the builders, and the hidden 
     await expect(
       page.getByText("Contains milk, wheat, celery.", { exact: true }),
     ).toBeVisible();
-    await expect(page.locator("strong", { hasText: "celery" })).toHaveCount(1);
     await expect(
       page.getByText("Every day, 4 to 9 pm.", { exact: true }),
     ).toBeVisible();
@@ -420,8 +442,8 @@ test("the sentences on CI Diner's Dinner come from the builders, and the hidden 
   ).toBeVisible();
   await expect(page.getByText("Garlic bread")).toHaveCount(0);
   await expect(page.getByText(en.menu.cookedToOrder)).toHaveCount(0);
-  // The salad's own list (D-166): the lead once, each option's words, and
-  // its own allergen sentence with the words in strong, inside the item.
+  // The salad's own list (D-166): the lead once, and each option one line,
+  // its words then its own allergen sentence, inside the item (D-182).
   const salad = page
     .getByRole("listitem")
     .filter({ has: page.getByText("House salad", { exact: true }) });
@@ -429,33 +451,35 @@ test("the sentences on CI Diner's Dinner come from the builders, and the hidden 
     page.getByText("Choose a dressing", { exact: true }),
   ).toHaveCount(1);
   await expect(
-    salad.getByText("Ranch, 150 calories", { exact: true }),
+    salad.getByText("Ranch, 150 calories. Contains milk, eggs.", {
+      exact: true,
+    }),
   ).toHaveCount(1);
   const ranch = salad
     .getByRole("listitem")
     .filter({ hasText: "Ranch, 150 calories" });
-  await expect(ranch).toContainText("Contains milk, eggs.");
-  await expect(ranch.locator("strong")).toHaveText(["milk", "eggs"]);
+  await expect(ranch).toHaveText("Ranch, 150 calories. Contains milk, eggs.");
   const vinaigrette = salad
     .getByRole("listitem")
     .filter({ hasText: "Vinaigrette, 90 calories" });
-  await expect(vinaigrette).toContainText(en.allergens.checkedNone);
+  await expect(vinaigrette).toHaveText(
+    `Vinaigrette, 90 calories. ${en.allergens.checkedNone}`,
+  );
   // Starters' roll list, one option, repeated inside every shown dish of
   // Starters after the dish's own lists (Q-74), never once under the
-  // heading and with no link.
+  // heading and with no link. The roll has an added price, so its line is
+  // drawn once and spoken once, the whole line in each form (D-182).
   const shown = soupShows() ? 2 : 1;
+  const rollDrawn = "Buttered roll, +$2. Contains milk, wheat.";
+  const rollSpoken = "Buttered roll, plus two dollars. Contains milk, wheat.";
   await expect(
     page.getByText("Add a buttered roll to any dish", { exact: true }),
   ).toHaveCount(shown);
-  await expect(
-    page.getByText("Buttered roll, +$2", { exact: true }),
-  ).toHaveCount(shown);
-  await expect(
-    page.getByText("Buttered roll, plus two dollars", { exact: true }),
-  ).toHaveCount(shown);
+  await expect(page.getByText(rollDrawn, { exact: true })).toHaveCount(shown);
+  await expect(page.getByText(rollSpoken, { exact: true })).toHaveCount(shown);
   const roll = salad.getByRole("listitem").filter({ hasText: "Buttered roll" });
-  await expect(roll).toContainText("Contains milk, wheat.");
-  await expect(roll.locator("strong")).toHaveText(["milk", "wheat"]);
+  await expect(roll.getByText(rollDrawn, { exact: true })).toHaveCount(1);
+  await expect(roll.getByText(rollSpoken, { exact: true })).toHaveCount(1);
   const saladText = await salad.innerText();
   expect(saladText.indexOf("Choose a dressing")).toBeGreaterThan(
     saladText.indexOf(en.allergens.checkedNone),
@@ -541,16 +565,19 @@ test("a section's lists past the constant show once under its heading, and each 
   await expect(lists.nth(0).getByRole("listitem")).toHaveCount(6);
   await expect(lists.nth(1).getByRole("listitem")).toHaveCount(5);
   await expect(
-    block.getByText("Fries, 320 calories", { exact: true }),
+    block.getByText(`Fries, 320 calories. ${en.allergens.checkedNone}`, {
+      exact: true,
+    }),
   ).toHaveCount(1);
   const mac = block
     .getByRole("listitem")
     .filter({ hasText: "Mac and cheese, 410 calories" });
-  await expect(mac).toContainText("Contains milk, wheat.");
-  await expect(mac.locator("strong")).toHaveText(["milk", "wheat"]);
+  await expect(mac).toHaveText(
+    "Mac and cheese, 410 calories. Contains milk, wheat.",
+  );
   await expect(
     block.getByRole("listitem").filter({ hasText: "Water" }),
-  ).toContainText(en.allergens.checkedNone);
+  ).toHaveText(`Water. ${en.allergens.checkedNone}`);
   // The leads appear nowhere else: no list inside a dish.
   await expect(page.getByText("Choose one side", { exact: true })).toHaveCount(
     1,
@@ -584,6 +611,117 @@ test("a section's lists past the constant show once under its heading, and each 
   const footer = page.locator("footer");
   await expect(footer.getByText(en.menu.notices.calories)).toHaveCount(1);
   await expect(footer.getByText(en.menu.notices.nutrition)).toHaveCount(1);
+});
+
+// D-182: every allergen sentence is one swipe stop. A dish's allergen line
+// is one text node, semibold whatever its sentence, in its slot; an
+// option's line is one text node, or the drawn-once, spoken-once pair when
+// its words have a spoken form, and nothing else, so Safari makes no stop
+// inside either. Read from the page as plain data, so a failure names the
+// line.
+type Run = { what: string; shape: "text" | "pair" | "other"; weight: string };
+
+async function allergenRuns(
+  page: Page,
+): Promise<{ dishes: Run[]; options: Run[] }> {
+  return page.evaluate(
+    ({ contains, checkedNone, notConfirmed }) => {
+      const isSentence = (text: string) =>
+        text === checkedNone ||
+        text === notConfirmed ||
+        (text.startsWith(`${contains} `) && text.endsWith("."));
+      const oneText = (node: Node | undefined) =>
+        node !== undefined &&
+        node.childNodes.length === 1 &&
+        node.childNodes[0]?.nodeType === Node.TEXT_NODE;
+      const shapeOf = (node: Element): "text" | "pair" | "other" => {
+        if (oneText(node)) return "text";
+        const [drawn, spoken, ...more] = node.childNodes;
+        const span = (child: ChildNode | undefined, hidden: boolean) =>
+          child instanceof HTMLSpanElement &&
+          (child.getAttribute("aria-hidden") === "true") === hidden &&
+          oneText(child);
+        return more.length === 0 && span(drawn, true) && span(spoken, false)
+          ? "pair"
+          : "other";
+      };
+      const weightOf = (node: Element) => getComputedStyle(node).fontWeight;
+      const dishes = [
+        ...document.querySelectorAll("main section > ul > li"),
+      ].map((dish) => {
+        const name = dish.querySelector("h4")?.textContent ?? "a dish";
+        const lines = [...dish.querySelectorAll(":scope > p")].filter((p) =>
+          isSentence(p.textContent ?? ""),
+        );
+        const [line] = lines;
+        if (lines.length !== 1 || !line) {
+          return {
+            what: `${name}: ${lines.length} allergen lines`,
+            shape: "other" as const,
+            weight: "",
+          };
+        }
+        return {
+          what: `${name}: ${line.textContent ?? ""}`,
+          shape: shapeOf(line),
+          weight: weightOf(line),
+        };
+      });
+      const options = [
+        ...document.querySelectorAll(
+          "main section > ul > li li, [role='group'] li",
+        ),
+      ].map((item) => ({
+        what: item.textContent ?? "",
+        shape: shapeOf(item),
+        weight: weightOf(item),
+      }));
+      return { dishes, options };
+    },
+    {
+      contains: en.allergens.contains,
+      checkedNone: en.allergens.checkedNone,
+      notConfirmed: en.allergens.notConfirmed,
+    },
+  );
+}
+
+test("every allergen sentence is one swipe stop: a dish's line is one semibold text node, and an option's line is one text node or the drawn-once, spoken-once pair (D-182)", async ({
+  page,
+}) => {
+  await open(page, bare);
+  const dinner = await allergenRuns(page);
+  const shown = soupShows() ? 2 : 1;
+  // Starters' soup when it shows, the salad, and Mains' soup.
+  expect(dinner.dishes.map((run) => run.what)).toHaveLength(shown + 1);
+  for (const run of dinner.dishes) {
+    expect(run.shape, run.what).toBe("text");
+    expect(run.weight, run.what).toBe("600");
+  }
+  // Ranch and Vinaigrette have no spoken form: one text node each. The roll
+  // has an added price: the pair, once in each shown Starters dish.
+  const shapes = (runs: Run[], shape: Run["shape"]) =>
+    runs.filter((run) => run.shape === shape).map((run) => run.what);
+  expect(shapes(dinner.options, "other")).toEqual([]);
+  expect(shapes(dinner.options, "text")).toHaveLength(2);
+  expect(shapes(dinner.options, "pair")).toHaveLength(shown);
+  for (const run of dinner.options) expect(run.weight, run.what).toBe("400");
+  await expect(page.locator("strong, b")).toHaveCount(0);
+
+  await open(page, drinksPath);
+  const drinks = await allergenRuns(page);
+  // Lemonade and the three Kids dishes; the Kids block's eleven options,
+  // none with an added price.
+  expect(drinks.dishes.map((run) => run.what)).toHaveLength(4);
+  for (const run of drinks.dishes) {
+    expect(run.shape, run.what).toBe("text");
+    expect(run.weight, run.what).toBe("600");
+  }
+  expect(shapes(drinks.options, "other")).toEqual([]);
+  expect(shapes(drinks.options, "pair")).toEqual([]);
+  expect(shapes(drinks.options, "text")).toHaveLength(11);
+  for (const run of drinks.options) expect(run.weight, run.what).toBe("400");
+  await expect(page.locator("strong, b")).toHaveCount(0);
 });
 
 test("a dish's link to its section's choices puts focus on the block with JavaScript, and lands there by fragment without it", async ({
@@ -702,7 +840,8 @@ test("a published menu with nothing to show says so where its sections would be,
   await expect(page).toHaveTitle(
     menuNaming("Brunch", name ?? "", en.menu).title,
   );
-  // The headings list is the h1 and the restaurant's name alone.
+  // The headings list is the h1 and the restaurant's name alone: no dish
+  // shows, so no section's h3 and no dish's h4 (D-181).
   const list = await headings(page);
   expect(list.map((heading) => heading.level)).toEqual([1, 2]);
   // The switcher stays, Brunch current, so its link lands somewhere.

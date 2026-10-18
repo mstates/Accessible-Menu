@@ -467,7 +467,9 @@ test("a section's lists past the constant show once under the heading with a lin
     saladText.indexOf("Vinaigrette, 90 calories"),
   );
   await expect(
-    salad.getByText("Buttered roll, +$2", { exact: true }),
+    salad.getByText("Buttered roll, +$2. Contains milk, wheat.", {
+      exact: true,
+    }),
   ).toHaveCount(1);
   await expect(page.getByRole("group")).toHaveCount(0);
   await expect(
@@ -584,7 +586,10 @@ test("with JavaScript off the page reads whole and points at no missing id", asy
     await expect(
       page.getByRole("heading", { level: 1, name: en.site.descriptor }),
     ).toBeVisible();
-    await expect(page.getByText("House salad", { exact: true })).toBeVisible();
+    // A dish's name is an h4 inside its list item (D-181).
+    await expect(
+      page.getByRole("heading", { level: 4, name: "House salad", exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByText(en.allergens.checkedNone, { exact: true }),
     ).toBeVisible();

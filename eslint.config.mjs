@@ -24,9 +24,15 @@ const eslintConfig = defineConfig([
         {
           selector:
             "JSXOpeningElement[name.name='em'], JSXOpeningElement[name.name='i']",
-          message: noItalics(
-            "Use <strong> for allergen words and plain text everywhere else.",
-          ),
+          message: noItalics("Use plain text everywhere."),
+        },
+        {
+          // D-182: an allergen sentence, or any line of text, is one plain
+          // run, so a screen reader reads it as one stop.
+          selector:
+            "JSXOpeningElement[name.name='strong'], JSXOpeningElement[name.name='b']",
+          message:
+            "No element inside a line of text. Weight comes from a class on the line, so a screen reader reads the line as one stop (D-182).",
         },
         {
           selector: "Literal[value=/(^|\\s)italic(\\s|$)/]",

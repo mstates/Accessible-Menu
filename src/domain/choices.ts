@@ -122,7 +122,9 @@ export type OptionCopy = {
 // added price in words when it has one, its calories in words when it has
 // them, and its own allergen sentence, built like a dish's and read where
 // the option is, never behind a disclosure (D-40). Visible numerals and
-// spoken words differ only where a price's do (Q-6).
+// spoken words differ only where a price's do (Q-6). The diner page draws
+// the two forms as one line, drawn once and spoken once where they differ
+// (D-182); the owner's "Diners read" line carries the sentence alone.
 export type OptionSentence = {
   display: string;
   spoken: string;
@@ -131,8 +133,7 @@ export type OptionSentence = {
 
 // The option's own words, before its allergen sentence: its name, its
 // added price in words when it has one, its calories in words when it has
-// them. The diner page draws these, then the allergen sentence with its
-// words in bold; the owner's "Diners read" line joins the two.
+// them. The first half of the line; optionSentence() adds the sentence.
 export function optionWords(
   option: Pick<OptionReading, "name" | "addedPriceCents" | "calories">,
   copy: Pick<OptionCopy, "money" | "calories">,

@@ -62,13 +62,12 @@ describe("the three allergen sentences (D-35)", () => {
     expect(sentence.text).toBe("Checked. No major allergens.");
   });
 
-  it("lists the allergens present, in the owner's order, with a period", () => {
+  it("lists the allergens present, in the owner's order, with a period, as one string and nothing to draw inside it (D-182)", () => {
     const sentence = allergenSentence(reviewed(["peanuts", "milk"]), copy);
-    expect(sentence.kind).toBe("contains");
-    if (sentence.kind !== "contains") return;
-    expect(sentence.lead).toBe("Contains");
-    expect(sentence.words).toEqual(["peanuts", "milk"]);
-    expect(sentence.text).toBe("Contains peanuts, milk.");
+    expect(sentence).toEqual({
+      kind: "contains",
+      text: "Contains peanuts, milk.",
+    });
   });
 
   it("appends custom allergens after the fixed ones", () => {

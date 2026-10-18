@@ -65,8 +65,10 @@ export function allergensForRegion(
   return region === "eu" ? EU_ALLERGENS : US_MAJOR_ALLERGENS;
 }
 
+// One of the three sentences as every page reads it (D-35): its kind, and
+// its text as one plain run with nothing to draw inside it (D-182).
 export type AllergenSentence =
-  | { kind: "contains"; lead: string; words: string[]; text: string }
+  | { kind: "contains"; text: string }
   | { kind: "checked-none"; text: string }
   | { kind: "not-confirmed"; text: string };
 
@@ -91,12 +93,7 @@ export function allergenSentence(
   if (words.length === 0) {
     return { kind: "checked-none", text: copy.checkedNone };
   }
-  return {
-    kind: "contains",
-    lead: copy.contains,
-    words,
-    text: `${copy.contains} ${words.join(", ")}.`,
-  };
+  return { kind: "contains", text: `${copy.contains} ${words.join(", ")}.` };
 }
 
 // The restaurant note, once, near the top. The default renders when the
