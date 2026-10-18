@@ -26,7 +26,11 @@ type Props = { data: MenuPageData; copy: Copy };
 // each dish that lands on them. A menu that shows no dish right now, every
 // dish off the menu or every special outside its hours, keeps everything
 // above the note and reads one line where its sections would be, with no
-// section list and no confirmation line (D-177).
+// section list and no confirmation line (D-177). After the footer, the last
+// thing on the page, one application/ld+json script carries the schema.org
+// graph the view model built (Spec 3.1, D-184): data only, nothing
+// executes, outside every landmark, and behind everything a diner reads in
+// the byte stream.
 export function MenuPage({ data, copy }: Props) {
   const { restaurant, menus, menuLine, menu, code } = data;
   return (
@@ -170,6 +174,12 @@ export function MenuPage({ data, copy }: Props) {
         ) : null}
         <QuietLinks code={code} copy={copy} />
       </footer>
+      {/* The markup's text comes from serializeJsonLd(), which escapes every
+        less-than sign, so a name an owner typed can never close this tag. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: data.jsonLd }}
+      />
     </>
   );
 }

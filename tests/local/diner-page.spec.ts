@@ -4,7 +4,7 @@ import { fill } from "../../src/copy/fill";
 import { soldOutEnd } from "../../src/domain/availability";
 import { menuNaming } from "../../src/domain/diner";
 import { parseHours } from "../../src/domain/hours";
-import { menuPath } from "../../src/domain/menu-url";
+import { menuPath, statementPath } from "../../src/domain/menu-url";
 import { parseSchedule } from "../../src/domain/schedule";
 import { formatTime } from "../../src/domain/time";
 import { lifetimeSeconds, nextTimedChange } from "../../src/domain/timed";
@@ -301,6 +301,11 @@ test("a details save is live on the diner page", async ({ page }) => {
   await expect
     .poll(async () => (await served(page, bare)).html)
     .toContain('href="https://standin.example"');
+  // The site is the markup's sameAs too (D-184); the clear below takes it
+  // out of both.
+  expect((await served(page, bare)).html).toContain(
+    '"sameAs":"https://standin.example"',
+  );
 
   await page.goto(restaurantDetailsPath(code));
   await page.waitForLoadState("networkidle");
@@ -340,6 +345,7 @@ test("a failed read is never cached: the page answers 500 once and the menu on t
 test("a known code with nothing published shows the name and one line, never a 404, and the menu returns on Publish", async ({
   page,
 }) => {
+  const name = "Stand-in Diner (test restaurant, not real)";
   const { withSections } = ownerFixture();
   const drinks = await menuId("Drinks");
   const brunch = await menuId("Brunch");
@@ -358,6 +364,19 @@ test("a known code with nothing published shows the name and one line, never a 4
   expect(read.html).toContain(en.menu.footer.feedback);
   expect(read.html).toContain(en.menu.footer.statement);
   expect(read.html).not.toContain(en.menu.sectionsLabel);
+  expect(read.html, "no markup on the unavailable page").not.toContain(
+    "ld+json",
+  );
+  // The statement keeps the name and lists no menu (D-184).
+  const statement = await served(page, statementPath(code));
+  expect(statement.status).toBe(200);
+  expect(statement.html).toContain(
+    fill(en.statement.heading, { restaurant: name }),
+  );
+  expect(statement.html).not.toContain(`>${en.statement.menus.heading}<`);
+  for (const id of [withSections.id, drinks, brunch]) {
+    expect(statement.html).not.toContain(`href="${menuPath(code, id)}"`);
+  }
 
   await openOwner(page, restaurantMenuPath(code, withSections.id));
   await press(page, publishing.publish, publishing.spoken.published);
@@ -374,6 +393,57 @@ test("a known code with nothing published shows the name and one line, never a 4
   await expect
     .poll(async () => (await served(page, bare)).html)
     .toContain(">Brunch<");
+  // The statement lists the three again, each by its id.
+  await expect
+    .poll(async () => (await served(page, statementPath(code))).html)
+    .toContain(`href="${menuPath(code, brunch)}"`);
+  const listed = (await served(page, statementPath(code))).html;
+  expect(listed).toContain(`>${en.statement.menus.heading}<`);
+  for (const id of [withSections.id, drinks]) {
+    expect(listed).toContain(`href="${menuPath(code, id)}"`);
+  }
+});
+
+test("the page carries one schema.org script with the stand-in's city and country, and the statement lists every published menu by name (D-184)", async ({
+  page,
+}) => {
+  const read = await served(page, bare);
+  const scripts = [
+    ...read.html.matchAll(
+      /<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g,
+    ),
+  ].map((match) => match[1] ?? "");
+  expect(scripts).toHaveLength(1);
+  const graph = JSON.parse(scripts[0] ?? "") as {
+    name: string;
+    address: Record<string, string>;
+    hasMenu: { name: string; hasMenuSection: { name: string }[] };
+  };
+  expect(graph.name).toBe("Stand-in Diner (test restaurant, not real)");
+  expect(graph.address).toEqual({
+    "@type": "PostalAddress",
+    addressLocality: "Reading",
+    addressCountry: "US",
+  });
+  expect(graph.hasMenu.name).toBe("Dinner");
+  expect(graph.hasMenu.hasMenuSection.map((section) => section.name)).toEqual([
+    "Starters",
+    "Mains",
+  ]);
+
+  const statement = await served(page, statementPath(code));
+  expect(statement.status).toBe(200);
+  expect(statement.html).toContain(`>${en.statement.menus.heading}<`);
+  for (const menu of ["Dinner", "Drinks", "Brunch"]) {
+    expect(statement.html).toContain(
+      `href="${menuPath(code, await menuId(menu))}"`,
+    );
+    expect(statement.html).toContain(`>${menu}<`);
+  }
+  expect(statement.html).not.toContain(
+    `href="${menuPath(code, await menuId("Lunch"))}"`,
+  );
+  expect(statement.html).not.toContain("ld+json");
 });
 
 test("a menu id that is not published shows the name, its line, and the way to the menu, for a minute at a time", async ({

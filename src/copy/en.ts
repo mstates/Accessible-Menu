@@ -1463,15 +1463,49 @@ export const en = {
     noon: "noon",
     midnight: "midnight",
   },
+  // The accessibility statement (Spec 3.4, 7, D-38, D-184), one per
+  // restaurant code, generated from its data and these fixed words. The
+  // last-tested date, the known issues, and the direct email arrive with
+  // Phase 4's release log and barrier reports and with Q-1's domain (Q-109);
+  // nothing here reads as coming soon.
   statement: {
     title: "Accessibility statement, {restaurant}",
     heading: "Accessibility statement for {restaurant}",
     standard:
       "Built to WCAG 2.2 AA and tested with real screen readers on every release.",
-    barriers:
-      "If something gets in your way, tell us. Reported barriers are fixed within five business days.",
-    reply: "A person replies within two business days.",
-    person: "Michael, founder, reads every barrier report.",
+    // How it is tested (Spec 10), in plain words: the automated checks,
+    // then the hands (Michael, October 18, 2026).
+    tested: {
+      heading: "How it is tested",
+      text: "Before every release, automated checks run on every menu page: axe, a keyboard walk of every control, contrast, 200% zoom, a 320 pixel wide screen, and text spacing. Then we test by hand with VoiceOver on iPhone, TalkBack on Android, NVDA on Windows, and a keyboard alone.",
+    },
+    barriers: {
+      heading: "If something is in your way",
+      fixed:
+        "If something gets in your way, tell us. Reported barriers are fixed within five business days.",
+      reply: "A person replies within two business days.",
+      person: "Michael, founder, reads every barrier report.",
+    },
+    // What we count (Spec 4.7, D-24): the standing limit, in the present
+    // tense. Nothing counts more than this today, and the beacons that
+    // arrive with Phase 3 and Phase 8 are built under it, so the statement
+    // never has to be rewritten to say less (Michael, October 18, 2026).
+    // Filters are parked (D-29), so they are not here.
+    counts: {
+      heading: "What we count",
+      lead: "Totals, never people. The menu sets no cookie, loads nothing from anyone else, and keeps nothing about you. The only things we ever count are:",
+      items: [
+        "how many times a menu is read each day",
+        "which languages are used",
+        "how often read aloud starts",
+        "which text sizes are chosen",
+        "which contrast setting is chosen",
+        "how often allergen lines are hidden",
+      ],
+    },
+    menus: {
+      heading: "Menus",
+    },
     feedback: "Feedback about this menu",
     backToMenu: "Back to the menu",
   },

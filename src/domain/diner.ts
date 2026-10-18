@@ -6,7 +6,12 @@ import {
   type ConfirmationLine,
 } from "./allergens";
 import { availabilityAt } from "./availability";
-import { caloriesOf, caloriesWords, type CaloriesCopy } from "./calories";
+import {
+  caloriesOf,
+  caloriesWords,
+  type Calories,
+  type CaloriesCopy,
+} from "./calories";
 import { optionSentence, type OptionReading } from "./choices";
 import { todayIn } from "./date";
 import {
@@ -93,12 +98,22 @@ export type DinerChoiceList = {
   options: DinerOption[];
 };
 
+// A price as a number, for the menu page's markup (D-184): one per size,
+// one for one price with an amount, none for market price or a blank price.
+export type DinerOffer = { size: string | null; cents: number };
+
 export type DinerDish = {
   id: string;
   name: string;
   description: string | null;
   note: string | null;
   price: PriceText | null;
+  // The same price and calories as numbers, for the markup, so it can never
+  // disagree with the words above (rule 8). The calories are the dish's own,
+  // for one price or market price; a dish priced by size has none here,
+  // since its calories sit on each size and stay in the page's words.
+  offers: DinerOffer[];
+  calories: Calories | null;
   allergen: AllergenSentence;
   dietary: DietarySentence | null;
   cookedToOrder: boolean;
@@ -270,6 +285,39 @@ export function dishPriceWords(
   }
 }
 
+// The numbers behind the words (D-184), from the one price the words come
+// from: an offer for one price with an amount, one per size, none for
+// market price or a blank price; the dish's own calories for one price or
+// market price, and null for a dish priced by size.
+function dishNumbers(price: SnapshotItem["price"]): {
+  offers: DinerOffer[];
+  calories: Calories | null;
+} {
+  switch (price.kind) {
+    case "one":
+      return {
+        offers:
+          price.price_cents === null
+            ? []
+            : [{ size: null, cents: price.price_cents }],
+        calories: caloriesOf(price.calories_low, price.calories_high),
+      };
+    case "sizes":
+      return {
+        offers: price.sizes.map((size) => ({
+          size: size.name,
+          cents: size.price_cents,
+        })),
+        calories: null,
+      };
+    case "market":
+      return {
+        offers: [],
+        calories: caloriesOf(price.calories_low, price.calories_high),
+      };
+  }
+}
+
 // A list as the page draws it: its lead, and each option's one line in
 // both forms (D-182).
 function listView(
@@ -379,6 +427,7 @@ export function visibleMenu(inputs: VisibleMenuInputs): DinerMenuView {
       description: dish.description,
       note: dish.note,
       price: dishPriceWords(dish.price, copy, lang),
+      ...dishNumbers(dish.price),
       allergen: sentenceOf(dish.allergens, copy.allergens),
       dietary: dietarySentence(dish.dietary_tags, copy.dietary),
       cookedToOrder: dish.cooked_to_order,

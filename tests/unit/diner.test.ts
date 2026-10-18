@@ -324,6 +324,36 @@ describe("what a diner sees at one moment (D-159, D-160, D-39)", () => {
     );
   });
 
+  it("keeps the numbers behind the price words for the markup (D-184)", () => {
+    const menu = view(fivePm);
+    const [soup, salad] = menu.sections[0]?.dishes ?? [];
+    // By size: one offer per size, and the calories stay on each size.
+    expect(soup?.offers).toEqual([
+      { size: "Cup", cents: 500 },
+      { size: "Bowl", cents: 800 },
+    ]);
+    expect(soup?.calories).toBeNull();
+    // One price with its calories.
+    expect(salad?.offers).toEqual([{ size: null, cents: 900 }]);
+    expect(salad?.calories).toEqual({ low: 320, high: null });
+    // A blank price: nothing.
+    const mainsSoup = menu.sections[1]?.dishes[0];
+    expect(mainsSoup?.offers).toEqual([]);
+    expect(mainsSoup?.calories).toBeNull();
+    // Market price: no offer, the calories kept.
+    const snapshot = dinner();
+    const states = ciStates(snapshot);
+    states.set(dishId(snapshot, "Starters", "Garlic bread"), {
+      available: true,
+      soldOutAt: null,
+      schedule: null,
+    });
+    const bread = view(fivePm, snapshot, states).sections[0]?.dishes[2];
+    expect(bread?.name).toBe("Garlic bread");
+    expect(bread?.offers).toEqual([]);
+    expect(bread?.calories).toEqual({ low: 410, high: null });
+  });
+
   it("flags the notices from what it shows", () => {
     // The bread, cooked to order, is off the menu: no advisory; the salad's
     // calories bring the calorie notices.

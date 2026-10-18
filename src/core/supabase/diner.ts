@@ -34,6 +34,10 @@ export type PublishedRestaurant = {
   code: string;
   name: string;
   website: string | null;
+  // The city and the country, for the menu page's markup (D-184); never the
+  // street, the phone, or the postal code, which the view does not carry.
+  city: string | null;
+  country: string;
   hours: Hours | null;
   timezone: string;
   allergenNote: string | null;
@@ -64,13 +68,15 @@ export type PublishedRead =
   | { kind: "unknown" };
 
 const restaurantColumns =
-  "id, code, name, website, hours, timezone, allergen_note, prep_notes";
+  "id, code, name, website, city, country, hours, timezone, allergen_note, prep_notes";
 
 const restaurantRow = z.object({
   id: z.string(),
   code: z.string(),
   name: z.string(),
   website: z.string().nullable(),
+  city: z.string().nullable(),
+  country: z.string(),
   hours: z.unknown(),
   timezone: z.string(),
   allergen_note: z.string().nullable(),
@@ -120,6 +126,8 @@ async function readRestaurant(
     code: row.code,
     name: row.name,
     website: row.website,
+    city: row.city,
+    country: row.country,
     // A value that is not the hours shape reads as no hours (D-92).
     hours: parseHours(row.hours),
     timezone: row.timezone,

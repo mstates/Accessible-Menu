@@ -900,6 +900,223 @@ test("a published menu with nothing to show says so where its sections would be,
   expect(served).not.toContain(en.allergens.confirmedAll);
 });
 
+// The application/ld+json scripts a page carries (Spec 3.1, D-184), read
+// from the served HTML so the check holds with JavaScript off: each one's
+// text, and where the first starts, to compare with the footer's end.
+async function servedScripts(page: Page, path: string) {
+  const html = await (await page.request.get(path)).text();
+  const matches = [
+    ...html.matchAll(
+      /<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g,
+    ),
+  ];
+  return {
+    html,
+    texts: matches.map((match) => match[1] ?? ""),
+    at: matches[0]?.index ?? -1,
+  };
+}
+
+// The shape the gate reads from the graph; the builder's unit spec pins
+// the rest.
+type Graph = {
+  "@context": string;
+  "@type": string;
+  name: string;
+  url: string;
+  address: {
+    "@type": string;
+    addressLocality?: string;
+    addressCountry: string;
+  };
+  openingHoursSpecification?: {
+    "@type": string;
+    dayOfWeek: string;
+    opens: string;
+    closes: string;
+  }[];
+  hasMenu: {
+    "@type": string;
+    name: string;
+    url: string;
+    hasMenuSection?: { name: string; hasMenuItem: { name: string }[] }[];
+  };
+};
+
+test("every menu page carries one schema.org script that says what the page shows and nothing more (D-184)", async ({
+  page,
+}) => {
+  const spec = (dayOfWeek: string, opens: string, closes: string) => ({
+    "@type": "OpeningHoursSpecification",
+    dayOfWeek,
+    opens,
+    closes,
+  });
+  for (const path of [bare, drinksPath]) {
+    const { html, texts, at } = await servedScripts(page, path);
+    expect(texts, `${path} carries one script`).toHaveLength(1);
+    const text = texts[0] ?? "";
+    expect(
+      text,
+      "no less-than sign, so owner text can never close the script",
+    ).not.toContain("<");
+    expect(at, "the script comes after the footer").toBeGreaterThan(
+      html.lastIndexOf("</footer>"),
+    );
+    const graph = JSON.parse(text) as Graph;
+    expect(graph["@context"]).toBe("https://schema.org");
+    expect(graph["@type"]).toBe("Restaurant");
+    expect(new URL(graph.url).pathname, "the permanent address").toBe(bare);
+    expect(graph.address["@type"]).toBe("PostalAddress");
+    expect(graph.address.addressCountry).toBe("US");
+    expect(
+      graph.address.addressLocality,
+      "the city the owner typed",
+    ).toBeTruthy();
+    // The week as CI Diner's data file sets it, in Google's forms: a closed
+    // Monday, a split Tuesday, Wednesday to Friday, a Saturday past
+    // midnight, and a Sunday open around the clock.
+    expect(graph.openingHoursSpecification).toEqual([
+      spec("Monday", "00:00", "00:00"),
+      spec("Tuesday", "11:00", "14:00"),
+      spec("Tuesday", "17:00", "21:00"),
+      spec("Wednesday", "11:00", "21:00"),
+      spec("Thursday", "11:00", "21:00"),
+      spec("Friday", "11:00", "21:00"),
+      spec("Saturday", "17:00", "02:00"),
+      spec("Sunday", "00:00", "23:59"),
+    ]);
+    await open(page, path);
+    expect(graph.name).toBe(
+      await page.getByRole("heading", { level: 2 }).textContent(),
+    );
+    expect(graph.hasMenu["@type"]).toBe("Menu");
+    expect(graph.hasMenu.url, "the page's own address").toBe(
+      await page.locator('head link[rel="canonical"]').getAttribute("href"),
+    );
+    expect(graph.hasMenu.name, "the menu the switcher marks").toBe(
+      await page
+        .getByRole("navigation", { name: en.menu.menusLabel })
+        .locator('a[aria-current="page"]')
+        .textContent(),
+    );
+    // The sections are the h3s and the dishes the h4s, in page order.
+    const sections = graph.hasMenu.hasMenuSection ?? [];
+    expect(sections.map((section) => section.name)).toEqual(
+      await page.getByRole("heading", { level: 3 }).allTextContents(),
+    );
+    for (const section of sections) {
+      const dishes = await page
+        .locator("main section")
+        .filter({
+          has: page.getByRole("heading", {
+            level: 3,
+            name: section.name,
+            exact: true,
+          }),
+        })
+        .getByRole("heading", { level: 4 })
+        .allTextContents();
+      expect(
+        section.hasMenuItem.map((item) => item.name),
+        `${section.name}'s dishes`,
+      ).toEqual(dishes);
+    }
+    // Nothing about allergens, tags, options, or state.
+    for (const word of [
+      en.allergens.contains,
+      en.allergens.checkedNone,
+      en.allergens.notConfirmed,
+      en.allergens.confirmedAll,
+      en.dietary.names.vegetarian,
+      "Ranch",
+      "Buttered roll",
+      en.availability.soldOut,
+      en.menu.cookedToOrder,
+      "Every day",
+    ]) {
+      expect(text, `the markup never says ${word}`).not.toContain(word);
+    }
+  }
+});
+
+test("a menu that shows no dish carries the menu with its name and URL alone (D-177), and a made-up id's page and a 404 carry no script", async ({
+  page,
+}) => {
+  const brunch = await servedScripts(page, brunchPath);
+  expect(brunch.texts).toHaveLength(1);
+  const graph = JSON.parse(brunch.texts[0] ?? "") as Graph;
+  expect(graph.hasMenu["@type"]).toBe("Menu");
+  expect(graph.hasMenu.name).toBe("Brunch");
+  expect(new URL(graph.hasMenu.url).pathname).toBe(brunchPath);
+  expect("hasMenuSection" in graph.hasMenu).toBe(false);
+  const unavailable = await servedScripts(page, madeUp);
+  expect(unavailable.texts).toEqual([]);
+  expect(unavailable.html).not.toContain("ld+json");
+  const missing = await page.request.get(menuPath(menuCode, "not-a-menu"));
+  expect(missing.status()).toBe(404);
+  expect(await missing.text()).not.toContain("ld+json");
+});
+
+test("the statement names the restaurant, how it is tested, the fix promise, what we count, and every published menu, and links back (D-184)", async ({
+  page,
+}) => {
+  await open(page, bare);
+  const name =
+    (await page.getByRole("heading", { level: 2 }).textContent()) ?? "";
+  const switcher = page
+    .getByRole("navigation", { name: en.menu.menusLabel })
+    .getByRole("link");
+  const menuNames = await switcher.allTextContents();
+  const menuHrefs = await switcher.evaluateAll((links) =>
+    links.map((link) => link.getAttribute("href")),
+  );
+  await open(page, statementPath(menuCode));
+  await expect(page).toHaveTitle(
+    fill(en.statement.title, { restaurant: name }),
+  );
+  // One h1, then an h2 per part, so the headings list walks the page.
+  expect(await headings(page)).toEqual([
+    { level: 1, text: fill(en.statement.heading, { restaurant: name }) },
+    { level: 2, text: en.statement.tested.heading },
+    { level: 2, text: en.statement.barriers.heading },
+    { level: 2, text: en.statement.counts.heading },
+    { level: 2, text: en.statement.menus.heading },
+  ]);
+  for (const text of [
+    en.statement.standard,
+    en.statement.tested.text,
+    en.statement.barriers.fixed,
+    en.statement.barriers.reply,
+    en.statement.barriers.person,
+    en.statement.counts.lead,
+    ...en.statement.counts.items,
+  ]) {
+    await expect(page.getByText(text, { exact: true })).toBeVisible();
+  }
+  // The menus, by name and by id, as the switcher lists them.
+  const menuLinks = page
+    .locator("h2", { hasText: en.statement.menus.heading })
+    .locator("xpath=following-sibling::ul[1]")
+    .getByRole("link");
+  expect(await menuLinks.allTextContents()).toEqual(menuNames);
+  expect(
+    await menuLinks.evaluateAll((links) =>
+      links.map((link) => link.getAttribute("href")),
+    ),
+  ).toEqual(menuHrefs);
+  await expect(
+    page.getByRole("link", { name: en.statement.feedback, exact: true }),
+  ).toHaveAttribute("href", feedbackPath(menuCode));
+  await expect(
+    page.getByRole("link", { name: en.statement.backToMenu, exact: true }),
+  ).toHaveAttribute("href", bare);
+  // No email, no date, no issues list yet (Q-109), and no markup script.
+  const html = await (await page.request.get(statementPath(menuCode))).text();
+  expect(html).not.toContain("mailto:");
+  expect(html).not.toContain("ld+json");
+});
+
 test("at a 53px root, no horizontal scroll and nothing cut off", async ({
   page,
 }) => {
