@@ -1,0 +1,58 @@
+{
+  "addressComponents": [
+    {
+      "longText": "2",
+      "shortText": "2",
+      "types": ["street_number"],
+      "languageCode": "en-US"
+    },
+    {
+      "longText": "Main Street",
+      "shortText": "Main St",
+      "types": ["route"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "Suite 2",
+      "shortText": "Suite 2",
+      "types": ["subpremise"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "Reading",
+      "shortText": "Reading",
+      "types": ["locality", "political"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "Berks County",
+      "shortText": "Berks County",
+      "types": ["administrative_area_level_2", "political"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "Pennsylvania",
+      "shortText": "PA",
+      "types": ["administrative_area_level_1", "political"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "United States",
+      "shortText": "US",
+      "types": ["country", "political"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "19601",
+      "shortText": "19601",
+      "types": ["postal_code"],
+      "languageCode": "en-US"
+    },
+    {
+      "longText": "1234",
+      "shortText": "1234",
+      "types": ["postal_code_suffix"],
+      "languageCode": "en-US"
+    }
+  ]
+}

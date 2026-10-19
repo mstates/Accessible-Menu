@@ -1,0 +1,63 @@
+{
+  "suggestions": [
+    {
+      "placePrediction": {
+        "place": "places/ChIJ2main",
+        "placeId": "ChIJ2main",
+        "text": {
+          "text": "2 Main Street, Reading, PA, USA",
+          "matches": [{ "endOffset": 6 }]
+        },
+        "structuredFormat": {
+          "mainText": {
+            "text": "2 Main Street",
+            "matches": [{ "endOffset": 6 }]
+          },
+          "secondaryText": { "text": "Reading, PA, USA" }
+        },
+        "types": ["street_address", "geocode"]
+      }
+    },
+    {
+      "queryPrediction": {
+        "text": { "text": "2 main street", "matches": [{ "endOffset": 6 }] }
+      }
+    },
+    {
+      "placePrediction": {
+        "place": "places/ChIJbistro",
+        "placeId": "ChIJbistro",
+        "text": {
+          "text": "Test Bistro, Penn Street, Reading, PA, USA",
+          "matches": [{ "endOffset": 4 }]
+        },
+        "structuredFormat": {
+          "mainText": {
+            "text": "Test Bistro",
+            "matches": [{ "endOffset": 4 }]
+          },
+          "secondaryText": { "text": "Penn Street, Reading, PA, USA" }
+        },
+        "types": ["restaurant", "food", "point_of_interest", "establishment"]
+      }
+    },
+    {
+      "placePrediction": {
+        "place": "places/ChIJwest",
+        "placeId": "ChIJwest",
+        "text": {
+          "text": "2 Main Street, West Reading, PA, USA",
+          "matches": [{ "endOffset": 6 }]
+        },
+        "structuredFormat": {
+          "mainText": {
+            "text": "2 Main Street",
+            "matches": [{ "endOffset": 6 }]
+          },
+          "secondaryText": { "text": "West Reading, PA, USA" }
+        },
+        "types": ["street_address", "geocode"]
+      }
+    }
+  ]
+}

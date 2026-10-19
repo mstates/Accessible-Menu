@@ -13,13 +13,15 @@ import { flushSync } from "react-dom";
 import { Form } from "react-aria-components";
 import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
+import { Announcer } from "@/core/a11y/announcer";
+import type { AddressParts } from "@/core/places";
 import {
   DAY_KEYS,
   isOpenAllDay,
   type DayKey,
   type TimeRange,
 } from "@/domain/hours";
-import { US_STATE_CODES } from "@/domain/regions";
+import { isStateCode, US_STATE_CODES } from "@/domain/regions";
 import type { RestaurantDetails } from "@/domain/restaurant";
 import { formatTime } from "@/domain/time";
 import {
@@ -33,6 +35,7 @@ import { Checkbox, CheckboxGroup } from "@/ui/CheckboxGroup";
 import { Select } from "@/ui/Select";
 import { TextField } from "@/ui/TextField";
 import type { RestaurantFormState } from "./actions";
+import { AddressFinder } from "./address/AddressFinder";
 import {
   allDayFieldName,
   errorsShown,
@@ -53,6 +56,9 @@ type Props = {
   defaultValues?: RestaurantDetails;
   mode: "create" | "details";
   submitLabel: string;
+  // Whether the address finder shows above the address fields (D-83):
+  // only when the server holds a Places key.
+  addressFinder: boolean;
 };
 
 const initial: RestaurantFormState = { status: "idle" };
@@ -80,6 +86,7 @@ export function RestaurantForm({
   defaultValues,
   mode,
   submitLabel,
+  addressFinder,
 }: Props) {
   const [state, formAction, pending] = useActionState(action, initial);
   const strings = copy.owner.restaurants;
@@ -98,6 +105,24 @@ export function RestaurantForm({
   );
   const shown = errorsShown(errors, allDay);
   const hasProblems = Object.keys(shown).length > 0 || failure !== null;
+
+  // The four address parts (D-87), held here so the finder can fill them
+  // (D-83) and the owner can change what it filled; the fields post as
+  // before, since the submit reads the form. Seeded from the saved row. A
+  // pick fills all four, blanks included, and the state only when it is one
+  // of ours; the country has no field (D-94).
+  const [address, setAddress] = useState(defaultValues?.address ?? "");
+  const [city, setCity] = useState(defaultValues?.city ?? "");
+  const [region, setRegion] = useState<string | null>(
+    defaultValues?.region ?? null,
+  );
+  const [postalCode, setPostalCode] = useState(defaultValues?.postalCode ?? "");
+  function fillAddress(parts: AddressParts) {
+    setAddress(parts.street);
+    setCity(parts.city);
+    setRegion(isStateCode(parts.state) ? parts.state : null);
+    setPostalCode(parts.zip);
+  }
 
   const summaryRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -139,165 +164,176 @@ export function RestaurantForm({
   // everything the owner typed on an invalid submit. The owner form needs
   // JavaScript anyway, since a React Aria Select cannot change without it.
   return (
-    <Form
-      onSubmit={(event) => {
-        event.preventDefault();
-        const data = new FormData(event.currentTarget);
-        startTransition(() => formAction(data));
-      }}
-      validationBehavior="aria"
-      validationErrors={errors}
-      className="flex flex-col gap-6"
-    >
-      {hasProblems ? (
-        <ErrorSummary
-          ref={summaryRef}
-          heading={strings.errors.summary}
-          errors={shown}
-          failure={failure}
-        />
-      ) : null}
-
-      <p className="text-sm text-foreground-muted">{strings.requiredNote}</p>
-
-      <TextField
-        id={fieldId("name")}
-        name="name"
-        label={strings.fields.name}
-        isRequired
-        autoComplete="organization"
-        defaultValue={defaultValues?.name}
-      />
-
-      <Section heading={strings.sections.location}>
-        <TextField
-          id={fieldId("address")}
-          name="address"
-          label={strings.fields.address}
-          isRequired
-          autoComplete="street-address"
-          defaultValue={defaultValues?.address ?? undefined}
-        />
-        <TextField
-          id={fieldId("city")}
-          name="city"
-          label={strings.fields.city}
-          isRequired
-          autoComplete="address-level2"
-          defaultValue={defaultValues?.city ?? undefined}
-        />
-        <Select
-          name="region"
-          triggerId={fieldId("region")}
-          label={strings.fields.region}
-          placeholder={strings.fields.regionPlaceholder}
-          items={states}
-          defaultSelectedKey={defaultValues?.region ?? undefined}
-          isRequired
-        />
-        <TextField
-          id={fieldId("postalCode")}
-          name="postalCode"
-          label={strings.fields.postalCode}
-          isRequired
-          autoComplete="postal-code"
-          inputMode="numeric"
-          defaultValue={defaultValues?.postalCode ?? undefined}
-        />
-      </Section>
-
-      <Section heading={strings.sections.contact}>
-        <TextField
-          id={fieldId("phone")}
-          name="phone"
-          type="tel"
-          label={strings.fields.phone}
-          autoComplete="tel"
-          defaultValue={defaultValues?.phone ?? undefined}
-        />
-        <TextField
-          id={fieldId("website")}
-          name="website"
-          label={strings.fields.website}
-          description={strings.fields.websiteHint}
-          autoComplete="url"
-          inputMode="url"
-          defaultValue={defaultValues?.website ?? undefined}
-        />
-      </Section>
-
-      <Section heading={strings.sections.hours}>
-        <p className="text-sm text-foreground-muted">
-          {strings.fields.hoursHint}
-        </p>
-        <Select
-          name="timezone"
-          triggerId={fieldId("timezone")}
-          label={strings.fields.timezone}
-          items={zones}
-          selectedKey={timezone}
-          onSelectionChange={(key) => {
-            if (key !== null) setChosenTimezone(String(key));
-          }}
-          isRequired
-        />
-        <p id={timeHintId} className="text-sm text-foreground-muted">
-          {strings.fields.timeHint}
-        </p>
-        {DAY_KEYS.map((day) => (
-          <DayHours
-            key={day}
-            day={day}
-            copy={copy}
-            defaultRanges={defaultValues?.hours?.[day] ?? []}
-            error={shown[`hours.${day}`]}
-            allDay={allDay.includes(day)}
-            onAllDayChange={(checked) =>
-              setAllDay((days) =>
-                checked ? [...days, day] : days.filter((d) => d !== day),
-              )
-            }
+    <Announcer>
+      <Form
+        onSubmit={(event) => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          startTransition(() => formAction(data));
+        }}
+        validationBehavior="aria"
+        validationErrors={errors}
+        className="flex flex-col gap-6"
+      >
+        {hasProblems ? (
+          <ErrorSummary
+            ref={summaryRef}
+            heading={strings.errors.summary}
+            errors={shown}
+            failure={failure}
           />
-        ))}
-      </Section>
+        ) : null}
 
-      <Section heading={strings.sections.allergens}>
+        <p className="text-sm text-foreground-muted">{strings.requiredNote}</p>
+
         <TextField
-          id={fieldId("allergenNote")}
-          name="allergenNote"
-          multiline
-          label={strings.fields.allergenNote}
-          description={fill(strings.fields.allergenNoteHint, {
-            default: copy.allergens.noteDefault,
-          })}
-          defaultValue={defaultValues?.allergenNote ?? undefined}
+          id={fieldId("name")}
+          name="name"
+          label={strings.fields.name}
+          isRequired
+          autoComplete="organization"
+          defaultValue={defaultValues?.name}
         />
-        <div id={fieldId("prepNotes")} tabIndex={-1}>
-          <CheckboxGroup
-            name="prepNotes"
-            label={strings.fields.prepNotes}
-            description={strings.fields.prepNotesHint}
-            defaultValue={defaultValues?.prepNotes ?? []}
-          >
-            {PREP_NOTE_IDS.map((id) => (
-              <Checkbox key={id} value={id}>
-                {copy.allergens.prepNotes[id]}
-              </Checkbox>
-            ))}
-          </CheckboxGroup>
-        </div>
-      </Section>
 
-      <div>
-        <Button
-          type="submit"
-          isPending={pending}
-          pendingLabel={copy.ui.pending}
-        >
-          {submitLabel}
-        </Button>
-      </div>
-    </Form>
+        <Section heading={strings.sections.location}>
+          {addressFinder ? (
+            <AddressFinder strings={strings.finder} onFill={fillAddress} />
+          ) : null}
+          <TextField
+            id={fieldId("address")}
+            name="address"
+            label={strings.fields.address}
+            isRequired
+            autoComplete="street-address"
+            value={address}
+            onChange={setAddress}
+          />
+          <TextField
+            id={fieldId("city")}
+            name="city"
+            label={strings.fields.city}
+            isRequired
+            autoComplete="address-level2"
+            value={city}
+            onChange={setCity}
+          />
+          <Select
+            name="region"
+            triggerId={fieldId("region")}
+            label={strings.fields.region}
+            placeholder={strings.fields.regionPlaceholder}
+            items={states}
+            selectedKey={region}
+            onSelectionChange={(key) =>
+              setRegion(key === null ? null : String(key))
+            }
+            isRequired
+          />
+          <TextField
+            id={fieldId("postalCode")}
+            name="postalCode"
+            label={strings.fields.postalCode}
+            isRequired
+            autoComplete="postal-code"
+            inputMode="numeric"
+            value={postalCode}
+            onChange={setPostalCode}
+          />
+        </Section>
+
+        <Section heading={strings.sections.contact}>
+          <TextField
+            id={fieldId("phone")}
+            name="phone"
+            type="tel"
+            label={strings.fields.phone}
+            autoComplete="tel"
+            defaultValue={defaultValues?.phone ?? undefined}
+          />
+          <TextField
+            id={fieldId("website")}
+            name="website"
+            label={strings.fields.website}
+            description={strings.fields.websiteHint}
+            autoComplete="url"
+            inputMode="url"
+            defaultValue={defaultValues?.website ?? undefined}
+          />
+        </Section>
+
+        <Section heading={strings.sections.hours}>
+          <p className="text-sm text-foreground-muted">
+            {strings.fields.hoursHint}
+          </p>
+          <Select
+            name="timezone"
+            triggerId={fieldId("timezone")}
+            label={strings.fields.timezone}
+            items={zones}
+            selectedKey={timezone}
+            onSelectionChange={(key) => {
+              if (key !== null) setChosenTimezone(String(key));
+            }}
+            isRequired
+          />
+          <p id={timeHintId} className="text-sm text-foreground-muted">
+            {strings.fields.timeHint}
+          </p>
+          {DAY_KEYS.map((day) => (
+            <DayHours
+              key={day}
+              day={day}
+              copy={copy}
+              defaultRanges={defaultValues?.hours?.[day] ?? []}
+              error={shown[`hours.${day}`]}
+              allDay={allDay.includes(day)}
+              onAllDayChange={(checked) =>
+                setAllDay((days) =>
+                  checked ? [...days, day] : days.filter((d) => d !== day),
+                )
+              }
+            />
+          ))}
+        </Section>
+
+        <Section heading={strings.sections.allergens}>
+          <TextField
+            id={fieldId("allergenNote")}
+            name="allergenNote"
+            multiline
+            label={strings.fields.allergenNote}
+            description={fill(strings.fields.allergenNoteHint, {
+              default: copy.allergens.noteDefault,
+            })}
+            defaultValue={defaultValues?.allergenNote ?? undefined}
+          />
+          <div id={fieldId("prepNotes")} tabIndex={-1}>
+            <CheckboxGroup
+              name="prepNotes"
+              label={strings.fields.prepNotes}
+              description={strings.fields.prepNotesHint}
+              defaultValue={defaultValues?.prepNotes ?? []}
+            >
+              {PREP_NOTE_IDS.map((id) => (
+                <Checkbox key={id} value={id}>
+                  {copy.allergens.prepNotes[id]}
+                </Checkbox>
+              ))}
+            </CheckboxGroup>
+          </div>
+        </Section>
+
+        <div>
+          <Button
+            type="submit"
+            isPending={pending}
+            pendingLabel={copy.ui.pending}
+          >
+            {submitLabel}
+          </Button>
+        </div>
+      </Form>
+    </Announcer>
   );
 }
 

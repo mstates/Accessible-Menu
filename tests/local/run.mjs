@@ -59,6 +59,10 @@ const env = {
   A11Y_OWNER_CODE: "12345678",
   LOCAL_BASE_URL: app,
   NEXT_DIST_DIR: ".next-local",
+  // The address finder's Google is the stand-in too (D-83): its key, and
+  // the origin its fake Places endpoints answer at.
+  GOOGLE_PLACES_API_KEY: "standin-places-key",
+  GOOGLE_PLACES_ORIGIN: standin,
 };
 
 const bin = (name) => `${root}node_modules/.bin/${name}`;

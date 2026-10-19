@@ -4,7 +4,7 @@ import { handToBox } from "../editing/hand-to-box";
 import { US_MAJOR_ALLERGENS, type AllergenCopy } from "@/domain/allergens";
 import { Button } from "@/ui/Button";
 import { Checkbox, CheckboxGroup } from "@/ui/CheckboxGroup";
-import { ComboBox } from "@/ui/ComboBox";
+import { ComboBox, suggestionItems } from "@/ui/ComboBox";
 import {
   applyName,
   dinerSentence,
@@ -137,7 +137,7 @@ export function AllergenGroup({
                     row.label,
                   )}
                   description={strings.otherHint}
-                  suggestions={suggestions}
+                  items={suggestionItems(suggestions)}
                   value={row.field.value}
                   onChange={row.field.onChange}
                   onCommit={row.field.onCommit}

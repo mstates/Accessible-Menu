@@ -151,6 +151,18 @@ export const en = {
         prepNotesHint:
           "Pick any that apply. Each one shows under your allergen note.",
       },
+      // The address finder above the address fields (D-83), shown only
+      // when the server holds a Places key. The hint names where the
+      // matches come from (Q-113).
+      finder: {
+        label: "Find the address",
+        buttonLabel: "Show address matches",
+        hint: "Type a few characters of the street or the restaurant's name, then choose a match from Google. The fields below fill in and stay yours to change. Or type the address by hand.",
+        filled:
+          "The address fields below are filled in from your choice. Check them, and add anything missing.",
+        unavailable:
+          "Address matches are not available right now. Type the address by hand.",
+      },
       days,
       states: {
         AL: "Alabama",

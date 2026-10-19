@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { Announcer } from "@/core/a11y/announcer";
 import type { AllergenCopy } from "@/domain/allergens";
 import type { ChoiceHome, OwnerOption } from "@/domain/choices";
-import { ComboBox } from "@/ui/ComboBox";
+import { ComboBox, suggestionItems } from "@/ui/ComboBox";
 import type {
   AllergenStrings,
   SameNamedPlace,
@@ -97,7 +97,7 @@ function ChoiceListEditor({
             label={strings.page.leadLabel}
             buttonLabel={strings.page.showLeads}
             description={strings.page.leadHint}
-            suggestions={strings.page.suggestions}
+            items={suggestionItems(strings.page.suggestions)}
             value={lead.value}
             onChange={lead.onChange}
             onCommit={lead.onCommit}

@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
 import { menuOrigin } from "@/core/config";
+import { placesConfigured } from "@/core/places";
 import { menuUrl } from "@/domain/menu-url";
 import { updateRestaurant } from "@/features/owner/actions";
 import { loadRestaurant } from "@/features/owner/load-restaurant";
@@ -105,6 +106,7 @@ export default async function RestaurantDetailsPage({
           action={action}
           defaultValues={restaurant}
           mode="details"
+          addressFinder={placesConfigured()}
           submitLabel={strings.details.submit}
         />
       </div>

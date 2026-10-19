@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
+import { placesConfigured } from "@/core/places";
 import { createSupabaseServerClient } from "@/core/supabase/server";
 import { createRestaurant } from "@/features/owner/actions";
 import { dashboardPath } from "@/features/owner/paths";
@@ -36,6 +37,7 @@ export default async function NewRestaurantPage() {
           copy={en}
           action={createRestaurant}
           mode="create"
+          addressFinder={placesConfigured()}
           submitLabel={strings.new.submit}
         />
       </div>

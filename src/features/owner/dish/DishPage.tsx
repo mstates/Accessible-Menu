@@ -9,7 +9,7 @@ import type { Hours } from "@/domain/hours";
 import type { ScheduleCopy } from "@/domain/schedule";
 import type { TimeCopy } from "@/domain/time";
 import { Button } from "@/ui/Button";
-import { ComboBox } from "@/ui/ComboBox";
+import { ComboBox, suggestionItems } from "@/ui/ComboBox";
 import { PageLink } from "@/ui/PageLink";
 import { Radio, RadioGroup } from "@/ui/RadioGroup";
 import type { SelectGroup } from "@/ui/Select";
@@ -301,7 +301,7 @@ function DishEditor({
                           label,
                         )}
                         description={strings.price.sizeHint}
-                        suggestions={suggestions}
+                        items={suggestionItems(suggestions)}
                         value={name.value}
                         onChange={name.onChange}
                         onCommit={name.onCommit}

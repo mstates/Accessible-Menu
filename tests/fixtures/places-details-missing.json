@@ -1,0 +1,40 @@
+{
+  "addressComponents": [
+    {
+      "longText": "Atlantic Avenue",
+      "shortText": "Atlantic Ave",
+      "types": ["route"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "Brooklyn",
+      "shortText": "Brooklyn",
+      "types": ["sublocality_level_1", "sublocality", "political"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "Kings County",
+      "shortText": "Kings County",
+      "types": ["administrative_area_level_2", "political"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "New York",
+      "shortText": "NY",
+      "types": ["administrative_area_level_1", "political"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "United States",
+      "shortText": "US",
+      "types": ["country", "political"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "11201",
+      "shortText": "11201",
+      "types": ["postal_code"],
+      "languageCode": "en-US"
+    }
+  ]
+}

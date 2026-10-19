@@ -14,7 +14,9 @@
 // and names no real project: the session it hands out is an unsigned
 // token, and the restaurant is a stand-in, not CI Diner. It is not a copy
 // of Supabase; a rule the screens rely on is added here when a task needs
-// it.
+// it. It also answers as Google's Places API (New) for the address finder
+// (D-83), two endpoints and a log, so the finder's lookups land here with
+// no key and no network.
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { menuSnapshot, publishProblems } from "./menu-snapshot.mjs";
@@ -113,6 +115,62 @@ let failReads = 0;
 let failNames = new Map();
 // Every write the stand-in took, for a test that must prove none was sent.
 let writes = [];
+
+// The address finder's Google (D-83): run.mjs points GOOGLE_PLACES_ORIGIN
+// here with this key, so a call with another key is refused as Google
+// refuses one, and a details call without the address mask too. Two
+// places, matched by a word in what was typed; every call is logged with
+// its session token, for a test that reads the tokens.
+const PLACES_KEY = "standin-places-key";
+const component = (types, longText, shortText = longText) => ({
+  longText,
+  shortText,
+  types,
+  languageCode: "en",
+});
+const places = [
+  {
+    id: "standin-2-main",
+    match: "main",
+    text: "2 Main Street, Reading, PA, USA",
+    components: [
+      component(["street_number"], "2"),
+      component(["route"], "Main Street", "Main St"),
+      component(["subpremise"], "Suite 2"),
+      component(["locality", "political"], "Reading"),
+      component(["administrative_area_level_2", "political"], "Berks County"),
+      component(
+        ["administrative_area_level_1", "political"],
+        "Pennsylvania",
+        "PA",
+      ),
+      component(["country", "political"], "United States", "US"),
+      component(["postal_code"], "19601"),
+      component(["postal_code_suffix"], "1234"),
+    ],
+  },
+  {
+    id: "standin-bistro",
+    match: "bistro",
+    text: "Stand-in Bistro, Penn Street, Reading, PA, USA",
+    components: [
+      component(["street_number"], "500"),
+      component(["route"], "Penn Street", "Penn St"),
+      component(["locality", "political"], "Reading"),
+      component(
+        ["administrative_area_level_1", "political"],
+        "Pennsylvania",
+        "PA",
+      ),
+      component(["country", "political"], "United States", "US"),
+      component(["postal_code"], "19602"),
+    ],
+  },
+];
+let placesLog = [];
+let failPlaces = 0;
+const googleError = (res, status, word, message) =>
+  send(res, status, { error: { code: status, message, status: word } });
 
 const b64 = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
 function session() {
@@ -981,6 +1039,8 @@ const server = http.createServer(async (req, res) => {
       failReads = 0;
       failNames = new Map();
       writes = [];
+      placesLog = [];
+      failPlaces = 0;
       return send(res, 200, { ok: true });
     }
     // The diner page's knobs (the diner page task).
@@ -1209,6 +1269,17 @@ const server = http.createServer(async (req, res) => {
     if (path === "/__test/menus") return send(res, 200, menus);
     if (path === "/__test/sections") return send(res, 200, sections);
     if (path === "/__test/writes") return send(res, 200, writes);
+    // The address finder's Google (D-83): what it was asked, read and
+    // cleared, and the next Places call told to fail.
+    if (path === "/__test/places-log") {
+      const log = placesLog;
+      placesLog = [];
+      return send(res, 200, log);
+    }
+    if (path === "/__test/places-fail") {
+      failPlaces = Number(params.get("times") ?? 1);
+      return send(res, 200, { failPlaces });
+    }
     if (path === "/__test/add") {
       const row = {
         id: randomUUID(),
@@ -1239,6 +1310,88 @@ const server = http.createServer(async (req, res) => {
       sections.push(row);
       return send(res, 200, row);
     }
+    // Google's Places API (New), for the address finder (D-83).
+    if (path === "/v1/places:autocomplete" && req.method === "POST") {
+      if (req.headers["x-goog-api-key"] !== PLACES_KEY) {
+        return googleError(
+          res,
+          403,
+          "PERMISSION_DENIED",
+          "The request is missing a valid API key.",
+        );
+      }
+      const asked = await body(req);
+      placesLog.push({
+        call: "suggest",
+        input: asked.input ?? null,
+        session: asked.sessionToken ?? null,
+      });
+      if (failPlaces > 0) {
+        failPlaces -= 1;
+        return googleError(
+          res,
+          500,
+          "INTERNAL",
+          "the stand-in was told to fail",
+        );
+      }
+      // A match as Google would give one: the typed text is a piece of the
+      // place's line, or holds its key word.
+      const typed = String(asked.input ?? "").toLowerCase();
+      const suggestions = places
+        .filter(
+          (place) =>
+            place.text.toLowerCase().includes(typed) ||
+            typed.includes(place.match),
+        )
+        .map((place) => ({
+          placePrediction: {
+            place: `places/${place.id}`,
+            placeId: place.id,
+            text: { text: place.text, matches: [] },
+          },
+        }));
+      return send(res, 200, suggestions.length ? { suggestions } : {});
+    }
+    if (path.startsWith("/v1/places/") && req.method === "GET") {
+      if (req.headers["x-goog-api-key"] !== PLACES_KEY) {
+        return googleError(
+          res,
+          403,
+          "PERMISSION_DENIED",
+          "The request is missing a valid API key.",
+        );
+      }
+      if (req.headers["x-goog-fieldmask"] !== "addressComponents") {
+        return googleError(
+          res,
+          400,
+          "INVALID_ARGUMENT",
+          "Unsupported field mask.",
+        );
+      }
+      const id = path.slice("/v1/places/".length);
+      placesLog.push({
+        call: "pick",
+        id,
+        session: params.get("sessionToken"),
+      });
+      if (failPlaces > 0) {
+        failPlaces -= 1;
+        return googleError(
+          res,
+          500,
+          "INTERNAL",
+          "the stand-in was told to fail",
+        );
+      }
+      const place = places.find((each) => each.id === id);
+      if (!place) {
+        return googleError(res, 404, "NOT_FOUND", "No place was found.");
+      }
+      return send(res, 200, { addressComponents: place.components });
+    }
+
     // Auth.
     if (path === "/auth/v1/token") return send(res, 200, session());
     if (path === "/auth/v1/user") return send(res, 200, user);

@@ -1,0 +1,52 @@
+{
+  "addressComponents": [
+    {
+      "longText": "301",
+      "shortText": "301",
+      "types": ["street_number"],
+      "languageCode": "en-US"
+    },
+    {
+      "longText": "Front Street West",
+      "shortText": "Front St W",
+      "types": ["route"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "Old Toronto",
+      "shortText": "Old Toronto",
+      "types": ["sublocality_level_1", "sublocality", "political"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "Toronto",
+      "shortText": "Toronto",
+      "types": ["locality", "political"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "Toronto",
+      "shortText": "Toronto",
+      "types": ["administrative_area_level_2", "political"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "Ontario",
+      "shortText": "ON",
+      "types": ["administrative_area_level_1", "political"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "Canada",
+      "shortText": "CA",
+      "types": ["country", "political"],
+      "languageCode": "en"
+    },
+    {
+      "longText": "M5V 2T6",
+      "shortText": "M5V 2T6",
+      "types": ["postal_code"],
+      "languageCode": "en-CA"
+    }
+  ]
+}
