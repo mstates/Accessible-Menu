@@ -28,16 +28,18 @@ export const LOOKUP_MIN_CHARS = 3;
 // field has no name, so nothing of it is posted; the parts are the owner's
 // to change once filled. One session token a lookup: made at the first
 // request, sent with every suggest and with the pick, and spent by the
-// pick, so the next lookup makes a new one. The last list stays until the
-// reply lands, so nothing is said about an empty list in between; React
-// Aria says how many options the list holds. A pick says that the fields
-// are filled, through the page's polite log, with focus staying in the
-// field. A refusal or a lost answer clears the list and says once, for the
-// life of the form, that matches are not available.
+// pick, so the next lookup makes a new one. The list is the last reply's,
+// kept while the owner types on until the next reply lands; under three
+// characters, after a pick, and after a failed lookup there is no list, so
+// nothing stale can open and nothing is said about an empty list (Q-114,
+// D-187). React Aria says how many options a reply brought. A pick says
+// that the fields are filled, through the page's polite log, with focus
+// staying in the field. A refusal or a lost answer says once, for the life
+// of the form, that matches are not available.
 export function AddressFinder({ strings, onFill }: Props) {
   const announce = useAnnounce();
   const [value, setValue] = useState("");
-  const [items, setItems] = useState<ComboBoxItem[]>([]);
+  const [items, setItems] = useState<ComboBoxItem[] | null>(null);
   const timer = useRef<number | null>(null);
   const request = useRef<AbortController | null>(null);
   const session = useRef<string | null>(null);
@@ -62,7 +64,7 @@ export function AddressFinder({ strings, onFill }: Props) {
   }
 
   function fail() {
-    setItems([]);
+    setItems(null);
     if (failed.current) return;
     failed.current = true;
     announce(strings.unavailable);
@@ -116,7 +118,7 @@ export function AddressFinder({ strings, onFill }: Props) {
     stop();
     const typed = text.trim();
     if (typed.length < LOOKUP_MIN_CHARS) {
-      setItems([]);
+      setItems(null);
       return;
     }
     timer.current = window.setTimeout(() => {
@@ -127,9 +129,11 @@ export function AddressFinder({ strings, onFill }: Props) {
 
   // The chosen text is in the field already (ComboBox), and its lookup,
   // just scheduled by that change, is stopped here: a pick ends the
-  // session, so the token goes with the pick and is not kept.
+  // session, so the token goes with the pick and is not kept, and the list
+  // the choice came from goes with it.
   function pick(item: ComboBoxItem) {
     stop();
+    setItems(null);
     const token = session.current ?? crypto.randomUUID();
     session.current = null;
     ask({ kind: "pick", id: item.id, session: token }, (got) => {
