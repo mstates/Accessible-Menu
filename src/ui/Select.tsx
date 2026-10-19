@@ -1,20 +1,25 @@
 "use client";
 
+import { type ReactNode, useContext, useId } from "react";
 import {
   Button,
   FieldError,
   Header,
   Label,
+  LabelContext,
   ListBox,
   ListBoxItem,
   ListBoxSection,
   Popover,
   Select as AriaSelect,
+  SelectStateContext,
   SelectValue,
   Text,
+  useSlottedContext,
   type SelectProps as AriaSelectProps,
 } from "react-aria-components";
 import { fieldDescription } from "./field-description";
+import { HiddenWords } from "./HiddenWords";
 
 export type SelectItem = { id: string; label: string };
 
@@ -28,6 +33,7 @@ type Props = Omit<AriaSelectProps<SelectItem>, "children"> & {
   // A flat list, or lists under headings; one of the two.
   items?: SelectItem[];
   groups?: SelectGroup[];
+  // The button's id, for an error summary to link to; made here otherwise.
   triggerId?: string;
 };
 
@@ -36,10 +42,21 @@ const itemClassName =
 
 // A labelled single-choice list. Keyboard, typeahead, and the listbox
 // semantics come from React Aria, and so do the groups: each heading names
-// its group, so a reader says which menu a section sits in. The trigger id
-// lets an error summary link to the control. A required field shows an
-// asterisk after its label, hidden from assistive technology because
-// isRequired already sets aria-required.
+// its group, so a reader says which menu a section sits in. A required
+// field shows an asterisk after its label, hidden from assistive technology
+// because isRequired already sets aria-required.
+//
+// The name (D-188). React Aria names the button by two elements, the value
+// span and then a span label, and VoiceOver on iOS folds a label into its
+// control only when that one element labels it, so the span label was a
+// stop of its own, read twice (Q-119). Here the label is a real label for
+// the button and the button's one labelling element: it holds the chosen
+// value's words first, hidden in the flow, then the visible label, so the
+// name stays React Aria's, the value then the label ("Pennsylvania State"),
+// Chrome's pieces carry the space (HiddenWords), and the label folds. The
+// value's words stay in the button for the eye. The id is set on the Select
+// itself, so React Aria gives the button that id and the label's for agrees
+// with it from the first render (D-187).
 export function Select({
   label,
   description,
@@ -49,20 +66,21 @@ export function Select({
   triggerId,
   ...props
 }: Props) {
+  const made = useId();
+  const id = triggerId ?? made;
   return (
     <AriaSelect
       {...props}
+      id={id}
       {...fieldDescription(description)}
       className="flex flex-col gap-1"
     >
-      <Label className="font-semibold">
-        {label}
+      <Label elementType="label" htmlFor={id} className="font-semibold">
+        <ValueWords placeholder={props.placeholder} />
+        {` ${label}`}
         {props.isRequired ? <span aria-hidden="true"> *</span> : null}
       </Label>
-      <Button
-        id={triggerId}
-        className="flex min-h-11 items-center justify-between gap-2 rounded border border-border bg-background px-3 py-2 text-left text-base text-foreground"
-      >
+      <Trigger>
         <SelectValue className="min-w-0" />
         <svg
           aria-hidden="true"
@@ -76,7 +94,7 @@ export function Select({
         >
           <path d="M5 8l5 5 5-5" />
         </svg>
-      </Button>
+      </Trigger>
       {description ? (
         <Text slot="description" className="text-sm text-foreground-muted">
           {description}
@@ -119,5 +137,30 @@ export function Select({
         )}
       </Popover>
     </AriaSelect>
+  );
+}
+
+// The chosen value's words, or the placeholder's while nothing is chosen,
+// hidden in the label, so the one label names the button value then label.
+function ValueWords({ placeholder }: { placeholder?: string }) {
+  const state = useContext(SelectStateContext);
+  return (
+    <HiddenWords text={state?.selectedItem?.textValue ?? placeholder ?? ""} />
+  );
+}
+
+// The button, named by the label alone. React Aria's button context pairs
+// it with the value span and then the label; the label holds the value's
+// words itself, so the one id is the label's, and a prop set here wins over
+// the context's.
+function Trigger({ children }: { children: ReactNode }) {
+  const label = useSlottedContext(LabelContext);
+  return (
+    <Button
+      aria-labelledby={label?.id}
+      className="flex min-h-11 items-center justify-between gap-2 rounded border border-border bg-background px-3 py-2 text-left text-base text-foreground"
+    >
+      {children}
+    </Button>
   );
 }

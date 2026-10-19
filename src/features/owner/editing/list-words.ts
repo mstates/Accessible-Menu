@@ -78,8 +78,8 @@ export type ListStrings = {
   optionCount?: Counted;
 };
 
-// One text field of a row. Its label is followed in hidden text by the
-// suffix, which names the row: "Menu name for Dinner".
+// One text field of a row. Its label is followed, as hidden words inside
+// it, by the suffix, which names the row: "Menu name for Dinner" (D-188).
 export type FieldWords = {
   label: string;
   suffix: string;
@@ -251,7 +251,7 @@ export function rowAction(
   return named(words, words.strings.rowAction, name, { action });
 }
 
-// The hidden text after a field's label, which names its row.
+// The hidden words after a field's label, which name its row.
 export function fieldSuffix(
   words: ListWords,
   field: string,

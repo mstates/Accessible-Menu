@@ -17,8 +17,11 @@ import { chromeName } from "./chrome-name";
 // until the third character brings the new count; an open list closed, not
 // emptied, under three characters; zero said once for a text with no match;
 // and a list that never reopens on a keystroke, nor when a reply lands for
-// a list the owner closed. The gate never sees the finder on the preview
-// until the key is set there, and never types into it (write-guard.ts).
+// a list the owner closed. And a pick from a reply with several matches
+// (D-188): the match's words, then the words with "selected", no count
+// between, since the list keeps its items while it is open. The gate never
+// sees the finder on the preview until the key is set there, and never
+// types into it (write-guard.ts).
 
 const { code } = ownerEnv();
 const standin = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -75,12 +78,19 @@ async function hearReactAria(page: Page) {
   });
 }
 
+// Everything React Aria said, in order: the counts, and, on what React
+// Aria takes for an Apple platform, the focused option's words and the
+// pick's words with "selected".
+async function announced(page: Page): Promise<string[]> {
+  return page.evaluate(
+    () => (window as unknown as { __announced: string[] }).__announced,
+  );
+}
+
 // What React Aria said about the count of options, in order. The focus and
 // selection messages it also says on Apple platforms are left out.
 async function counted(page: Page): Promise<string[]> {
-  const all = await page.evaluate(
-    () => (window as unknown as { __announced: string[] }).__announced,
-  );
+  const all = await announced(page);
   return all.filter((each) => /^\d+ options? available\.$/.test(each));
 }
 
@@ -377,4 +387,44 @@ test("the finder's list never reopens on a keystroke: a list closed with Escape 
   await expect
     .poll(() => counted(page), { message: "one count per list opened" })
     .toEqual(["1 option available.", "1 option available."]);
+});
+
+test("a pick from a reply with several matches is said with no count: the count once when the list opened, and nothing counted on the pick", async ({
+  page,
+}) => {
+  await openDetails(page);
+  const box = finderField(page);
+  // Both of the stand-in's places hold "Reading".
+  await box.fill("Rea");
+  await expect(option(page, mainStreet)).toBeVisible();
+  await expect(option(page, bistro)).toBeVisible();
+  await expect.poll(() => counted(page)).toEqual(["2 options available."]);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(field(page, restaurants.fields.address)).toHaveValue(
+    "2 Main Street, Suite 2",
+  );
+  await expect.poll(() => said(page, finder.filled)).toBe(1);
+  await expect(options(page)).toHaveCount(0);
+  await expect(box).toHaveValue(mainStreet);
+  await expect(box).toBeFocused();
+
+  // The count is said once, when the list opened, and never on the pick:
+  // on 750b09b the pick's render handed the list over as nothing while it
+  // was still open, React Aria filtered the reply it still held by the
+  // picked text, and said "1 option available." before "selected". The
+  // match's words and the pick's "selected" are said on Apple platforms
+  // only, by React Aria's own test, which this Chromium does not pass, so
+  // they are read when they are there and heard on the iPhone otherwise.
+  expect(
+    await counted(page),
+    "the count was said once, when the list opened",
+  ).toEqual(["2 options available."]);
+  const all = await announced(page);
+  const words = all.indexOf(mainStreet);
+  const selected = all.indexOf(`${mainStreet}, selected`);
+  if (words !== -1 || selected !== -1) {
+    expect(words, "the match's words, when the arrow reached them").toBe(1);
+    expect(selected, "the pick, right after the words").toBe(2);
+  }
 });

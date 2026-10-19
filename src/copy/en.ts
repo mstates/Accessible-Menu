@@ -137,8 +137,8 @@ export const en = {
         closes: "{day} closes",
         opensAgain: "{day} opens again",
         closesAgain: "{day} closes again",
-        // The box's visible words, then its day in visually hidden text:
-        // "Open 24 hours on Monday" (D-124).
+        // The box's visible words, then its day as hidden words inside the
+        // box's label: "Open 24 hours on Monday" (D-124, D-188).
         allDay: "Open 24 hours",
         allDayDay: "on {day}",
         addSecondTime: "Add a second time for {day}",
@@ -430,8 +430,8 @@ export const en = {
       lead: "Sections are the headings on this menu, like Starters and Mains. Edit dishes opens a section's own page, with its dishes and its note. Each change saves when you leave its field.",
       none: "No sections yet. Add the first one below.",
       nameLabel: "Section name",
-      // Follows the name's label in hidden text, so every row's field names
-      // its section.
+      // Follows the name's label as hidden words inside it, so every row's
+      // field names its section.
       labelFor: "for {section}",
       moveUp: "Move up",
       moveDown: "Move down",
@@ -1178,9 +1178,9 @@ export const en = {
       options: {
         none: "No options yet. Add the first one below.",
         nameLabel: "Option name",
-        // Follows a field's label in hidden text, so every row's fields
-        // name their option: "Option name for Fries", "Added price for
-        // Fries".
+        // Follows a field's label as hidden words inside it, so every row's
+        // fields name their option: "Option name for Fries", "Added price
+        // for Fries".
         labelFor: "for {option}",
         priceLabel: "Added price",
         priceHint:

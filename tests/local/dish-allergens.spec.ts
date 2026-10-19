@@ -12,7 +12,7 @@ import { restaurantDishPath } from "../../src/features/owner/paths";
 import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture, ownerStatePath } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
-import { chromeName } from "./chrome-name";
+import { chromeName, expectNamedByOneLabel } from "./chrome-name";
 
 // The allergen group on a dish's page with saves that land for real against
 // the stand-in (D-148, D-129): a tick and the check, each said once and
@@ -391,6 +391,11 @@ test("another allergen is added in the page only, a name that means one of the n
     .toBe(1);
   const id = (await first.getAttribute("id")) ?? "";
   expect(await chromeName(page, id)).toBe(
+    `${allergens.otherLabel} ${otherSuffix(allergens, 1)}`,
+  );
+  await expectNamedByOneLabel(
+    page,
+    id,
     `${allergens.otherLabel} ${otherSuffix(allergens, 1)}`,
   );
   expect(await writesSoFar(), "adding a row sends nothing").toBe(before);

@@ -11,12 +11,13 @@ import {
   type TextFieldProps,
 } from "react-aria-components";
 import { fieldDescription } from "./field-description";
+import { HiddenWords } from "./HiddenWords";
 
 type Props = TextFieldProps & {
   label: string;
   // What one of several fields with the same visible label belongs to:
-  // "for Dinner". The field is then named whole, the label first, as one
-  // string on the field itself: "Menu name for Dinner" (D-140).
+  // "for Dinner". The words follow the label inside it, hidden, so the one
+  // label names the field whole: "Menu name for Dinner" (D-140, D-188).
   labelSuffix?: string;
   description?: string;
   errorMessage?: string;
@@ -39,17 +40,20 @@ const inputClassName =
 // out of the minimum width of the fieldset around it: at a 32px root that
 // built-in width alone is wider than a 320px screen (D-105).
 //
-// A field with a suffix is named whole, with aria-label, and its visible
-// label is a plain label that only shows the words and takes a click. A
-// label with the suffix hidden inside it gave Chrome one element to hand a
-// screen reader, and VoiceOver read that element's pieces with no space
-// between them: "Menu namefor Dinner" (D-140). React Aria's own Label is
-// left out then, or its id would be added to the name.
+// A field with a suffix is named by the same one label, the suffix as
+// hidden words inside it after the visible words and a space (HiddenWords
+// says why the words are in the flow and why the space sits in the visible
+// words' own text). One label is what VoiceOver on iOS folds into its
+// field: a name set on the field itself with aria-label left the plain
+// label beside it a stop of its own, read twice (D-188), and a label with
+// the suffix taken out of the flow was read in pieces with no space between
+// them (D-140).
 //
 // Such a field also keeps the name it had when focus arrived until focus
 // leaves. The suffix names a row that a save can rename while the field
 // still has focus, after Enter, and Chrome reads a focused field again when
-// its name changes, which drowned out the polite "Saved." (D-140).
+// its name changes, which drowned out the polite "Saved." (D-140). So the
+// hidden words hold the suffix focus arrived with.
 export function TextField({
   label,
   labelSuffix,
@@ -59,8 +63,8 @@ export function TextField({
   prefix,
   ...props
 }: Props) {
-  const name = labelSuffix ? `${label} ${labelSuffix}` : null;
   const [held, setHeld] = useState<string | null>(null);
+  const suffix = labelSuffix ? (held ?? labelSuffix) : null;
   const required = props.isRequired ? <span aria-hidden="true"> *</span> : null;
   const input = multiline ? (
     <TextArea className={`${inputClassName} min-h-32`} />
@@ -71,24 +75,17 @@ export function TextField({
     <AriaTextField
       {...props}
       {...fieldDescription(description)}
-      {...(name ? { "aria-label": held ?? name } : {})}
       onFocusChange={(focused) => {
-        setHeld(focused ? name : null);
+        setHeld(focused && labelSuffix ? labelSuffix : null);
         props.onFocusChange?.(focused);
       }}
       className="flex flex-col gap-1"
     >
-      {name ? (
-        <label htmlFor={props.id} className="font-semibold">
-          {label}
-          {required}
-        </label>
-      ) : (
-        <Label className="font-semibold">
-          {label}
-          {required}
-        </Label>
-      )}
+      <Label className="font-semibold">
+        {suffix === null ? label : `${label} `}
+        {suffix === null ? null : <HiddenWords text={suffix} />}
+        {required}
+      </Label>
       {prefix ? (
         <div className="flex items-center gap-2">
           <span aria-hidden="true" className="font-semibold">

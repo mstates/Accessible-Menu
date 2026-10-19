@@ -333,7 +333,7 @@ export function sizeAction(
   return fill(strings.price.sizeAction, { action, size });
 }
 
-// The hidden text after a size field's label, which names its size.
+// The hidden words after a size field's label, which name its size.
 export function sizeSuffix(strings: DishStrings, size: string): string {
   return fill(strings.price.labelFor, { size });
 }

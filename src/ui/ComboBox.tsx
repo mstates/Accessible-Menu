@@ -22,6 +22,7 @@ import {
   useSlottedContext,
 } from "react-aria-components";
 import { fieldDescription } from "./field-description";
+import { HiddenWords } from "./HiddenWords";
 
 export type ComboBoxItem = { id: string; text: string };
 
@@ -35,10 +36,10 @@ type Props = {
   id: string;
   label: string;
   // What one of several fields with the same visible label belongs to:
-  // "for Cup". The field is then named whole, "Size for Cup", on the field
-  // itself, and keeps that name while it has focus (D-140), as TextField
-  // does. A field alone on its page, a choice list's lead or the address
-  // finder, has none and is named by its label.
+  // "for Cup". The words follow the label inside it, hidden, so the one
+  // label names the field whole, "Size for Cup", and the field keeps that
+  // name while it has focus (D-140, D-188), as TextField does. A field alone
+  // on its page, a choice list's lead or the address finder, has none.
   labelSuffix?: string;
   // The whole name of the button that opens the list, named the same way.
   buttonLabel: string;
@@ -51,8 +52,9 @@ type Props = {
   // while the field has focus, and never opens on a keystroke by itself,
   // since what it holds answered older text (Q-114). Null, for a
   // prefiltered list, means nothing is asked for what is typed: the list
-  // closes, and once closed holds nothing, so nothing opens it until the
-  // next reply. Any text typed is kept.
+  // closes, keeping its items until it has closed (Q-121), and once closed
+  // holds nothing, so nothing opens it until the next reply. Any text typed
+  // is kept.
   items: readonly ComboBoxItem[] | null;
   prefiltered?: boolean;
   value: string;
@@ -84,11 +86,11 @@ const NONE: readonly ComboBoxItem[] = [];
 // never sent ahead of the chosen one. Committing twice sends nothing
 // twice: a value on its way is not sent again.
 //
-// Named as TextField names a field (D-140, D-187). With a suffix, the whole
-// name sits on the field as aria-label, the visible label is a plain label
-// that shows the words and takes a click, and the field keeps the name it
-// had when focus arrived until focus leaves. Without one, React Aria's own
-// Label names the field by id, so a screen reader meets the words once.
+// Named as TextField names a field (D-140, D-188): by one label, React
+// Aria's, with a suffix as hidden words inside it after the visible words,
+// held while the field has focus. One label is what VoiceOver on iOS folds
+// into the field; a name on the field itself left the plain label beside it
+// a stop of its own, read twice (Q-116, Q-118).
 export function ComboBox({
   id,
   label,
@@ -104,9 +106,24 @@ export function ComboBox({
   onCommit,
   onPick,
 }: Props) {
-  const name = labelSuffix ? `${label} ${labelSuffix}` : null;
   const [held, setHeld] = useState<string | null>(null);
-  const shown = items ?? NONE;
+  const suffix = labelSuffix ? (held ?? labelSuffix) : null;
+  // A prefiltered list keeps the last items it was given while it is open,
+  // and hands nothing over only once it has closed (Q-121). On a pick the
+  // finder's items turn null while the list is still open; a list handed
+  // over as nothing in that render is filtered by React Aria against the
+  // collection it still holds, the reply's, by the picked text, and its
+  // count is said again, "1 option available." before "selected". So the
+  // items stay controlled through the close. The close, FollowAnswer's or
+  // React Aria's own on a pick, reports through onOpenChange, and the empty
+  // list goes over in the same render, closed, so no open render ever
+  // changes its count. The last items are kept as state, taken when the
+  // items change, since a prefiltered caller hands over the same list until
+  // the next reply.
+  const [listOpen, setListOpen] = useState(false);
+  const [kept, setKept] = useState(items);
+  if (prefiltered && items !== null && items !== kept) setKept(items);
+  const shown = items ?? (prefiltered && listOpen ? kept : null) ?? NONE;
   // A prefiltered list never opens on a keystroke (manual). A reply with
   // matches is the list, as given. Nothing, or a reply with none, goes over
   // as a default list, which React Aria will not open from the button, the
@@ -115,13 +132,13 @@ export function ComboBox({
   const listProps = prefiltered
     ? {
         menuTrigger: "manual" as const,
+        onOpenChange: (open: boolean) => setListOpen(open),
         ...(shown.length > 0 ? { items: shown } : { defaultItems: shown }),
       }
     : { defaultItems: shown };
   return (
     <AriaComboBox
       id={id}
-      {...(name ? { "aria-label": held ?? name } : {})}
       allowsCustomValue
       {...listProps}
       inputValue={value}
@@ -133,20 +150,19 @@ export function ComboBox({
         if (item) onPick?.(item);
         onCommit?.();
       }}
-      onFocusChange={(focused) => setHeld(focused ? name : null)}
+      onFocusChange={(focused) =>
+        setHeld(focused && labelSuffix ? labelSuffix : null)
+      }
       onBlur={() => onCommit?.()}
       validationBehavior="aria"
       isInvalid={isInvalid}
       {...fieldDescription(description)}
       className="flex flex-col gap-1"
     >
-      {name ? (
-        <label htmlFor={id} className="font-semibold">
-          {label}
-        </label>
-      ) : (
-        <Label className="font-semibold">{label}</Label>
-      )}
+      <Label className="font-semibold">
+        {suffix === null ? label : `${label} `}
+        {suffix === null ? null : <HiddenWords text={suffix} />}
+      </Label>
       <div className="flex items-center gap-2">
         <Input
           className={`${inputClassName} min-h-11`}
@@ -205,11 +221,10 @@ export function ComboBox({
 }
 
 // The button that opens the list. React Aria names it with its own words
-// and then the field's label whenever the field is named by its Label
-// (useComboBox's trigger labels), through an aria-labelledby in the button
-// context that a prop of our own cannot unset. The callers hand the button
-// its whole name, so the context goes on without that pairing, and the
-// name is the words alone (D-187).
+// and then the field's label (useComboBox's trigger labels), through an
+// aria-labelledby in the button context that a prop of our own cannot
+// unset. The callers hand the button its whole name, so the context goes on
+// without that pairing, and the name is the words alone (D-187).
 function OpenButton({
   label,
   children,
@@ -243,11 +258,12 @@ function OpenButton({
 // has focus and the list is closed, unless the owner closed it on the text
 // as it stands (Escape, the button, a click outside, a blur) while the
 // lookup was still in flight; typing again clears that. Null closes the
-// list. The close is a layout effect on purpose: its update lands in the
-// same synchronous render as the emptied collection, so no render is ever
-// open and empty, where a passive effect would land one render later with
-// the zero said between. setOpen is the trigger state's own; the combobox
-// state's close commits the value as well.
+// list, which keeps its items until the close has landed (the hold above,
+// Q-121). The close is a layout effect on purpose: its update lands in the
+// same synchronous render as the handed-over empty list, so no render is
+// ever open and empty, where a passive effect would land one render later
+// with the zero said between. setOpen is the trigger state's own; the
+// combobox state's close commits the value as well.
 function FollowAnswer({ items }: { items: readonly ComboBoxItem[] | null }) {
   const state = useContext(ComboBoxStateContext);
   const last = useRef(items);

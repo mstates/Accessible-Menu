@@ -129,11 +129,12 @@ export function RowList<
         <Rows aria-labelledby={labelledBy} className="mt-6 flex flex-col gap-4">
           {shown.map((row, index) => {
             // Every field and button names its row. A field's label is
-            // followed by the row in hidden text; a button's name, and the
-            // link's, is set whole, as a label, because hidden text after
-            // the visible words would be read with a space in front of the
-            // comma (D-112). The link is a PageLink, so it waits for a save
-            // on its way and stays when one has failed.
+            // followed by the row as hidden words inside it (D-188); a
+            // button's name, and the link's, is set whole, as a label,
+            // because hidden text after the visible words would be read
+            // with a space in front of the comma (D-112). The link is a
+            // PageLink, so it waits for a save on its way and stays when
+            // one has failed.
             const named = (action: string) =>
               rowAction(words, action, row.name);
             return (

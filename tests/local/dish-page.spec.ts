@@ -7,7 +7,7 @@ import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
 import { restaurantName } from "../a11y/pages";
-import { chromeName } from "./chrome-name";
+import { chromeName, expectNamedByOneLabel } from "./chrome-name";
 
 // A dish's page with saves that land for real against the stand-in (D-128,
 // D-139, D-142): the texts and the price, the price choice and what the
@@ -298,6 +298,11 @@ test("a size named from the suggestions commits once and keeps its field's name 
   await expect(name).toBeFocused();
   const id = (await name.getAttribute("id")) ?? "";
   expect(await chromeName(page, id)).toBe(
+    `${strings.price.sizeNameLabel} ${fill(strings.price.labelFor, { size: unnamed(3) })}`,
+  );
+  await expectNamedByOneLabel(
+    page,
+    id,
     `${strings.price.sizeNameLabel} ${fill(strings.price.labelFor, { size: unnamed(3) })}`,
   );
 

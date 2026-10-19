@@ -20,6 +20,7 @@ import {
 import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture, ownerStatePath } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
+import { expectNamedByOneLabel } from "./chrome-name";
 
 // The options on a choice list's page, with saves that land for real
 // against the stand-in (D-166, D-154, D-153): an option added by name
@@ -483,6 +484,11 @@ test("another allergen on an option is refused unsent as holding a comma, as one
   const first = ranchGroup.otherField(1);
   await expect(first, "the new row's field takes focus").toBeFocused();
   await expect(first).toHaveAccessibleName(
+    `${group.otherLabel} ${otherSuffix(group, 1)}`,
+  );
+  await expectNamedByOneLabel(
+    page,
+    (await first.getAttribute("id")) ?? "",
     `${group.otherLabel} ${otherSuffix(group, 1)}`,
   );
   expect(await writesSoFar(), "adding a row sends nothing").toBe(before);

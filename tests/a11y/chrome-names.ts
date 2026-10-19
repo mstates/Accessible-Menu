@@ -20,8 +20,11 @@ import { expect, type Page } from "@playwright/test";
 // Dinner" in Michael's sitting, while Chrome's computed name, and
 // Playwright's, said "Menu name for Dinner" (D-140). This reading joins the
 // pieces the same way and holds them against Playwright's name. It is a
-// model of what was heard in that sitting, not a documented rule. A name
-// set whole on the control itself, with aria-label, has no pieces to read.
+// model of what was heard in that sitting, not a documented rule. Since
+// D-188 every field is named by one label again, the suffix as hidden words
+// in the flow inside it with the space in the visible words' own text
+// (src/ui/HiddenWords.tsx), so this reading covers them all, and it is what
+// proves the space.
 
 type Reading = "name" | "label pieces";
 

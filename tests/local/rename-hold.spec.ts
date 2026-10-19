@@ -8,15 +8,17 @@ import {
 } from "../../src/features/owner/paths";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
-import { chromeName } from "./chrome-name";
+import { chromeName, expectNamedByOneLabel } from "./chrome-name";
 
 // A rename saved with Enter, landed for real against the stand-in (D-140,
 // D-142). While the field still has focus it keeps the name it had when
 // focus arrived, so Chrome does not read the field again over the polite
 // "Saved."; the row's heading shows the saved name at once; "Saved." is said
 // once; and once the field is left it takes the saved name. Chrome's own
-// name for the field is read through the DevTools Protocol. Each row gets
-// its name back before the check ends.
+// name for the field is read through the DevTools Protocol. The field is
+// named by one label, the row's suffix inside it, so VoiceOver on iOS folds
+// the label into the field and Chrome's pieces carry the space (D-188).
+// Each row gets its name back before the check ends.
 //
 // The gate cannot land a save, so this runs here. It must run on any change
 // to src/ui/TextField.tsx or src/features/owner/editing, and in the session
@@ -73,6 +75,7 @@ for (const list of lists) {
     expect(await chromeName(page, id), "the field names its row").toBe(
       nameOf(before),
     );
+    await expectNamedByOneLabel(page, id, nameOf(before));
     await field.fill(after);
     await page.keyboard.press("Enter");
     await expect(heading, "the row's heading shows the saved name").toHaveText(
@@ -94,6 +97,7 @@ for (const list of lists) {
         message: "once it is left, the field takes the saved name",
       })
       .toBe(nameOf(after));
+    await expectNamedByOneLabel(page, id, nameOf(after));
     expect(await savedTimes(), `"${saved}" is still said once`).toBe(1);
 
     // The row gets its name back, so the stand-in is as it was.

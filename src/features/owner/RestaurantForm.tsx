@@ -424,7 +424,10 @@ const SIDES = ["open", "close"] as const;
 // that day describe themselves by, and those fields read as invalid while it
 // stands. isInvalid is a controlled state in React Aria that would override
 // the form's validationErrors, so it is set only with a day error and left
-// undefined otherwise.
+// undefined otherwise. The summary's link for a day-level error lands on
+// the box, the day's first field, which carries the day's field id: the
+// fieldset itself takes no focus, so VoiceOver on iOS has no group of its
+// own to stop on beside the legend (D-188, Q-120).
 function DayHours({
   day,
   copy,
@@ -478,21 +481,20 @@ function DayHours({
 
   return (
     <fieldset
-      id={fieldId(`hours.${day}`)}
-      tabIndex={-1}
       aria-describedby={describedBy}
       className="flex flex-col gap-3 rounded border border-border p-3"
     >
       <legend className="px-1 font-semibold">{label}</legend>
-      {/* Named whole on the box, the visible words first. A label with
-          the day hidden inside it is handed by Chrome to VoiceOver in
-          pieces, "Open 24 hours" and "on Monday", with no space between
-          them (D-140, D-142). */}
+      {/* Named by its one label, the visible words then the day as hidden
+          words inside it, "Open 24 hours on Monday", so VoiceOver on iOS
+          folds the label into the box and Chrome's pieces carry the space
+          (D-188; D-140 and D-142 for the two readings). */}
       <Checkbox
+        id={fieldId(`hours.${day}`)}
         name={allDayFieldName(day)}
         isSelected={allDay}
         onChange={changeAllDay}
-        aria-label={`${strings.fields.allDay} ${fill(strings.fields.allDayDay, { day: label })}`}
+        labelSuffix={fill(strings.fields.allDayDay, { day: label })}
       >
         {strings.fields.allDay}
       </Checkbox>
