@@ -97,7 +97,7 @@ test("a save with errors sent from the keyboard focuses the error summary, and i
   ).toHaveCount(0);
 });
 
-test("on Details, the Open 24 hours box and the State and Time zone Selects are each named by one label, which Chrome reads whole, a pick renames the State button, and axe finds nothing", async ({
+test("on Details, the Open 24 hours box, the icons box, and the State and Time zone Selects are each named by one label, which Chrome reads whole, a pick renames the State button, and axe finds nothing", async ({
   page,
 }) => {
   await openDetails(page);
@@ -113,6 +113,16 @@ test("on Details, the Open 24 hours box and the State and Time zone Selects are 
     fieldId("timezone"),
     `${strings.timezones["America/New_York"]} ${strings.fields.timezone}`,
   );
+  // The icons box (D-189): named by its wrapping label, its hint tied to it.
+  await expectNamedByOneLabel(
+    page,
+    fieldId("showIcons"),
+    strings.fields.showIcons,
+    true,
+  );
+  await expect(
+    page.locator(`#${fieldId("showIcons")}`),
+  ).toHaveAccessibleDescription(strings.fields.showIconsHint);
 
   // A select's name follows its value: a pick renames the button at once.
   const state = page.locator(`#${fieldId("region")}`);

@@ -321,6 +321,23 @@ export function RestaurantForm({
               ))}
             </CheckboxGroup>
           </div>
+          {/* The icons box (D-189), on Details alone: off by default, and
+            live with the next read like the note. The wrapper keeps the
+            hint under its box inside the fieldset's gap, as the Cooked to
+            order box does; the id sits on the input, which its wrapping
+            label names (D-188). */}
+          {mode === "details" ? (
+            <div className="flex flex-col">
+              <Checkbox
+                id={fieldId("showIcons")}
+                name="showIcons"
+                defaultSelected={defaultValues?.showIcons ?? false}
+                description={strings.fields.showIconsHint}
+              >
+                {strings.fields.showIcons}
+              </Checkbox>
+            </div>
+          ) : null}
         </Section>
 
         <div>

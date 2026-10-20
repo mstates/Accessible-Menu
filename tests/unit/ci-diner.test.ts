@@ -78,15 +78,18 @@ describe("CI Diner's data file (D-126)", () => {
     ]);
   });
 
-  // The live details the diner page reads (the diner page task): one
-  // statement on the restaurant's row, writing the four columns and
-  // nothing else, never the name, the code, or the status.
-  it("sets the time zone, hours, preparation sentence, and allergen note in one statement and writes nothing else to the restaurant", () => {
+  // The live details the diner page reads (the diner page task, and the
+  // icons toggle, D-189): one statement on the restaurant's row, writing
+  // the five columns and nothing else, never the name, the code, or the
+  // status.
+  it("sets the time zone, hours, preparation sentence, allergen note, and icons in one statement and writes nothing else to the restaurant", () => {
     const writes = [
       ...code.matchAll(/update public\.restaurants r\n  set [^;]*;/g),
     ].map((match) => match[0]);
     expect(writes).toHaveLength(1);
     expect(writes[0]).toMatch(/where r\.id = diner/);
+    expect(writes[0]).toMatch(/show_icons = true/);
+    expect(writes[0]).toMatch(/or not r\.show_icons\)/);
     expect(writes[0]).not.toMatch(
       /\b(name|code|status|plan|address|city|region|postal_code|phone|website|stripe_customer_id)\s*=/,
     );

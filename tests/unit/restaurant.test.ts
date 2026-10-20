@@ -28,6 +28,7 @@ const valid = {
   timezone: "America/New_York",
   allergenNote: "",
   prepNotes: ["shared-fryer", "shared-fryer"],
+  showIcons: false,
 };
 
 function firstProblem(input: unknown): string {
@@ -46,6 +47,12 @@ describe("the restaurant input (D-95)", () => {
     expect(result.data.allergenNote).toBeNull();
     expect(result.data.prepNotes).toEqual(["shared-fryer"]);
     expect(result.data.hours).toBeNull();
+  });
+
+  it("takes the icons choice as a boolean and nothing else (D-189)", () => {
+    const on = schema.safeParse({ ...valid, showIcons: true });
+    expect(on.success && on.data.showIcons).toBe(true);
+    expect(firstProblem({ ...valid, showIcons: "on" })).toMatch(/^showIcons: /);
   });
 
   it("trims text and keeps a blank phone as null", () => {
@@ -164,6 +171,12 @@ describe("reading the posted form", () => {
     expect(read.region).toBe("PA");
     expect(read.prepNotes).toEqual(["shared-fryer", "shared-kitchen"]);
     expect(read.hours).toBeNull();
+  });
+
+  // D-189: the box posts only when checked, as a day's Open 24 hours box does.
+  it("reads the icons box as on when it posted and off when it did not", () => {
+    expect(readRestaurantForm(form({ showIcons: "on" })).showIcons).toBe(true);
+    expect(readRestaurantForm(form({})).showIcons).toBe(false);
   });
 
   it("reads the hours grid as typed: blank days closed, a half range kept, a lone second row moved up", () => {

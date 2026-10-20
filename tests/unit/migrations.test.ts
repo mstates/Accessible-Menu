@@ -319,20 +319,31 @@ describe("the owner boundary on restaurants (D-88, D-95)", () => {
     "updated_at",
   ];
 
-  it("replaces the table-wide update grant with a column list", () => {
+  // Every column grant on restaurants, migration two's list and migration
+  // fifteen's one column (D-189), keeps the forbidden columns out.
+  it("replaces the table-wide update grant with a column list, and every later column grant keeps the forbidden columns out", () => {
     expect(sql).toMatch(
       /revoke update on public\.restaurants from authenticated;/,
     );
-    const match = sql.match(
-      /grant update \(([^)]*)\) on public\.restaurants to authenticated;/,
-    );
-    expect(match).not.toBeNull();
-    const columns = (match?.[1] ?? "").split(",").map((c) => c.trim());
-    for (const column of forbidden) {
-      expect(columns).not.toContain(column);
+    const grants = [
+      ...sql.matchAll(
+        /grant update \(([^)]*)\) on public\.restaurants to authenticated;/g,
+      ),
+    ].map((match) => (match[1] ?? "").split(",").map((c) => c.trim()));
+    expect(grants.length).toBeGreaterThanOrEqual(2);
+    for (const columns of grants) {
+      for (const column of forbidden) {
+        expect(columns).not.toContain(column);
+      }
     }
-    expect(columns).toEqual(
-      expect.arrayContaining(["name", "address", "hours", "allergen_note"]),
+    expect(grants.flat()).toEqual(
+      expect.arrayContaining([
+        "name",
+        "address",
+        "hours",
+        "allergen_note",
+        "show_icons",
+      ]),
     );
   });
 
@@ -2430,5 +2441,24 @@ describe("Publish refuses a menu with no dishes (migration 14, D-177, Q-101)", (
     expect(grants).toEqual([
       "grant execute on function public.publish_problems(uuid) to authenticated;",
     ]);
+  });
+});
+
+describe("the icons toggle (migration 15, D-189, Q-107)", () => {
+  const name = "20261019000001_show_icons.sql";
+  const path = join(dir, name);
+  const text = existsSync(path) ? readFileSync(path, "utf8") : "";
+  const statements = text
+    .split("\n")
+    .filter((line) => line.trim() !== "" && !line.trimStart().startsWith("--"));
+
+  it("is the fifteenth migration and grants owners the one column, with no revoke, so migration two's eleven stay", () => {
+    expect(files.indexOf(name)).toBe(14);
+    expect(statements).toEqual([
+      "grant update (show_icons) on public.restaurants to authenticated;",
+    ]);
+    const code = statements.join("\n");
+    expect(code).not.toMatch(/revoke/);
+    expect(code).not.toMatch(/create |alter |drop |function|view/);
   });
 });

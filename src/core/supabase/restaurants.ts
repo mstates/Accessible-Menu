@@ -12,7 +12,7 @@ import { shaped } from "./log";
 // known; features see RestaurantDetails.
 
 const columns =
-  "id, code, name, address, city, region, postal_code, phone, website, hours, timezone, allergen_note, prep_notes, status, stripe_customer_id";
+  "id, code, name, address, city, region, postal_code, phone, website, hours, timezone, allergen_note, prep_notes, show_icons, status, stripe_customer_id";
 
 const rowSchema = z.object({
   id: z.string(),
@@ -28,6 +28,7 @@ const rowSchema = z.object({
   timezone: z.string(),
   allergen_note: z.string().nullable(),
   prep_notes: z.array(z.enum(PREP_NOTE_IDS)),
+  show_icons: z.boolean(),
   status: z.enum(RESTAURANT_STATUSES),
   stripe_customer_id: z.string().nullable(),
 });
@@ -50,6 +51,7 @@ function toDetails(row: Row): RestaurantDetails {
     timezone: row.timezone,
     allergenNote: row.allergen_note,
     prepNotes: row.prep_notes,
+    showIcons: row.show_icons,
     status: row.status,
     hasStripeCustomer: row.stripe_customer_id !== null,
   };
@@ -75,6 +77,9 @@ function toRow(input: RestaurantInput) {
     timezone: input.timezone,
     allergen_note: input.allergenNote ?? null,
     prep_notes: input.prepNotes,
+    // Migration fifteen's column grant (D-189); create_restaurant() has no
+    // parameter for it and leaves the column's default, false.
+    show_icons: input.showIcons,
   };
 }
 

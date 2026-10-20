@@ -138,5 +138,7 @@ export function readRestaurantForm(formData: FormData) {
     prepNotes: formData
       .getAll("prepNotes")
       .filter((value): value is string => typeof value === "string"),
+    // The icons box posts only when checked, like a day's Open 24 hours box.
+    showIcons: formData.has("showIcons"),
   };
 }

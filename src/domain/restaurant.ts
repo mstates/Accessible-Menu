@@ -24,6 +24,8 @@ export type RestaurantDetails = {
   timezone: string;
   allergenNote: string | null;
   prepNotes: PrepNoteId[];
+  // Whether the diner page draws the allergen and diet icons (D-189).
+  showIcons: boolean;
   status: RestaurantStatus;
   hasStripeCustomer: boolean;
 };
@@ -40,6 +42,7 @@ export type RestaurantInput = {
   timezone: TimezoneId;
   allergenNote: string | null;
   prepNotes: PrepNoteId[];
+  showIcons: boolean;
 };
 
 // Every rule here is also a table constraint in the database (migration 2),
@@ -141,6 +144,9 @@ export function restaurantInputSchema(messages: RestaurantMessages) {
     prepNotes: z
       .array(z.enum(PREP_NOTE_IDS, { error: messages.prepNotes }))
       .transform(unique),
+    // The icons box (D-189): the form reader turns the box's presence into
+    // this boolean, and the create page, which has no box, posts false.
+    showIcons: z.boolean(),
   });
 }
 

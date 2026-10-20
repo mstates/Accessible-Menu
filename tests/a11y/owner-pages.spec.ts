@@ -5,6 +5,7 @@ import { pageTitle } from "../../src/copy/title";
 import { DAY_KEYS, type DayKey } from "../../src/domain/hours";
 import {
   dashboardPath,
+  fieldId,
   restaurantDetailsPath,
   restaurantDishPath,
   restaurantMenuPath,
@@ -354,6 +355,80 @@ test(
     await expect(errorHeading(page)).toBeFocused();
   },
 );
+
+// D-189: the icons box on Details, under Allergens after the preparation
+// notes, named by its label with its hint, on as CI Diner's data file sets
+// it (the stand-in's seed too); Space toggles it with focus kept and sends
+// nothing; it posts with Save details as its own field, present when checked
+// and absent when not; and a save with it changed lands on the error page,
+// since the guard answers every save in the browser (D-108). The create
+// page has no such box: a new restaurant starts with icons off.
+test("the icons box sits under Allergens with its hint, follows the restaurant's setting, toggles with Space, posts with Save details, and is absent from the create page (D-189)", async ({
+  page,
+}) => {
+  await open(page, details);
+  await page.waitForLoadState("networkidle");
+  const allergens = page.locator("fieldset").filter({
+    has: page.getByRole("heading", {
+      level: 2,
+      name: strings.sections.allergens,
+      exact: true,
+    }),
+  });
+  const box = allergens.getByRole("checkbox", {
+    name: strings.fields.showIcons,
+    exact: true,
+  });
+  await expect(box).toHaveCount(1);
+  await expect(box).toHaveAccessibleDescription(strings.fields.showIconsHint);
+  await expect(box, "on, as CI Diner's data file sets it").toBeChecked();
+  const afterNotes = await box.evaluate((input, id) => {
+    const notes = document.getElementById(id);
+    return (
+      notes !== null &&
+      (notes.compareDocumentPosition(input) &
+        Node.DOCUMENT_POSITION_FOLLOWING) !==
+        0
+    );
+  }, fieldId("prepNotes"));
+  expect(afterNotes, "after the preparation notes").toBe(true);
+  const posted = () =>
+    page.evaluate(() => {
+      const form = document.querySelector("main form");
+      return form instanceof HTMLFormElement
+        ? [...new FormData(form).keys()]
+        : [];
+    });
+  expect(await posted()).toContain("showIcons");
+  await box.focus();
+  await page.keyboard.press("Space");
+  await expect(box).not.toBeChecked();
+  await expect(box, "focus stays on the box").toBeFocused();
+  expect(await posted()).not.toContain("showIcons");
+  await page.keyboard.press("Space");
+  await expect(box).toBeChecked();
+  expect(await posted()).toContain("showIcons");
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+
+  await page.keyboard.press("Space");
+  await expect(box).not.toBeChecked();
+  const writes = expectWrites(page);
+  await page.getByRole("button", { name: strings.details.submit }).click();
+  await expect(
+    errorHeading(page),
+    "focus moves to the error heading",
+  ).toBeFocused();
+  expect(
+    writes.answered.length,
+    "the save was sent and answered in the browser",
+  ).toBeGreaterThan(0);
+
+  await open(page, restaurantNewPath());
+  await expect(
+    page.getByRole("checkbox", { name: strings.fields.showIcons, exact: true }),
+  ).toHaveCount(0);
+});
 
 test("a saved result takes focus on arrival and is not read again on reload or Back", async ({
   page,

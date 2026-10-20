@@ -30,16 +30,26 @@ export function sameTags(
 }
 
 // What diners read with a dish: each tag as its own short sentence,
-// "Vegan. Made without gluten ingredients.", or nothing with no tag.
-export type DietarySentence = { words: string[]; text: string };
+// "Vegan. Made without gluten ingredients.", or nothing with no tag. The
+// tags the words name ride along in the same order: the key of the icon
+// row the diner page draws under the line when the owner turned icons on
+// (D-189), from the same call as the words (rule 8).
+export type DietarySentence = {
+  words: string[];
+  text: string;
+  tags: DietaryTagId[];
+};
 
 export function dietarySentence(
   tags: readonly DietaryTagId[],
   copy: DietaryCopy,
 ): DietarySentence | null {
-  const words = DIETARY_TAG_IDS.filter((tag) => tags.includes(tag)).map(
-    (tag) => copy.names[tag],
-  );
+  const kept = DIETARY_TAG_IDS.filter((tag) => tags.includes(tag));
+  const words = kept.map((tag) => copy.names[tag]);
   if (words.length === 0) return null;
-  return { words, text: words.map((word) => `${word}.`).join(" ") };
+  return {
+    words,
+    text: words.map((word) => `${word}.`).join(" "),
+    tags: kept,
+  };
 }

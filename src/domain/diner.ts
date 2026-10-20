@@ -40,6 +40,7 @@ import type {
 } from "./snapshot";
 import type { TimeCopy } from "./time";
 import type { TimedDish } from "./timed";
+import type { AllergenId, DietaryTagId } from "./types";
 
 // What a diner page shows at one moment (Spec 3.1, 3.2, 3.4): the published
 // snapshot (D-82, D-170) read against each dish's live state (D-84, D-159,
@@ -90,6 +91,10 @@ export type DinerOption = {
   id: string;
   name: string;
   line: PriceText;
+  // The major allergens the line's sentence names, in its order, for the
+  // icon row under it when the owner turned icons on (D-189); empty for the
+  // other two sentences. From the same call as the words (rule 8).
+  allergenIcons: AllergenId[];
 };
 
 export type DinerChoiceList = {
@@ -116,6 +121,13 @@ export type DinerDish = {
   calories: Calories | null;
   allergen: AllergenSentence;
   dietary: DietarySentence | null;
+  // The ids behind the two lines above, for the icon rows under them when
+  // the owner turned icons on (D-189): the sentence's major allergens in
+  // its order, empty for the other two sentences, and the diet line's tags.
+  // From the same calls as the words, so a row can never disagree with its
+  // line (rule 8).
+  allergenIcons: AllergenId[];
+  dietaryIcons: DietaryTagId[];
   cookedToOrder: boolean;
   soldOut: boolean;
   // The special's days and hours in words, when the dish is a special.
@@ -329,7 +341,7 @@ function listView(
     id: list.id,
     lead: list.lead,
     options: list.options.map((option) => {
-      const { display, spoken } = optionSentence(
+      const { display, spoken, allergen } = optionSentence(
         {
           name: option.name,
           addedPriceCents: option.added_price_cents,
@@ -339,7 +351,12 @@ function listView(
         copy,
         lang,
       );
-      return { id: option.id, name: option.name, line: { display, spoken } };
+      return {
+        id: option.id,
+        name: option.name,
+        line: { display, spoken },
+        allergenIcons: allergen.kind === "contains" ? allergen.allergens : [],
+      };
     }),
   };
 }
@@ -421,6 +438,8 @@ export function visibleMenu(inputs: VisibleMenuInputs): DinerMenuView {
     calories ||= priceShowsCalories(dish.price);
     calories ||= listsShowCalories(dish.choice_lists);
     cookedToOrder ||= dish.cooked_to_order;
+    const allergen = sentenceOf(dish.allergens, copy.allergens);
+    const dietary = dietarySentence(dish.dietary_tags, copy.dietary);
     return {
       id: dish.id,
       name: dish.name,
@@ -428,8 +447,10 @@ export function visibleMenu(inputs: VisibleMenuInputs): DinerMenuView {
       note: dish.note,
       price: dishPriceWords(dish.price, copy, lang),
       ...dishNumbers(dish.price),
-      allergen: sentenceOf(dish.allergens, copy.allergens),
-      dietary: dietarySentence(dish.dietary_tags, copy.dietary),
+      allergen,
+      dietary,
+      allergenIcons: allergen.kind === "contains" ? allergen.allergens : [],
+      dietaryIcons: dietary?.tags ?? [],
       cookedToOrder: dish.cooked_to_order,
       soldOut: availability.state === "sold-out",
       special,

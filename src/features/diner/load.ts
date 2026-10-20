@@ -62,6 +62,10 @@ export type MenuPageData = {
     website: string | null;
     hoursLines: string[];
     note: string[];
+    // Whether the page draws the allergen and diet icons (D-189). A read
+    // cached before the field existed lacks it and reads as off, the
+    // column's default.
+    showIcons: boolean;
   };
   menus: MenuLink[];
   // The menu's words under the restaurant's name when it is the only one
@@ -215,6 +219,7 @@ export const loadDinerPage = cache(
             },
             en.allergens,
           ),
+          showIcons: restaurant.showIcons,
         },
         menus: links,
         menuLine: menus.length === 1 ? naming.line : null,

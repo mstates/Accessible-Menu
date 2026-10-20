@@ -150,6 +150,11 @@ export const en = {
         prepNotes: "Preparation notes",
         prepNotesHint:
           "Pick any that apply. Each one shows under your allergen note.",
+        // The icons box on Details (D-189): small outline pictures in a row
+        // under each allergen line and each diet line, the words staying.
+        showIcons: "Show icons for allergens and diets",
+        showIconsHint:
+          "Small pictures appear under each allergen line and each diet line on the menu. The words stay.",
       },
       // The address finder above the address fields (D-83), shown only
       // when the server holds a Places key. The hint names where the

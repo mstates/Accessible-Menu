@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
+import { US_MAJOR_ALLERGENS } from "../../src/domain/allergens";
 import { menuNaming } from "../../src/domain/diner";
 import {
   feedbackPath,
@@ -630,17 +631,31 @@ async function allergenRuns(
         text === checkedNone ||
         text === notConfirmed ||
         (text.startsWith(`${contains} `) && text.endsWith("."));
-      const oneText = (node: Node | undefined) =>
-        node !== undefined &&
-        node.childNodes.length === 1 &&
-        node.childNodes[0]?.nodeType === Node.TEXT_NODE;
+      // An icon row (D-189) is no part of the line: a trailing element
+      // hidden from assistive technology, holding svgs and no text, is set
+      // aside before the line's shape is judged.
+      const iconRow = (child: ChildNode | undefined) =>
+        child instanceof HTMLElement &&
+        child.getAttribute("aria-hidden") === "true" &&
+        (child.textContent ?? "").trim() === "" &&
+        child.children.length > 0 &&
+        [...child.children].every(
+          (each) => each.tagName.toLowerCase() === "svg",
+        );
+      const lineNodes = (node: Node): ChildNode[] => {
+        const nodes = [...node.childNodes];
+        return iconRow(nodes.at(-1)) ? nodes.slice(0, -1) : nodes;
+      };
+      const oneText = (nodes: ChildNode[]) =>
+        nodes.length === 1 && nodes[0]?.nodeType === Node.TEXT_NODE;
       const shapeOf = (node: Element): "text" | "pair" | "other" => {
-        if (oneText(node)) return "text";
-        const [drawn, spoken, ...more] = node.childNodes;
+        const nodes = lineNodes(node);
+        if (oneText(nodes)) return "text";
+        const [drawn, spoken, ...more] = nodes;
         const span = (child: ChildNode | undefined, hidden: boolean) =>
           child instanceof HTMLSpanElement &&
           (child.getAttribute("aria-hidden") === "true") === hidden &&
-          oneText(child);
+          oneText([...child.childNodes]);
         return more.length === 0 && span(drawn, true) && span(spoken, false)
           ? "pair"
           : "other";
@@ -722,6 +737,185 @@ test("every allergen sentence is one swipe stop: a dish's line is one semibold t
   expect(shapes(drinks.options, "text")).toHaveLength(11);
   for (const run of drinks.options) expect(run.weight, run.what).toBe("400");
   await expect(page.locator("strong, b")).toHaveCount(0);
+});
+
+// D-189: with icons on (CI Diner's data file, the stand-in's seed), each
+// Contains sentence and each diet line is followed by a row of its own,
+// hidden from assistive technology, holding one use per named major
+// allergen or tag in the words' order, from one sprite of eleven symbols
+// after the footer; the other two sentences get no row; a custom allergen
+// and made-without-gluten draw nothing (D-66); nothing in a row says a
+// word; and each icon is a box of 1.25 times the line's text size. The
+// expected icons come from the words, since the words are the key. Brunch,
+// with nothing shown, and the statement carry no sprite.
+const ICON_IDS = [...US_MAJOR_ALLERGENS, "vegan", "vegetarian"];
+const majorByWord = new Map<string, string>(
+  US_MAJOR_ALLERGENS.map((id) => [en.allergens.names[id], id]),
+);
+const tagByWord = new Map<string, string>(
+  (["vegan", "vegetarian"] as const).map((id) => [en.dietary.names[id], id]),
+);
+const dietWords = new Set<string>(Object.values(en.dietary.names));
+
+// The hrefs a line's row holds, from its words: the named majors of a
+// Contains sentence, the named tags of a diet line, or null for any other
+// line, which gets no row. An empty list means no row either.
+function expectedRow(text: string): string[] | null {
+  const { contains } = en.allergens;
+  if (text.startsWith(`${contains} `) && text.endsWith(".")) {
+    return text
+      .slice(contains.length + 1, -1)
+      .split(", ")
+      .flatMap((word) => {
+        const id = majorByWord.get(word);
+        return id ? [`#icon-${id}`] : [];
+      });
+  }
+  const pieces = text.endsWith(".") ? text.slice(0, -1).split(". ") : [];
+  if (pieces.length > 0 && pieces.every((piece) => dietWords.has(piece))) {
+    return pieces.flatMap((piece) => {
+      const id = tagByWord.get(piece);
+      return id ? [`#icon-${id}`] : [];
+    });
+  }
+  return null;
+}
+
+type IconRead = { text: string; row: string[] | null };
+
+async function iconRows(page: Page) {
+  return page.evaluate(() => {
+    const hrefs = (row: Element | null): string[] | null => {
+      if (!row || row.getAttribute("aria-hidden") !== "true") return null;
+      if ((row.textContent ?? "").trim() !== "") return null;
+      const svgs = [...row.children];
+      if (
+        svgs.length === 0 ||
+        !svgs.every((child) => child.tagName.toLowerCase() === "svg")
+      ) {
+        return null;
+      }
+      return svgs.map(
+        (svg) => svg.querySelector("use")?.getAttribute("href") ?? "",
+      );
+    };
+    const lines: IconRead[] = [
+      ...document.querySelectorAll("main section > ul > li > p"),
+    ].map((p) => ({
+      text: p.textContent ?? "",
+      row: hrefs(p.nextElementSibling),
+    }));
+    const options: IconRead[] = [
+      ...document.querySelectorAll(
+        "main section > ul > li li, [role='group'] li",
+      ),
+    ].map((item) => ({
+      text: item.textContent ?? "",
+      row: hrefs(item.lastElementChild),
+    }));
+    const symbols = [...document.querySelectorAll("symbol")].map(
+      (symbol) => symbol.id,
+    );
+    const uses = [...document.querySelectorAll("use")].map(
+      (use) => use.getAttribute("href") ?? "",
+    );
+    const resolved = uses.every(
+      (href) =>
+        href.startsWith("#") &&
+        document.getElementById(href.slice(1))?.tagName.toLowerCase() ===
+          "symbol",
+    );
+    const sprite = document.querySelector("symbol")?.closest("svg") ?? null;
+    const footer = document.querySelector("footer");
+    const spriteAfterFooter =
+      sprite !== null &&
+      footer !== null &&
+      sprite.closest("main, footer, nav, header") === null &&
+      (footer.compareDocumentPosition(sprite) &
+        Node.DOCUMENT_POSITION_FOLLOWING) !==
+        0;
+    const sizes = [...document.querySelectorAll('[aria-hidden="true"] > svg')]
+      .filter((svg) => svg.closest("symbol") === null)
+      .map((svg) => {
+        const box = svg.getBoundingClientRect();
+        const text = svg.parentElement
+          ? parseFloat(getComputedStyle(svg.parentElement).fontSize)
+          : 0;
+        return { height: box.height, width: box.width, text };
+      });
+    return {
+      lines,
+      options,
+      symbols,
+      uses: uses.length,
+      resolved,
+      titles: document.querySelectorAll("svg title").length,
+      svgs: document.querySelectorAll("svg").length,
+      spriteAfterFooter,
+      sizes,
+    };
+  });
+}
+
+test("with icons on, each Contains sentence and each diet line is followed by its own hidden row of icons in the words' order from one sprite, and nothing else changes (D-189)", async ({
+  page,
+}) => {
+  const { contains, checkedNone, notConfirmed } = en.allergens;
+  for (const path of [bare, drinksPath]) {
+    await open(page, path);
+    const read = await iconRows(page);
+    expect(read.lines.length, `${path} has lines`).toBeGreaterThan(0);
+    let rows = 0;
+    for (const line of read.lines) {
+      const expected = expectedRow(line.text);
+      if (expected === null) {
+        expect(line.row, `${line.text}: no row`).toBeNull();
+        continue;
+      }
+      expect(line.row ?? [], line.text).toEqual(expected);
+      if (expected.length > 0) rows += 1;
+    }
+    for (const option of read.options) {
+      const start = option.text.lastIndexOf(`${contains} `);
+      const expected =
+        option.text.includes(checkedNone) ||
+        option.text.includes(notConfirmed) ||
+        start < 0
+          ? []
+          : (expectedRow(option.text.slice(start)) ?? []);
+      expect(option.row ?? [], option.text).toEqual(expected);
+      if (expected.length > 0) rows += 1;
+    }
+    if (rows === 0) {
+      expect(read.svgs, `${path} draws no row, so no sprite`).toBe(0);
+      continue;
+    }
+    expect(read.symbols, `${path}: one sprite of eleven`).toEqual(
+      ICON_IDS.map((id) => `icon-${id}`),
+    );
+    expect(read.resolved, `${path}: every use resolves to a symbol`).toBe(true);
+    expect(read.uses, `${path}: a use per icon`).toBe(read.svgs - 1);
+    expect(read.titles, `${path}: no title inside an svg`).toBe(0);
+    expect(read.spriteAfterFooter, `${path}: the sprite after the footer`).toBe(
+      true,
+    );
+    expect(read.sizes.length).toBe(read.uses);
+    for (const size of read.sizes) {
+      expect(size.text).toBeGreaterThan(0);
+      expect(
+        Math.abs(size.height - 1.25 * size.text),
+        "an icon is 1.25 times the line's text size tall",
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(size.width - size.height),
+        "and square",
+      ).toBeLessThanOrEqual(1);
+    }
+  }
+  await open(page, brunchPath);
+  await expect(page.locator("svg"), "nothing shown, no sprite").toHaveCount(0);
+  await open(page, statementPath(menuCode));
+  await expect(page.locator("symbol")).toHaveCount(0);
 });
 
 test("a dish's link to its section's choices puts focus on the block with JavaScript, and lands there by fragment without it", async ({

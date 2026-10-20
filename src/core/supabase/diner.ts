@@ -42,6 +42,8 @@ export type PublishedRestaurant = {
   timezone: string;
   allergenNote: string | null;
   prepNotes: PrepNoteId[];
+  // Whether the owner turned the allergen and diet icons on (D-189).
+  showIcons: boolean;
 };
 
 export type PublishedMenu = {
@@ -68,7 +70,7 @@ export type PublishedRead =
   | { kind: "unknown" };
 
 const restaurantColumns =
-  "id, code, name, website, city, country, hours, timezone, allergen_note, prep_notes";
+  "id, code, name, website, city, country, hours, timezone, allergen_note, prep_notes, show_icons";
 
 const restaurantRow = z.object({
   id: z.string(),
@@ -81,6 +83,7 @@ const restaurantRow = z.object({
   timezone: z.string(),
   allergen_note: z.string().nullable(),
   prep_notes: z.array(z.enum(PREP_NOTE_IDS)),
+  show_icons: z.boolean(),
 });
 
 const menuColumns = "id, sort, published_at, published_snapshot";
@@ -133,6 +136,7 @@ async function readRestaurant(
     timezone: row.timezone,
     allergenNote: row.allergen_note,
     prepNotes: row.prep_notes,
+    showIcons: row.show_icons,
   };
 }
 

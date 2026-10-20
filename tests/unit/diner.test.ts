@@ -307,6 +307,7 @@ describe("what a diner sees at one moment (D-159, D-160, D-39)", () => {
     expect(soup?.allergen).toEqual({
       kind: "contains",
       text: "Contains milk, wheat, celery.",
+      allergens: ["milk", "wheat"],
     });
     expect(salad?.price).toEqual({
       display: "$9, 320 calories",
@@ -361,6 +362,25 @@ describe("what a diner sees at one moment (D-159, D-160, D-39)", () => {
       calories: true,
       cookedToOrder: false,
     });
+  });
+
+  // D-189: the ids behind each line, from the same call as its words, so the
+  // icon row the page draws under it can never disagree with it (rule 8).
+  it("carries the icon ids beside every sentence: the sentence's majors in its order and never a custom allergen, the diet line's tags, and nothing for the other two sentences", () => {
+    const menu = view(fivePm);
+    const [soup, salad] = menu.sections[0]?.dishes ?? [];
+    expect(soup?.allergenIcons).toEqual(["milk", "wheat"]);
+    expect(soup?.dietaryIcons).toEqual([]);
+    expect(salad?.allergenIcons).toEqual([]);
+    expect(salad?.dietaryIcons).toEqual(["vegetarian", "made-without-gluten"]);
+    expect(menu.sections[1]?.dishes[0]?.allergenIcons).toEqual([]);
+    const [ranch, vinaigrette] = salad?.lists[0]?.options ?? [];
+    expect(ranch?.allergenIcons).toEqual(["milk", "eggs"]);
+    expect(vinaigrette?.allergenIcons).toEqual([]);
+    expect(menu.sections[0]?.lists[0]?.options[0]?.allergenIcons).toEqual([
+      "milk",
+      "wheat",
+    ]);
   });
 
   it("carries a section's lists and whether they repeat inside each dish (Q-74)", () => {

@@ -36,7 +36,8 @@ const user = {
 // sets them (the diner page task): the time zone, a closed Monday, a split
 // Tuesday, an overnight Saturday, an around-the-clock Sunday, and the
 // shared-fryer sentence, so the details and diner checks run on the same
-// hours here as on the preview. A reset puts the details back.
+// hours here as on the preview, and icons on (D-189), so the public gate
+// reads the on state here as on CI Diner. A reset puts the details back.
 const restaurantDefaults = {
   id: "11111111-1111-4111-8111-111111111111",
   code: "12345678",
@@ -67,7 +68,7 @@ const restaurantDefaults = {
   city_slug: null,
   country: "US",
   enabled_languages: [],
-  show_icons: false,
+  show_icons: true,
 };
 const restaurant = structuredClone(restaurantDefaults);
 // Restaurants a test created through create_restaurant(), each with a
@@ -1464,6 +1465,9 @@ const server = http.createServer(async (req, res) => {
         timezone: input.p_timezone,
         allergen_note: input.p_allergen_note ?? null,
         prep_notes: input.p_prep_notes ?? [],
+        // The column's own default (migration one): a new restaurant
+        // starts with icons off, whatever the stand-in's restaurant holds.
+        show_icons: false,
       };
       created.push(row);
       return respondRows(req, res, [row], params);
@@ -1476,11 +1480,31 @@ const server = http.createServer(async (req, res) => {
         params,
       );
     }
-    // Save details: the eleven columns the owner may update.
+    // Save details: the twelve columns the owner may update (migration
+    // two's eleven and migration fifteen's show_icons, D-189); any other
+    // column is refused as the grant refuses it.
     if (path === "/rest/v1/restaurants" && req.method === "PATCH") {
       const payload = await body(req);
       writes.push(`PATCH restaurants ${JSON.stringify(payload)}`);
       if (await knobs(res)) return;
+      const allowed = [
+        "name",
+        "address",
+        "city",
+        "region",
+        "postal_code",
+        "phone",
+        "website",
+        "hours",
+        "timezone",
+        "allergen_note",
+        "prep_notes",
+        "show_icons",
+      ];
+      const extra = Object.keys(payload).filter(
+        (key) => !allowed.includes(key),
+      );
+      if (extra.length) return denied(res, `column ${extra[0]}`);
       const found = restaurants().filter((row) => matches(row, params));
       for (const row of found) Object.assign(row, payload);
       return respondRows(req, res, found, params);

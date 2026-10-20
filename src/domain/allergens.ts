@@ -66,9 +66,13 @@ export function allergensForRegion(
 }
 
 // One of the three sentences as every page reads it (D-35): its kind, and
-// its text as one plain run with nothing to draw inside it (D-182).
+// its text as one plain run with nothing to draw inside it (D-182). The
+// contains sentence also carries the major allergens it named, in the
+// sentence's order and never a custom one: the key of the icon row the
+// diner page draws under it when the owner turned icons on (D-189), from
+// the same call as the words, so the two can never disagree (rule 8).
 export type AllergenSentence =
-  | { kind: "contains"; text: string }
+  | { kind: "contains"; text: string; allergens: AllergenId[] }
   | { kind: "checked-none"; text: string }
   | { kind: "not-confirmed"; text: string };
 
@@ -93,7 +97,11 @@ export function allergenSentence(
   if (words.length === 0) {
     return { kind: "checked-none", text: copy.checkedNone };
   }
-  return { kind: "contains", text: `${copy.contains} ${words.join(", ")}.` };
+  return {
+    kind: "contains",
+    text: `${copy.contains} ${words.join(", ")}.`,
+    allergens: [...item.allergens],
+  };
 }
 
 // The restaurant note, once, near the top. The default renders when the

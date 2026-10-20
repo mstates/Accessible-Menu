@@ -35,7 +35,8 @@
 -- (the diner page task): CI Diner's live details, the time zone
 -- America/New_York, hours with a closed Monday, a split Tuesday, Wednesday
 -- to Friday 11 am to 9 pm, an overnight Saturday, and an around-the-clock
--- Sunday, the shared-fryer sentence, and no allergen note of its own; and
+-- Sunday, the shared-fryer sentence, no allergen note of its own, and icons
+-- on, so the diner page draws the allergen and diet icons (D-189); and
 -- Drinks holding the section Soft drinks with the dish Lemonade at one
 -- price, checked with none, published beside Dinner, so the diner page
 -- has a menu switcher and a second menu's page; and Drinks' second
@@ -97,23 +98,25 @@ begin
   end if;
 
   -- 0. The live details the diner page reads (the diner page task, D-82,
-  -- D-92): the time zone, the week's hours, the preparation sentence, and
-  -- no allergen note of its own, so the default sentence renders. Written
-  -- only when they differ, as the table owner, since the details are the
-  -- restaurant's and not a draft.
+  -- D-92): the time zone, the week's hours, the preparation sentence, no
+  -- allergen note of its own, so the default sentence renders, and icons
+  -- on (the icons toggle, D-189). Written only when they differ, as the
+  -- table owner, since the details are the restaurant's and not a draft.
   update public.restaurants r
   set timezone = 'America/New_York',
     hours = '{"mon":[],"tue":[{"open":"11:00","close":"14:00"},{"open":"17:00","close":"21:00"}],"wed":[{"open":"11:00","close":"21:00"}],"thu":[{"open":"11:00","close":"21:00"}],"fri":[{"open":"11:00","close":"21:00"}],"sat":[{"open":"17:00","close":"02:00"}],"sun":[{"open":"00:00","close":"00:00"}]}'::jsonb,
     prep_notes = '{shared-fryer}',
-    allergen_note = null
+    allergen_note = null,
+    show_icons = true
   where r.id = diner
     and (r.timezone is distinct from 'America/New_York'
       or r.hours is distinct from '{"mon":[],"tue":[{"open":"11:00","close":"14:00"},{"open":"17:00","close":"21:00"}],"wed":[{"open":"11:00","close":"21:00"}],"thu":[{"open":"11:00","close":"21:00"}],"fri":[{"open":"11:00","close":"21:00"}],"sat":[{"open":"17:00","close":"02:00"}],"sun":[{"open":"00:00","close":"00:00"}]}'::jsonb
       or r.prep_notes is distinct from '{shared-fryer}'::public.prep_note[]
-      or r.allergen_note is not null);
+      or r.allergen_note is not null
+      or not r.show_icons);
   get diagnostics placed = row_count;
   if placed > 0 then
-    raise notice 'set CI Diner''s time zone, hours, and preparation sentence';
+    raise notice 'set CI Diner''s time zone, hours, preparation sentence, and icons';
   end if;
 
   -- 1. The menus. A name matches the way menus_name_key reads it, whatever
@@ -1220,6 +1223,7 @@ verdict as (
       (select r.timezone = 'America/New_York'
          and r.prep_notes = '{shared-fryer}'::public.prep_note[]
          and r.allergen_note is null
+         and r.show_icons
          and r.hours = '{"mon":[],"tue":[{"open":"11:00","close":"14:00"},{"open":"17:00","close":"21:00"}],"wed":[{"open":"11:00","close":"21:00"}],"thu":[{"open":"11:00","close":"21:00"}],"fri":[{"open":"11:00","close":"21:00"}],"sat":[{"open":"17:00","close":"02:00"}],"sun":[{"open":"00:00","close":"00:00"}]}'::jsonb
        from public.restaurants r join diner on r.id = diner.id),
       false) as details_ok,
@@ -1268,7 +1272,7 @@ from (
       when not v.brunch_ok then
         'not ready: Brunch does not hold Eggs first with Shakshuka at $12.00, described, checked with eggs, and off the menu for now'
       when not v.details_ok then
-        'not ready: CI Diner''s time zone, hours, preparation sentence, or allergen note is not as the diner page expects'
+        'not ready: CI Diner''s time zone, hours, preparation sentence, allergen note, or icons setting is not as the diner page expects'
       when not v.published_ok then
         'not ready: Dinner, Drinks, or Brunch is not published, or Lunch is'
       else 'ready for the owner gate'

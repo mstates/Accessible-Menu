@@ -319,6 +319,259 @@ test("a details save is live on the diner page", async ({ page }) => {
     .not.toContain("standin.example");
 });
 
+async function writes(): Promise<string[]> {
+  return (await (await knob("writes")).json()) as string[];
+}
+
+// The icon rows as the page holds them (D-189), read as plain data: every
+// paragraph of a dish with the row after it, if one follows; every option's
+// list item with the row inside it, if one ends it; whether every allergen
+// sentence is still one text node; the sprite's symbols; whether every use
+// resolves to one; titles inside svgs; svgs on the page; and whether the
+// sprite sits after the footer and outside every landmark.
+type IconRead = { text: string; row: string[] | null };
+type IconsOnPage = {
+  lines: IconRead[];
+  options: IconRead[];
+  sentencesOneTextNode: boolean;
+  symbols: string[];
+  usesResolve: boolean;
+  titles: number;
+  svgs: number;
+  spriteAfterFooter: boolean;
+};
+
+function iconsOn(page: Page): Promise<IconsOnPage> {
+  return page.evaluate(
+    ({ contains, checkedNone, notConfirmed }) => {
+      const hrefs = (row: Element | null): string[] | null => {
+        if (!row || row.getAttribute("aria-hidden") !== "true") return null;
+        if ((row.textContent ?? "").trim() !== "") return null;
+        const svgs = [...row.children];
+        if (
+          svgs.length === 0 ||
+          !svgs.every((child) => child.tagName.toLowerCase() === "svg")
+        ) {
+          return null;
+        }
+        return svgs.map(
+          (svg) => svg.querySelector("use")?.getAttribute("href") ?? "",
+        );
+      };
+      const isSentence = (text: string) =>
+        text === checkedNone ||
+        text === notConfirmed ||
+        (text.startsWith(`${contains} `) && text.endsWith("."));
+      const paragraphs = [
+        ...document.querySelectorAll("main section > ul > li > p"),
+      ];
+      const lines = paragraphs.map((p) => ({
+        text: p.textContent ?? "",
+        row: hrefs(p.nextElementSibling),
+      }));
+      const sentencesOneTextNode = paragraphs
+        .filter((p) => isSentence(p.textContent ?? ""))
+        .every(
+          (p) =>
+            p.childNodes.length === 1 &&
+            p.childNodes[0]?.nodeType === Node.TEXT_NODE,
+        );
+      const options = [
+        ...document.querySelectorAll(
+          "main section > ul > li li, [role='group'] li",
+        ),
+      ].map((item) => ({
+        text: item.textContent ?? "",
+        row: hrefs(item.lastElementChild),
+      }));
+      const symbols = [...document.querySelectorAll("symbol")].map(
+        (symbol) => symbol.id,
+      );
+      const usesResolve = [...document.querySelectorAll("use")].every((use) => {
+        const href = use.getAttribute("href") ?? "";
+        return (
+          href.startsWith("#") &&
+          document.getElementById(href.slice(1))?.tagName.toLowerCase() ===
+            "symbol"
+        );
+      });
+      const sprite = document.querySelector("symbol")?.closest("svg") ?? null;
+      const footer = document.querySelector("footer");
+      const spriteAfterFooter =
+        sprite !== null &&
+        footer !== null &&
+        sprite.closest("main, footer, nav, header") === null &&
+        (footer.compareDocumentPosition(sprite) &
+          Node.DOCUMENT_POSITION_FOLLOWING) !==
+          0;
+      return {
+        lines,
+        options,
+        sentencesOneTextNode,
+        symbols,
+        usesResolve,
+        titles: document.querySelectorAll("svg title").length,
+        svgs: document.querySelectorAll("svg").length,
+        spriteAfterFooter,
+      };
+    },
+    {
+      contains: en.allergens.contains,
+      checkedNone: en.allergens.checkedNone,
+      notConfirmed: en.allergens.notConfirmed,
+    },
+  );
+}
+
+// Turns the icons box on or off through Details and saves, the way an owner
+// does, so the diner page is re-rendered through the restaurant's tag.
+async function setIcons(page: Page, on: boolean): Promise<void> {
+  await page.goto(restaurantDetailsPath(code));
+  await page.waitForLoadState("networkidle");
+  const box = page.getByRole("checkbox", {
+    name: restaurants.fields.showIcons,
+    exact: true,
+  });
+  if ((await box.isChecked()) !== on) {
+    await box.focus();
+    await page.keyboard.press("Space");
+  }
+  await expect(box).toBeChecked({ checked: on });
+  await page
+    .getByRole("button", { name: restaurants.details.submit, exact: true })
+    .click();
+  await page.waitForURL(/saved=/);
+}
+
+const ICON_IDS = [
+  "milk",
+  "eggs",
+  "fish",
+  "shellfish",
+  "tree-nuts",
+  "peanuts",
+  "wheat",
+  "soy",
+  "sesame",
+  "vegan",
+  "vegetarian",
+];
+
+// D-189: with the stand-in's restaurant on, as CI Diner's data file sets it,
+// every Contains sentence and every diet line is followed by a row of its
+// own, hidden, with one use per named major allergen or tag in the words'
+// order from one sprite of eleven symbols; a custom allergen (the soup's
+// celery) and made-without-gluten (no glyph, D-66) draw nothing, the other
+// two sentences get no row, every sentence stays one text node, and the
+// same HTML comes with JavaScript off. A save of the box off takes every
+// row and the sprite out of the HTML and leaves the sentences; a save of it
+// on brings them back. The box itself reads its hint.
+test("with icons on, each Contains sentence and each diet line is followed by its own hidden row of icons from one sprite, with JavaScript off too; a save of the box off takes them all out of the HTML, and a save of it on brings them back (D-189)", async ({
+  page,
+  browser,
+}) => {
+  const icon = (id: string) => `#icon-${id}`;
+  const expectOn = (read: IconsOnPage) => {
+    const line = (text: string) =>
+      read.lines.find((each) => each.text === text);
+    expect(
+      line(en.allergens.checkedNone)?.row,
+      "no row after Checked. No major allergens.",
+    ).toBeNull();
+    expect(
+      line(en.allergens.notConfirmed)?.row,
+      "no row after the unconfirmed sentence",
+    ).toBeNull();
+    expect(
+      line("Vegetarian. Made without gluten ingredients.")?.row,
+      "the diet row holds vegetarian alone (D-66)",
+    ).toEqual([icon("vegetarian")]);
+    const soup = line("Contains milk, wheat, celery.");
+    if (soup) {
+      expect(soup.row, "celery is custom and draws nothing").toEqual([
+        icon("milk"),
+        icon("wheat"),
+      ]);
+    }
+    expect(read.sentencesOneTextNode, "every sentence one text node").toBe(
+      true,
+    );
+    const option = (start: string) =>
+      read.options.find((each) => each.text.startsWith(start));
+    expect(option("Ranch, 150 calories")?.row).toEqual([
+      icon("milk"),
+      icon("eggs"),
+    ]);
+    expect(option("Vinaigrette, 90 calories")?.row).toBeNull();
+    const rolls = read.options.filter((each) =>
+      each.text.startsWith("Buttered roll"),
+    );
+    expect(rolls.length).toBeGreaterThan(0);
+    for (const roll of rolls) {
+      expect(roll.row, roll.text).toEqual([icon("milk"), icon("wheat")]);
+    }
+    expect(read.symbols).toEqual(ICON_IDS.map((id) => `icon-${id}`));
+    expect(read.usesResolve, "every use resolves to a symbol").toBe(true);
+    expect(read.titles, "no title inside an svg").toBe(0);
+    expect(read.spriteAfterFooter, "the sprite after the footer").toBe(true);
+  };
+
+  await page.goto(bare);
+  expectOn(await iconsOn(page));
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  try {
+    const plain = await context.newPage();
+    await plain.goto(bare);
+    expectOn(await iconsOn(plain));
+  } finally {
+    await context.close();
+  }
+
+  try {
+    await page.goto(restaurantDetailsPath(code));
+    await page.waitForLoadState("networkidle");
+    const box = page.getByRole("checkbox", {
+      name: restaurants.fields.showIcons,
+      exact: true,
+    });
+    await expect(box).toBeChecked();
+    await expect(box).toHaveAccessibleDescription(
+      restaurants.fields.showIconsHint,
+    );
+    await setIcons(page, false);
+    const patch = (await writes())
+      .filter((each) => each.startsWith("PATCH restaurants "))
+      .at(-1);
+    expect(
+      JSON.parse(String(patch).slice("PATCH restaurants ".length)),
+    ).toMatchObject({ show_icons: false });
+    expect(
+      (await (await knob("restaurant")).json()) as { show_icons: boolean },
+    ).toMatchObject({ show_icons: false });
+    await expect
+      .poll(async () => (await served(page, bare)).html)
+      .not.toContain("<svg");
+    const off = (await served(page, bare)).html;
+    expect(off).not.toContain("<symbol");
+    expect(off).not.toContain("<use");
+    expect(off).toContain(en.allergens.checkedNone);
+    expect(off).toContain("Vegetarian. Made without gluten ingredients.");
+    await page.goto(bare);
+    const read = await iconsOn(page);
+    expect(read.svgs).toBe(0);
+    expect(read.lines.every((each) => each.row === null)).toBe(true);
+    expect(read.options.every((each) => each.row === null)).toBe(true);
+    expect(read.sentencesOneTextNode).toBe(true);
+  } finally {
+    await setIcons(page, true);
+  }
+  await expect
+    .poll(async () => (await served(page, bare)).html)
+    .toContain("<symbol");
+  await page.goto(bare);
+  expectOn(await iconsOn(page));
+});
+
 test("a failed read is never cached: the page answers 500 once and the menu on the next read", async ({
   page,
 }) => {

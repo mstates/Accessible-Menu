@@ -62,17 +62,26 @@ describe("the three allergen sentences (D-35)", () => {
     expect(sentence.text).toBe("Checked. No major allergens.");
   });
 
-  it("lists the allergens present, in the owner's order, with a period, as one string and nothing to draw inside it (D-182)", () => {
+  it("lists the allergens present, in the owner's order, with a period, as one string and nothing to draw inside it (D-182), and carries their ids for the icon row (D-189)", () => {
     const sentence = allergenSentence(reviewed(["peanuts", "milk"]), copy);
     expect(sentence).toEqual({
       kind: "contains",
       text: "Contains peanuts, milk.",
+      allergens: ["peanuts", "milk"],
     });
   });
 
-  it("appends custom allergens after the fixed ones", () => {
+  it("appends custom allergens after the fixed ones, and never among the ids", () => {
     const sentence = allergenSentence(reviewed(["eggs"], ["kiwi"]), copy);
     expect(sentence.text).toBe("Contains eggs, kiwi.");
+    expect(sentence).toMatchObject({ allergens: ["eggs"] });
+  });
+
+  it("carries no ids on the other two sentences (D-189)", () => {
+    expect("allergens" in allergenSentence(unreviewed(["peanuts"]), copy)).toBe(
+      false,
+    );
+    expect("allergens" in allergenSentence(reviewed([]), copy)).toBe(false);
   });
 
   it("ends every sentence with a period so read aloud pauses", () => {

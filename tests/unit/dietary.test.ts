@@ -45,10 +45,15 @@ describe("a dish's dietary tags (D-66)", () => {
     expect(dietarySentence(["vegan"], en.dietary)).toEqual({
       words: ["Vegan"],
       text: "Vegan.",
+      tags: ["vegan"],
     });
     expect(
       dietarySentence(["made-without-gluten", "vegan"], en.dietary)?.text,
     ).toBe("Vegan. Made without gluten ingredients.");
+    // The tags ride along in the words' order, for the icon row (D-189).
+    expect(
+      dietarySentence(["made-without-gluten", "vegan"], en.dietary)?.tags,
+    ).toEqual(["vegan", "made-without-gluten"]);
     expect(
       dietarySentence(
         ["vegan", "vegetarian", "made-without-gluten"],

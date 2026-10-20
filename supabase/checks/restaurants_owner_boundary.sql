@@ -1,8 +1,10 @@
 -- Owner boundary check for restaurants. Run in the Supabase SQL editor after
 -- every migration that touches restaurants or adds a function: its first
--- block is the function-privilege check for the whole schema. Everything
--- rolls back. Replace the uid below with your own auth.users id. A run that
--- ends without an error passed every check.
+-- block is the function-privilege check for the whole schema, and its
+-- second the exact list of columns owners may write (migration two's eleven
+-- and migration fifteen's show_icons, D-189). Everything rolls back. Replace
+-- the uid below with your own auth.users id. A run that ends without an
+-- error passed every check.
 begin;
 
 -- Every function in public is closed to the Data API roles unless a
@@ -58,6 +60,28 @@ begin
 end;
 $$;
 
+-- Owners write exactly the columns the migrations granted, and nothing
+-- else: never id, code, slug, city_slug, country, status, plan, or
+-- stripe_customer_id.
+do $$
+declare
+  held text;
+  expected text;
+begin
+  select string_agg(a.attname, ', ' order by a.attname) into held
+  from pg_attribute a
+  where a.attrelid = 'public.restaurants'::regclass
+    and a.attnum > 0 and not a.attisdropped
+    and has_column_privilege('authenticated', 'public.restaurants', a.attname,
+      'update');
+  expected := 'address, allergen_note, city, hours, name, phone, postal_code, prep_notes, region, show_icons, timezone, website';
+  if held is distinct from expected then
+    raise exception 'FAIL: authenticated updates %, expected %', held, expected;
+  end if;
+  raise notice 'ok: authenticated writes only the listed columns of restaurants';
+end;
+$$;
+
 -- The oldest restaurant, whatever its status, for the diner block below:
 -- its code and name, and a copy of its status; the block closes it, so a
 -- closed restaurant's name still comes back (Q-31). Everything rolls back.
@@ -105,6 +129,10 @@ begin
   exception when insufficient_privilege then
     raise notice 'ok: code is not writable';
   end;
+
+  -- The icons toggle (migration 15, D-189): an owner's own column to write.
+  update public.restaurants set show_icons = true where id = target;
+  raise notice 'ok: an owner writes show_icons';
 
   begin
     update public.restaurants set website = 'javascript:alert(1)'
@@ -211,6 +239,10 @@ begin
   exception when insufficient_privilege then
     raise notice 'ok: anon cannot list restaurants';
   end;
+
+  -- The diner page reads the icons setting through the view (D-189).
+  perform pr.show_icons from public.published_restaurants pr limit 1;
+  raise notice 'ok: anon reads show_icons through published_restaurants';
 
   if exists (
     select 1 from public.published_restaurants pr where pr.code = target_code

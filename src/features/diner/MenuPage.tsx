@@ -3,9 +3,16 @@ import { Fragment } from "react";
 import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
 import { InPageLinks } from "@/core/a11y/section-links";
-import type { DinerChoiceList, DinerDish, DinerSection } from "@/domain/diner";
+import type {
+  DinerChoiceList,
+  DinerDish,
+  DinerMenuView,
+  DinerSection,
+} from "@/domain/diner";
 import { feedbackPath, statementPath } from "@/domain/menu-url";
 import type { PriceText } from "@/domain/money";
+import { drawnIcons } from "@/ui/icons/glyphs";
+import { IconRow, IconSprite } from "@/ui/icons/IconRow";
 import type { MenuPageData } from "./load";
 
 type Props = { data: MenuPageData; copy: Copy };
@@ -30,9 +37,13 @@ type Props = { data: MenuPageData; copy: Copy };
 // thing on the page, one application/ld+json script carries the schema.org
 // graph the view model built (Spec 3.1, D-184): data only, nothing
 // executes, outside every landmark, and behind everything a diner reads in
-// the byte stream.
+// the byte stream. When the owner turned icons on (D-189), a row of its own
+// follows each Contains sentence and each diet line, hidden from assistive
+// technology, drawn from one sprite that sits after the footer only when a
+// row does; off, nothing of it is in the HTML.
 export function MenuPage({ data, copy }: Props) {
   const { restaurant, menus, menuLine, menu, code } = data;
+  const icons = restaurant.showIcons;
   return (
     <>
       <main
@@ -143,7 +154,7 @@ export function MenuPage({ data, copy }: Props) {
                     className="mt-3 scroll-mt-24"
                   >
                     {section.lists.map((list) => (
-                      <ChoiceList key={list.id} list={list} />
+                      <ChoiceList key={list.id} list={list} icons={icons} />
                     ))}
                   </div>
                 ) : null}
@@ -154,6 +165,7 @@ export function MenuPage({ data, copy }: Props) {
                       dish={dish}
                       section={section}
                       copy={copy}
+                      icons={icons}
                     />
                   ))}
                 </ul>
@@ -174,6 +186,7 @@ export function MenuPage({ data, copy }: Props) {
         ) : null}
         <QuietLinks code={code} copy={copy} />
       </footer>
+      {icons && drawsIcons(menu) ? <IconSprite /> : null}
       {/* The markup's text comes from serializeJsonLd(), which escapes every
         less-than sign, so a name an owner typed can never close this tag. */}
       <script
@@ -258,6 +271,27 @@ function Lines({ text }: { text: string }) {
   );
 }
 
+// Whether any shown dish or option gives the page an icon to draw, so the
+// sprite is on the page only when a row is (D-189).
+function drawsIcons(menu: DinerMenuView): boolean {
+  const inLists = (lists: DinerChoiceList[]) =>
+    lists.some((list) =>
+      list.options.some(
+        (option) => drawnIcons(option.allergenIcons).length > 0,
+      ),
+    );
+  return menu.sections.some(
+    (section) =>
+      inLists(section.lists) ||
+      section.dishes.some(
+        (dish) =>
+          drawnIcons(dish.allergenIcons).length > 0 ||
+          drawnIcons(dish.dietaryIcons).length > 0 ||
+          inLists(dish.lists),
+      ),
+  );
+}
+
 // Words that have a spoken form (Q-6): the numerals for the eye and the
 // words for a screen reader, drawn once and spoken once, or the bare text
 // when the two are the same, so nothing is rendered twice for no reason
@@ -277,8 +311,15 @@ function Words({ text }: { text: PriceText }) {
 // its own allergen sentence, the two forms optionSentence() builds, read
 // where the option is and never behind a disclosure (D-40). The line is one
 // text node, or the drawn-once, spoken-once pair when the words have a
-// spoken form, and nothing else, so it is one stop (D-182).
-function ChoiceList({ list }: { list: DinerChoiceList }) {
+// spoken form, and nothing else, so it is one stop (D-182); its icon row,
+// when icons are on, is an element of its own after it (D-189).
+function ChoiceList({
+  list,
+  icons,
+}: {
+  list: DinerChoiceList;
+  icons: boolean;
+}) {
   return (
     <div className="mt-2">
       <p className="font-semibold">{list.lead}</p>
@@ -286,6 +327,7 @@ function ChoiceList({ list }: { list: DinerChoiceList }) {
         {list.options.map((option) => (
           <li key={option.id}>
             <Words text={option.line} />
+            {icons ? <IconRow ids={option.allergenIcons} /> : null}
           </li>
         ))}
       </ul>
@@ -302,15 +344,18 @@ function ChoiceList({ list }: { list: DinerChoiceList }) {
 // repeated here while they hold few options in all, or one link to the
 // block under the section heading past that (Q-74). The dish's own lines
 // come first, so its allergen sentence stays beside its name whatever its
-// lists hold.
+// lists hold. With icons on, the allergen line and the diet line are each
+// followed by their own hidden row of icons (D-189).
 function Dish({
   dish,
   section,
   copy,
+  icons,
 }: {
   dish: DinerDish;
   section: DinerSection;
   copy: Copy;
+  icons: boolean;
 }) {
   const linked = !section.repeatLists && section.lists.length > 0;
   return (
@@ -329,8 +374,12 @@ function Dish({
         </p>
       ) : null}
       <p className="mt-2 font-semibold">{dish.allergen.text}</p>
+      {icons ? <IconRow ids={dish.allergenIcons} /> : null}
       {dish.dietary ? (
-        <p className="mt-1 text-foreground-muted">{dish.dietary.text}</p>
+        <>
+          <p className="mt-1 text-foreground-muted">{dish.dietary.text}</p>
+          {icons ? <IconRow ids={dish.dietaryIcons} /> : null}
+        </>
       ) : null}
       {dish.cookedToOrder ? (
         <p className="mt-1 text-foreground-muted">{copy.menu.cookedToOrder}</p>
@@ -345,10 +394,12 @@ function Dish({
         <p className="mt-1 text-foreground-muted">{dish.note}</p>
       ) : null}
       {dish.lists.map((list) => (
-        <ChoiceList key={list.id} list={list} />
+        <ChoiceList key={list.id} list={list} icons={icons} />
       ))}
       {section.repeatLists
-        ? section.lists.map((list) => <ChoiceList key={list.id} list={list} />)
+        ? section.lists.map((list) => (
+            <ChoiceList key={list.id} list={list} icons={icons} />
+          ))
         : null}
       {linked ? (
         <p className="mt-2">
