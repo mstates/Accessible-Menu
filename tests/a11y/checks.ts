@@ -193,9 +193,12 @@ export async function expectTitleInServedHead(page: Page, path: string) {
 // apply them to a pending link and to the error page as well as to a fresh
 // load.
 
-// With review, axe may also leave nothing to review: the pages that hold
+// With review, axe must also leave nothing to review: the pages that hold
 // a label hiding its visible words from assistive technology (D-193) pin
-// that axe has no needs-review on them either.
+// that axe has no needs-review on them either. Read once the page has
+// settled: until it hydrates, React Aria's server HTML points fields at
+// description and error ids it drops afterwards, which axe lists as
+// needing review, and the preview hydrates slower than the stand-in.
 export async function expectNoAxeViolations(
   page: Page,
   {
@@ -815,7 +818,8 @@ export type PageCheckOptions = {
   controls?: (page: Page) => Promise<readonly Control[]>;
   // The drawn marks the page is expected to show in forced colors.
   marks?: readonly Mark[];
-  // On arrival, axe also leaves nothing to review: the pages that hold a
+  // On arrival, once the page has settled and every id it points at is on
+  // the page, axe also leaves nothing to review: the pages that hold a
   // label hiding its visible words from assistive technology (D-193).
   review?: boolean;
 };
@@ -847,20 +851,21 @@ export function pageChecks(
           "the title is in the served head and is the document title from first paint",
           () => expectTitleInServedHead(page, path),
         ],
+        ["axe reports zero violations", () => expectNoAxeViolations(page)],
         [
           options.review
-            ? "axe reports zero violations and nothing to review"
-            : "axe reports zero violations",
-          () => expectNoAxeViolations(page, { review: options.review }),
-        ],
-        [
-          "every id an attribute points at is on the page",
+            ? "every id an attribute points at is on the page, and then axe has nothing to review"
+            : "every id an attribute points at is on the page",
           async () => {
             // Until the page hydrates, React Aria's server HTML points each
             // field at error and description ids it has not dropped yet, so
-            // the ids are read once the page has settled.
+            // the ids are read once the page has settled, and the review
+            // only once those ids are all on the page.
             await page.waitForLoadState("networkidle");
             await expectNoMissingIds(page);
+            if (options.review) {
+              await expectNoAxeViolations(page, { review: true });
+            }
           },
         ],
         [
