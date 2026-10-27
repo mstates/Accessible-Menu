@@ -22,7 +22,7 @@ import {
   useSlottedContext,
 } from "react-aria-components";
 import { fieldDescription } from "./field-description";
-import { HiddenWords } from "./HiddenWords";
+import { OneNode } from "./OneNode";
 
 export type ComboBoxItem = { id: string; text: string };
 
@@ -36,10 +36,10 @@ type Props = {
   id: string;
   label: string;
   // What one of several fields with the same visible label belongs to:
-  // "for Cup". The words follow the label inside it, hidden, so the one
-  // label names the field whole, "Size for Cup", and the field keeps that
-  // name while it has focus (D-140, D-188), as TextField does. A field alone
-  // on its page, a choice list's lead or the address finder, has none.
+  // "for Cup". The one label names the field whole, "Size name for Cup",
+  // as one node, and the field keeps that name while it has focus (D-140,
+  // D-193), as TextField does. A field alone on its page, a choice list's
+  // lead or the address finder, has none.
   labelSuffix?: string;
   // The whole name of the button that opens the list, named the same way.
   buttonLabel: string;
@@ -86,11 +86,14 @@ const NONE: readonly ComboBoxItem[] = [];
 // never sent ahead of the chosen one. Committing twice sends nothing
 // twice: a value on its way is not sent again.
 //
-// Named as TextField names a field (D-140, D-188): by one label, React
-// Aria's, with a suffix as hidden words inside it after the visible words,
-// held while the field has focus. One label is what VoiceOver on iOS folds
-// into the field; a name on the field itself left the plain label beside it
-// a stop of its own, read twice (Q-116, Q-118).
+// Named as TextField names a field (D-140, D-188, D-193): by one label,
+// React Aria's, whose accessible text is one node, the whole name with the
+// suffix, held while the field has focus, and the visible words inside it
+// hidden from assistive technology (OneNode). One label of one node is
+// what VoiceOver on iOS folds into the field; a name on the field itself
+// left the plain label beside it a stop of its own, read twice (Q-116,
+// Q-118), and the suffix as a second piece inside the label was a stop
+// too.
 export function ComboBox({
   id,
   label,
@@ -107,7 +110,7 @@ export function ComboBox({
   onPick,
 }: Props) {
   const [held, setHeld] = useState<string | null>(null);
-  const suffix = labelSuffix ? (held ?? labelSuffix) : null;
+  const whole = labelSuffix ? (held ?? `${label} ${labelSuffix}`) : null;
   // A prefiltered list keeps the last items it was given while it is open,
   // and hands nothing over only once it has closed (Q-121). On a pick the
   // finder's items turn null while the list is still open; a list handed
@@ -151,7 +154,7 @@ export function ComboBox({
         onCommit?.();
       }}
       onFocusChange={(focused) =>
-        setHeld(focused && labelSuffix ? labelSuffix : null)
+        setHeld(focused && labelSuffix ? `${label} ${labelSuffix}` : null)
       }
       onBlur={() => onCommit?.()}
       validationBehavior="aria"
@@ -160,8 +163,7 @@ export function ComboBox({
       className="flex flex-col gap-1"
     >
       <Label className="font-semibold">
-        {suffix === null ? label : `${label} `}
-        {suffix === null ? null : <HiddenWords text={suffix} />}
+        {whole === null ? label : <OneNode visible={label} whole={whole} />}
       </Label>
       <div className="flex items-center gap-2">
         <Input

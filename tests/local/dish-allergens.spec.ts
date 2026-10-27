@@ -397,6 +397,7 @@ test("another allergen is added in the page only, a name that means one of the n
     page,
     id,
     `${allergens.otherLabel} ${otherSuffix(allergens, 1)}`,
+    { visible: allergens.otherLabel },
   );
   expect(await writesSoFar(), "adding a row sends nothing").toBe(before);
 

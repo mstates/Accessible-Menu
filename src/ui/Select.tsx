@@ -19,7 +19,7 @@ import {
   type SelectProps as AriaSelectProps,
 } from "react-aria-components";
 import { fieldDescription } from "./field-description";
-import { HiddenWords } from "./HiddenWords";
+import { OneNode } from "./OneNode";
 
 export type SelectItem = { id: string; label: string };
 
@@ -46,17 +46,20 @@ const itemClassName =
 // field shows an asterisk after its label, hidden from assistive technology
 // because isRequired already sets aria-required.
 //
-// The name (D-188). React Aria names the button by two elements, the value
-// span and then a span label, and VoiceOver on iOS folds a label into its
-// control only when that one element labels it, so the span label was a
-// stop of its own, read twice (Q-119). Here the label is a real label for
-// the button and the button's one labelling element: it holds the chosen
-// value's words first, hidden in the flow, then the visible label, so the
-// name stays React Aria's, the value then the label ("Pennsylvania State"),
-// Chrome's pieces carry the space (HiddenWords), and the label folds. The
-// value's words stay in the button for the eye. The id is set on the Select
-// itself, so React Aria gives the button that id and the label's for agrees
-// with it from the first render (D-187).
+// The name (D-188, D-193). React Aria names the button by two elements, the
+// value span and then a span label, and VoiceOver on iOS folds a label into
+// its control only when that one element labels it, so the span label was
+// a stop of its own, read twice (Q-119). Here the label is a real label for
+// the button and the button's one labelling element, and its accessible
+// text is one node: the chosen value's words then the visible label,
+// "Pennsylvania State", as a single clipped text node rendered again on
+// each pick, with the visible label inside it hidden from assistive
+// technology (OneNode). So the name stays React Aria's, the value then the
+// label, and the label folds; with the value as hidden words of its own
+// before the visible label, the label was a stop before the button
+// (Q-124). The value's words stay in the button for the eye. The id is set
+// on the Select itself, so React Aria gives the button that id and the
+// label's for agrees with it from the first render (D-187).
 export function Select({
   label,
   description,
@@ -76,8 +79,7 @@ export function Select({
       className="flex flex-col gap-1"
     >
       <Label elementType="label" htmlFor={id} className="font-semibold">
-        <ValueWords placeholder={props.placeholder} />
-        {` ${label}`}
+        <Words label={label} placeholder={props.placeholder} />
         {props.isRequired ? <span aria-hidden="true"> *</span> : null}
       </Label>
       <Trigger>
@@ -140,12 +142,23 @@ export function Select({
   );
 }
 
-// The chosen value's words, or the placeholder's while nothing is chosen,
-// hidden in the label, so the one label names the button value then label.
-function ValueWords({ placeholder }: { placeholder?: string }) {
+// The label's one node: the chosen value's words, or the placeholder's
+// while nothing is chosen, then the visible label, so the one label names
+// the button value then label.
+function Words({
+  label,
+  placeholder,
+}: {
+  label: string;
+  placeholder?: string;
+}) {
   const state = useContext(SelectStateContext);
+  const value = state?.selectedItem?.textValue ?? placeholder ?? "";
   return (
-    <HiddenWords text={state?.selectedItem?.textValue ?? placeholder ?? ""} />
+    <OneNode
+      visible={label}
+      whole={value === "" ? label : `${value} ${label}`}
+    />
   );
 }
 

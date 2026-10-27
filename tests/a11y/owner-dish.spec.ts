@@ -93,8 +93,10 @@ const checks = {
   marks: [...breadcrumbMarks, ...formMarks, ...radioMarks, ...checkboxMarks],
 };
 
+// The sized dish holds labels of one node, its size fields (D-193): axe
+// also leaves nothing to review on it.
 test.describe("a dish's page, priced by size", () => {
-  pageChecks(() => dishPath("sizes"), checks);
+  pageChecks(() => dishPath("sizes"), { ...checks, review: true });
 });
 
 test.describe("a dish's page, at one price", () => {

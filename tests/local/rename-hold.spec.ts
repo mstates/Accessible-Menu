@@ -16,9 +16,11 @@ import { chromeName, expectNamedByOneLabel } from "./chrome-name";
 // "Saved."; the row's heading shows the saved name at once; "Saved." is said
 // once; and once the field is left it takes the saved name. Chrome's own
 // name for the field is read through the DevTools Protocol. The field is
-// named by one label, the row's suffix inside it, so VoiceOver on iOS folds
-// the label into the field and Chrome's pieces carry the space (D-188).
-// Each row gets its name back before the check ends.
+// named by one label whose accessible text is one node, the whole name,
+// with the visible words hidden from assistive technology inside it, so
+// VoiceOver on iOS folds the label into the field (D-188, D-193); those
+// words are still the label's, so a tap on them focuses the field. Each
+// row gets its name back before the check ends.
 //
 // The gate cannot land a save, so this runs here. It must run on any change
 // to src/ui/TextField.tsx or src/features/owner/editing, and in the session
@@ -71,11 +73,19 @@ for (const list of lists) {
     const before = await field.inputValue();
     const after = `${before} renamed`;
 
-    await field.focus();
+    // Focus arrives by a tap on the label's visible words (D-193).
+    const words = row
+      .locator(`label[for="${id}"]`)
+      .getByText(list.words.nameLabel, { exact: true });
+    await expect(words).toHaveAttribute("aria-hidden", "true");
+    await words.click();
+    await expect(field, "the words focus the field").toBeFocused();
     expect(await chromeName(page, id), "the field names its row").toBe(
       nameOf(before),
     );
-    await expectNamedByOneLabel(page, id, nameOf(before));
+    await expectNamedByOneLabel(page, id, nameOf(before), {
+      visible: list.words.nameLabel,
+    });
     await field.fill(after);
     await page.keyboard.press("Enter");
     await expect(heading, "the row's heading shows the saved name").toHaveText(
@@ -97,7 +107,9 @@ for (const list of lists) {
         message: "once it is left, the field takes the saved name",
       })
       .toBe(nameOf(after));
-    await expectNamedByOneLabel(page, id, nameOf(after));
+    await expectNamedByOneLabel(page, id, nameOf(after), {
+      visible: list.words.nameLabel,
+    });
     expect(await savedTimes(), `"${saved}" is still said once`).toBe(1);
 
     // The row gets its name back, so the stand-in is as it was.

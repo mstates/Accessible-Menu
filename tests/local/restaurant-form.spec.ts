@@ -20,9 +20,11 @@ import { chromeName, expectNamedByOneLabel } from "./chrome-name";
 // an answer with errors, since its saves are answered in the browser
 // (D-108), so they are checked here; a range that opens and closes at the
 // same time is refused for its day, and nothing is written. Then how
-// Details is named (D-188): the box and the two Selects each by one label,
-// the shape VoiceOver on iOS folds into the control, with Chrome's own
-// reading of the name and of the label's pieces.
+// Details is named (D-188, D-193): the box and the two Selects each by one
+// label whose accessible text is one node, the shape VoiceOver on iOS
+// folds into the control, with Chrome's own reading of the name and of the
+// label's pieces, and the box's visible words, hidden from assistive
+// technology, still taking a tap.
 const { code } = ownerEnv();
 const strings = en.owner.restaurants;
 const monday = strings.days.mon;
@@ -97,32 +99,58 @@ test("a save with errors sent from the keyboard focuses the error summary, and i
   ).toHaveCount(0);
 });
 
-test("on Details, the Open 24 hours box, the icons box, and the State and Time zone Selects are each named by one label, which Chrome reads whole, a pick renames the State button, and axe finds nothing", async ({
+test("on Details, the Open 24 hours box, the icons box, and the State and Time zone Selects are each named by one label of one node, which Chrome reads whole, the box's visible words take a tap, a pick renames the State button, and axe finds nothing", async ({
   page,
 }) => {
   await openDetails(page);
-  await expectNamedByOneLabel(page, fieldId("hours.mon"), allDayName, true);
+  await expectNamedByOneLabel(page, fieldId("hours.mon"), allDayName, {
+    wrapping: true,
+    visible: strings.fields.allDay,
+  });
   const stateName = (state: string) => `${state} ${strings.fields.region}`;
+  const select = (field: "region" | "timezone") => ({
+    visible: strings.fields[field],
+    order: "last" as const,
+  });
   await expectNamedByOneLabel(
     page,
     fieldId("region"),
     stateName(strings.states.PA),
+    select("region"),
   );
   await expectNamedByOneLabel(
     page,
     fieldId("timezone"),
     `${strings.timezones["America/New_York"]} ${strings.fields.timezone}`,
+    select("timezone"),
   );
-  // The icons box (D-189): named by its wrapping label, its hint tied to it.
+  // The icons box (D-189): named by its wrapping label, one visible node,
+  // its hint tied to it.
   await expectNamedByOneLabel(
     page,
     fieldId("showIcons"),
     strings.fields.showIcons,
-    true,
+    { wrapping: true },
   );
   await expect(
     page.locator(`#${fieldId("showIcons")}`),
   ).toHaveAccessibleDescription(strings.fields.showIconsHint);
+
+  // The box's visible words, hidden from assistive technology inside its
+  // label, still take a tap: React Aria's press on the label toggles the
+  // box and focuses it, the accepted cost of the one node (D-193). Nothing
+  // saves; the box is put back.
+  const box = page.locator(`#${fieldId("hours.mon")}`);
+  const words = page
+    .locator("label", { has: box })
+    .getByText(strings.fields.allDay, { exact: true });
+  await expect(words).toHaveAttribute("aria-hidden", "true");
+  const was = await box.isChecked();
+  await words.click();
+  await expect(box, "the words toggle the box").toBeChecked({ checked: !was });
+  await expect(box, "focus lands on the box").toBeFocused();
+  await words.click();
+  await expect(box, "the words toggle it back").toBeChecked({ checked: was });
 
   // A select's name follows its value: a pick renames the button at once.
   const state = page.locator(`#${fieldId("region")}`);
@@ -139,6 +167,7 @@ test("on Details, the Open 24 hours box, the icons box, and the State and Time z
     page,
     fieldId("region"),
     stateName(strings.states.NY),
+    select("region"),
   );
 
   await expectNoMissingIds(page);

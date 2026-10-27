@@ -333,7 +333,8 @@ export function sizeAction(
   return fill(strings.price.sizeAction, { action, size });
 }
 
-// The hidden words after a size field's label, which name its size.
+// The suffix after a size field's label words, which names its size; the
+// label holds both as one node (D-193).
 export function sizeSuffix(strings: DishStrings, size: string): string {
   return fill(strings.price.labelFor, { size });
 }

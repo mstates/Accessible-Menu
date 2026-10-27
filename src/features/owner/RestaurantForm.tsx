@@ -502,10 +502,10 @@ function DayHours({
       className="flex flex-col gap-3 rounded border border-border p-3"
     >
       <legend className="px-1 font-semibold">{label}</legend>
-      {/* Named by its one label, the visible words then the day as hidden
-          words inside it, "Open 24 hours on Monday", so VoiceOver on iOS
-          folds the label into the box and Chrome's pieces carry the space
-          (D-188; D-140 and D-142 for the two readings). */}
+      {/* Named by its one label, whose accessible text is one node, "Open
+          24 hours on Monday", with the visible words hidden from assistive
+          technology inside it, so VoiceOver on iOS folds the label into
+          the box (D-193; D-140 and D-142 for Chrome's two readings). */}
       <Checkbox
         id={fieldId(`hours.${day}`)}
         name={allDayFieldName(day)}

@@ -11,13 +11,13 @@ import {
   type TextFieldProps,
 } from "react-aria-components";
 import { fieldDescription } from "./field-description";
-import { HiddenWords } from "./HiddenWords";
+import { OneNode } from "./OneNode";
 
 type Props = TextFieldProps & {
   label: string;
   // What one of several fields with the same visible label belongs to:
-  // "for Dinner". The words follow the label inside it, hidden, so the one
-  // label names the field whole: "Menu name for Dinner" (D-140, D-188).
+  // "for Dinner". The one label names the field whole, "Menu name for
+  // Dinner", as one node (D-140, D-193).
   labelSuffix?: string;
   description?: string;
   errorMessage?: string;
@@ -40,20 +40,20 @@ const inputClassName =
 // out of the minimum width of the fieldset around it: at a 32px root that
 // built-in width alone is wider than a 320px screen (D-105).
 //
-// A field with a suffix is named by the same one label, the suffix as
-// hidden words inside it after the visible words and a space (HiddenWords
-// says why the words are in the flow and why the space sits in the visible
-// words' own text). One label is what VoiceOver on iOS folds into its
-// field: a name set on the field itself with aria-label left the plain
-// label beside it a stop of its own, read twice (D-188), and a label with
-// the suffix taken out of the flow was read in pieces with no space between
-// them (D-140).
+// A field with a suffix is named by the same one label, whose accessible
+// text is one node: the whole name, "Menu name for Dinner", as a single
+// clipped text node, with the visible words inside the label hidden from
+// assistive technology (OneNode says why). One label of one node is what
+// VoiceOver on iOS folds into its field: a name set on the field itself
+// with aria-label left the plain label beside it a stop of its own, read
+// twice (D-188), and a label of two pieces, the suffix hidden after the
+// visible words, never folded either (D-193).
 //
 // Such a field also keeps the name it had when focus arrived until focus
 // leaves. The suffix names a row that a save can rename while the field
 // still has focus, after Enter, and Chrome reads a focused field again when
 // its name changes, which drowned out the polite "Saved." (D-140). So the
-// hidden words hold the suffix focus arrived with.
+// node holds the whole name focus arrived with, as one string.
 export function TextField({
   label,
   labelSuffix,
@@ -64,7 +64,7 @@ export function TextField({
   ...props
 }: Props) {
   const [held, setHeld] = useState<string | null>(null);
-  const suffix = labelSuffix ? (held ?? labelSuffix) : null;
+  const whole = labelSuffix ? (held ?? `${label} ${labelSuffix}`) : null;
   const required = props.isRequired ? <span aria-hidden="true"> *</span> : null;
   const input = multiline ? (
     <TextArea className={`${inputClassName} min-h-32`} />
@@ -76,14 +76,13 @@ export function TextField({
       {...props}
       {...fieldDescription(description)}
       onFocusChange={(focused) => {
-        setHeld(focused && labelSuffix ? labelSuffix : null);
+        setHeld(focused && labelSuffix ? `${label} ${labelSuffix}` : null);
         props.onFocusChange?.(focused);
       }}
       className="flex flex-col gap-1"
     >
       <Label className="font-semibold">
-        {suffix === null ? label : `${label} `}
-        {suffix === null ? null : <HiddenWords text={suffix} />}
+        {whole === null ? label : <OneNode visible={label} whole={whole} />}
         {required}
       </Label>
       {prefix ? (

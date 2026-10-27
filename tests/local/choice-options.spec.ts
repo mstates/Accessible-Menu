@@ -490,6 +490,7 @@ test("another allergen on an option is refused unsent as holding a comma, as one
     page,
     (await first.getAttribute("id")) ?? "",
     `${group.otherLabel} ${otherSuffix(group, 1)}`,
+    { visible: group.otherLabel },
   );
   expect(await writesSoFar(), "adding a row sends nothing").toBe(before);
 

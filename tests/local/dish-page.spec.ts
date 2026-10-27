@@ -304,6 +304,7 @@ test("a size named from the suggestions commits once and keeps its field's name 
     page,
     id,
     `${strings.price.sizeNameLabel} ${fill(strings.price.labelFor, { size: unnamed(3) })}`,
+    { visible: strings.price.sizeNameLabel },
   );
 
   await page.keyboard.type("Pi");

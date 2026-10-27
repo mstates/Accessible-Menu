@@ -5,7 +5,7 @@ import { fieldId, restaurantDetailsPath } from "../../src/features/owner/paths";
 import { expectNoAxeViolations, expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
-import { chromeName } from "./chrome-name";
+import { chromeName, expectNamedByOneLabel } from "./chrome-name";
 
 // The address finder on the details form (D-83, D-87) against the stand-in,
 // whose fake Places endpoints answer the route with no key and no network:
@@ -244,6 +244,8 @@ test("the finder is named once by its label, which is for the input, the hint de
     await chromeName(page, id),
     "Chrome names the field by its label alone",
   ).toBe(finder.label);
+  // A label of plain visible words is one node already (D-193).
+  await expectNamedByOneLabel(page, id, finder.label);
 
   await expect(box).toHaveAccessibleDescription(finder.hint);
   const hintId = await page

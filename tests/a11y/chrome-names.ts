@@ -1,13 +1,15 @@
 import { expect, type Page } from "@playwright/test";
+import { labelShape } from "./label-shape";
 
 // The names Chrome itself gives a page's links, buttons, and fields, read
 // through the DevTools Protocol and held against the names Playwright
-// computes (D-140, D-142). Playwright computes names on its own, so its
-// checks can pass while Chrome tells a screen reader something else. Not a
-// spec: pageChecks in checks.ts runs it on every page the gate visits, in
+// computes (D-140, D-142), and the shape of the one label that names a
+// field (D-193). Playwright computes names on its own, so its checks can
+// pass while Chrome tells a screen reader something else. Not a spec:
+// pageChecks in checks.ts runs it on every page the gate visits, in
 // Chromium only, since only Chromium speaks the protocol.
 //
-// Two readings for every control:
+// Three readings for every control:
 //
 // The name. Chrome's computed name must be Playwright's, with runs of
 // white space read as one space.
@@ -19,14 +21,19 @@ import { expect, type Page } from "@playwright/test";
 // pieces, so "Menu name" and " for Dinner" were heard as "Menu namefor
 // Dinner" in Michael's sitting, while Chrome's computed name, and
 // Playwright's, said "Menu name for Dinner" (D-140). This reading joins the
-// pieces the same way and holds them against Playwright's name. It is a
-// model of what was heard in that sitting, not a documented rule. Since
-// D-188 every field is named by one label again, the suffix as hidden words
-// in the flow inside it with the space in the visible words' own text
-// (src/ui/HiddenWords.tsx), so this reading covers them all, and it is what
-// proves the space.
+// pieces the same way and holds them against Playwright's name.
+//
+// One node. Two hearings on the iPhone settled that VoiceOver on iOS folds
+// a label into its control only when the label's accessible text is one
+// text node; a label of two pieces never folds, whatever hides the second
+// piece and wherever the label sits (D-193). So a label Chrome hands over
+// must be exactly one piece in its tree, and a label that hides its
+// visible words from assistive technology (src/ui/OneNode.tsx) must hold
+// the whole name as one clipped text node that begins with those words,
+// or, for a Select's button, is the button's own visible value then those
+// words (D-188's order).
 
-type Reading = "name" | "label pieces";
+type Reading = "name" | "label pieces" | "one node";
 
 export type Allowed = {
   // The page, by its path and query.
@@ -165,9 +172,8 @@ export async function expectChromeNamesAgree(page: Page): Promise<void> {
       if (marked.result.value !== true) continue;
       read += 1;
 
-      const theirs = snapshotName(
-        await page.locator(`[data-name-sweep="${key}"]`).ariaSnapshot(),
-      );
+      const control = page.locator(`[data-name-sweep="${key}"]`);
+      const theirs = snapshotName(await control.ariaSnapshot());
       const chrome = collapse(text(node.name?.value));
       const playwright = theirs === null ? null : collapse(theirs);
       const report = (reading: Reading, given: string) => {
@@ -206,6 +212,43 @@ export async function expectChromeNamesAgree(page: Page): Promise<void> {
         // A label with no text of its own in the tree, one that is hidden,
         // is not handed over to be read in pieces.
         if (shown.length > 0) report("label pieces", collapse(shown.join("")));
+        if (shown.length > 1 && !allowed(path, role, "one node", chrome, "")) {
+          problems.push(
+            `${role}: named from one label that Chrome reads in ${shown.length} pieces, ${shown
+              .map((piece) => `"${piece}"`)
+              .join(" and ")}; one text node is the shape that folds on iOS`,
+          );
+        }
+      }
+
+      // A label that hides its visible words from assistive technology is
+      // the one node: the whole name as one clipped text node, beginning
+      // with those words, or, for a button, the button's own visible value
+      // then those words.
+      const shape = await control.evaluate(labelShape);
+      if (shape && shape.hiddenWords.length > 0) {
+        const visible = shape.hiddenWords[0] ?? "";
+        const piece = shape.pieces[0];
+        const oneClipped =
+          shape.pieces.length === 1 &&
+          piece?.hidden === "clip" &&
+          collapse(piece.text) === chrome;
+        const whole =
+          role === "button"
+            ? chrome === `${shape.controlText} ${visible}`
+            : chrome.startsWith(`${visible} `);
+        if (
+          (shape.hiddenWords.length !== 1 || !oneClipped || !whole) &&
+          !allowed(path, role, "one node", chrome, "")
+        ) {
+          problems.push(
+            `${role}: its label hides "${shape.hiddenWords.join('" and "')}" from assistive technology, so it must be the one node, one clipped text node holding the name, which ${
+              role === "button"
+                ? "is the button's own words then the visible words"
+                : "begins with the visible words"
+            }; the page holds ${JSON.stringify(shape.pieces)} and Chrome names it "${chrome}"`,
+          );
+        }
       }
     }
   } finally {

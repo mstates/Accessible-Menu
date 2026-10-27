@@ -134,8 +134,8 @@ export function otherLabel(
   return name === "" ? fill(strings.unnamedOther, { position }) : name;
 }
 
-// The hidden words after a row field's label, which name its place:
-// "Other allergen 2".
+// The suffix after a row field's label words, which names its place; the
+// label holds both as one node (D-193): "Other allergen 2".
 export function otherSuffix(
   strings: AllergenStrings,
   position: number,

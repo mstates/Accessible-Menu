@@ -27,6 +27,7 @@ import {
   setLargestText,
   type PageCheckOptions,
 } from "./checks";
+import { expectLabelShape } from "./label-shape";
 import {
   dashboardControls,
   detailsControls,
@@ -61,8 +62,14 @@ function checksFor(path: string): PageCheckOptions {
   if (at === restaurantNewPath()) {
     return { controls: newControls, marks: formMarks };
   }
-  if (at === details) return { controls: detailsControls, marks: formMarks };
-  if (at === restaurantMenusPath(code)) return { controls: menusControls };
+  // Details and Menus hold labels of one node (D-193): axe also leaves
+  // nothing to review on them.
+  if (at === details) {
+    return { controls: detailsControls, marks: formMarks, review: true };
+  }
+  if (at === restaurantMenusPath(code)) {
+    return { controls: menusControls, review: true };
+  }
   throw new Error(`${path} has no expected controls in owner-controls.ts`);
 }
 
@@ -246,7 +253,7 @@ function allDayName(day: DayKey): string {
 // proof. The test starts from whatever CI Diner's Monday holds, so it needs
 // no hours in the data file. Typing here sets no leave warning (only the
 // editing lists set one), so nothing is left to put back.
-test("Open 24 hours hides a day's times with focus kept, a second press brings back what was typed, and every box names its day", async ({
+test("Open 24 hours hides a day's times with focus kept, a second press brings back what was typed, every box names its day, and the box and the two Selects are each named by one label of one node", async ({
   page,
 }) => {
   await open(page, details);
@@ -313,6 +320,28 @@ test("Open 24 hours hides a day's times with focus kept, a second press brings b
     await expect(
       page.getByRole("checkbox", { name: allDayName(day), exact: true }),
     ).toHaveCount(1);
+  }
+
+  // The one node (D-193), in every engine: the box's wrapping label holds
+  // the whole name as one clipped text node with the visible words hidden
+  // from assistive technology; each Select's label the same, its value
+  // then its visible words.
+  await expectLabelShape(page, fieldId("hours.mon"), allDayName("mon"), {
+    wrapping: true,
+    visible: fields.allDay,
+  });
+  for (const [field, label] of [
+    ["region", fields.region],
+    ["timezone", fields.timezone],
+  ] as const) {
+    const button = page.locator(`#${fieldId(field)}`);
+    const value = ((await button.textContent()) ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    await expectLabelShape(page, fieldId(field), `${value} ${label}`, {
+      visible: label,
+      order: "last",
+    });
   }
 });
 

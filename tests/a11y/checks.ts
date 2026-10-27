@@ -193,22 +193,32 @@ export async function expectTitleInServedHead(page: Page, path: string) {
 // apply them to a pending link and to the error page as well as to a fresh
 // load.
 
+// With review, axe may also leave nothing to review: the pages that hold
+// a label hiding its visible words from assistive technology (D-193) pin
+// that axe has no needs-review on them either.
 export async function expectNoAxeViolations(
   page: Page,
-  { skip = [] }: { skip?: readonly string[] } = {},
+  {
+    skip = [],
+    review = false,
+  }: { skip?: readonly string[]; review?: boolean } = {},
 ) {
   const results = await new AxeBuilder({ page })
     .disableRules([...skip])
     .analyze();
-  const summary = results.violations
-    .map(
-      (violation) =>
-        `${violation.id}: ${violation.help}\n  ${violation.nodes
-          .map((node) => node.target.join(" "))
-          .join("\n  ")}`,
-    )
-    .join("\n");
-  expect(results.violations, summary).toEqual([]);
+  const summary = (list: typeof results.violations) =>
+    list
+      .map(
+        (violation) =>
+          `${violation.id}: ${violation.help}\n  ${violation.nodes
+            .map((node) => node.target.join(" "))
+            .join("\n  ")}`,
+      )
+      .join("\n");
+  expect(results.violations, summary(results.violations)).toEqual([]);
+  if (review) {
+    expect(results.incomplete, summary(results.incomplete)).toEqual([]);
+  }
 }
 
 // Every id the page points at by an attribute is on the page: the labels,
@@ -641,9 +651,12 @@ async function forcedPaints(
         .slice(0, 40);
 
     const paints: { what: string; color: string; behind: string }[] = [];
-    // Edges: every field, button, and checkbox box, on all four sides.
+    // Edges: every field, button, and checkbox box, on all four sides. A
+    // checkbox's drawn box is the aria-hidden span under its label that
+    // holds the check mark; the box's visible words can be an aria-hidden
+    // span under the same label (D-193), which is text, not a box.
     const edged = document.querySelectorAll(
-      'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea, select, button, label:has(input[type="checkbox"]) > span[aria-hidden="true"], label:has(input[type="radio"]) > span[aria-hidden="true"]',
+      'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea, select, button, label:has(input[type="checkbox"]) > span[aria-hidden="true"]:has(> svg), label:has(input[type="radio"]) > span[aria-hidden="true"]',
     );
     for (const element of edged) {
       if (element.tagName.toLowerCase().startsWith("vercel-")) continue;
@@ -802,6 +815,9 @@ export type PageCheckOptions = {
   controls?: (page: Page) => Promise<readonly Control[]>;
   // The drawn marks the page is expected to show in forced colors.
   marks?: readonly Mark[];
+  // On arrival, axe also leaves nothing to review: the pages that hold a
+  // label hiding its visible words from assistive technology (D-193).
+  review?: boolean;
 };
 
 // Registers the checks for one path. Call it inside a describe. A path that
@@ -831,7 +847,12 @@ export function pageChecks(
           "the title is in the served head and is the document title from first paint",
           () => expectTitleInServedHead(page, path),
         ],
-        ["axe reports zero violations", () => expectNoAxeViolations(page)],
+        [
+          options.review
+            ? "axe reports zero violations and nothing to review"
+            : "axe reports zero violations",
+          () => expectNoAxeViolations(page, { review: options.review }),
+        ],
         [
           "every id an attribute points at is on the page",
           async () => {

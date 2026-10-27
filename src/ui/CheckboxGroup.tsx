@@ -11,7 +11,7 @@ import {
   type CheckboxProps,
 } from "react-aria-components";
 import { fieldDescription } from "./field-description";
-import { HiddenWords } from "./HiddenWords";
+import { OneNode } from "./OneNode";
 
 type GroupProps = Omit<CheckboxGroupProps, "children"> & {
   // The group's visible label, or none when a heading names the group
@@ -58,9 +58,8 @@ type ItemProps = Omit<CheckboxProps, "children"> & {
 } & (
     | { children: ReactNode; labelSuffix?: undefined }
     // What one of several boxes with the same visible words belongs to: "on
-    // Monday" after "Open 24 hours". The words follow the visible ones
-    // inside the box's own label, hidden, so the one label names the box
-    // whole (D-188).
+    // Monday" after "Open 24 hours". The box's own label then holds the
+    // whole name as one node, "Open 24 hours on Monday" (D-193).
     | { children: string; labelSuffix: string }
   );
 
@@ -71,9 +70,10 @@ type ItemProps = Omit<CheckboxProps, "children"> & {
 // the box is, joined with any ids the caller ties as well; nothing here
 // comes or goes, so the tie never points at a gone id (D-147). The box is
 // named by the label React Aria wraps it in, never by aria-label, which
-// left that label a stop of its own on iOS, read twice (D-188); a suffix
-// goes inside it as hidden words after the visible words and a space, as
-// HiddenWords says.
+// left that label a stop of its own on iOS, read twice (D-188); with a
+// suffix that label holds the whole name as one node, the visible words
+// hidden from assistive technology beside it, since a label of two pieces
+// never folds on iOS (D-193, OneNode says why).
 export function Checkbox({
   children,
   labelSuffix,
@@ -83,12 +83,9 @@ export function Checkbox({
 }: ItemProps) {
   const words =
     labelSuffix === undefined ? (
-      children
+      <span className="min-w-0">{children}</span>
     ) : (
-      <>
-        {`${children} `}
-        <HiddenWords text={labelSuffix} />
-      </>
+      <OneNode visible={children} whole={`${children} ${labelSuffix}`} />
     );
   const hintId = useId();
   const describedBy =
@@ -118,7 +115,7 @@ export function Checkbox({
             <path d="M5 13l4 4L19 7" />
           </svg>
         </span>
-        <span className="min-w-0">{words}</span>
+        {words}
       </AriaCheckbox>
       {description ? (
         <span id={hintId} className="-mt-1 pl-9 text-sm text-foreground-muted">

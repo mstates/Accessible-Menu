@@ -19,6 +19,7 @@ import {
   open,
   setLargestText,
 } from "./checks";
+import { expectLabelShape } from "./label-shape";
 import { ownerEnv, ownerFixture } from "./owner-env";
 import { listRowChecks, stopClock } from "./owner-lists";
 import { restaurantName } from "./pages";
@@ -154,6 +155,23 @@ function nameField(page: Page, menu: string) {
     exact: true,
   });
 }
+
+// The one node (D-193), in every engine: a row's name field is named by
+// one label holding the whole name as one clipped text node, with the
+// visible words hidden from assistive technology inside it.
+test("a menu's name field is named by one label of one node, the whole name, with its visible words hidden from assistive technology", async ({
+  page,
+}) => {
+  const [first] = await openMenus(page);
+  if (!first) throw new Error("the menus page shows no menu");
+  const id = (await nameField(page, first).getAttribute("id")) ?? "";
+  await expectLabelShape(
+    page,
+    id,
+    `${strings.nameLabel} ${fill(strings.labelFor, { menu: first })}`,
+    { visible: strings.nameLabel },
+  );
+});
 
 // What a menu holds, as the setup counted it: its sections and their dishes.
 type Holds = { name: string; sections: number; dishes: number };
