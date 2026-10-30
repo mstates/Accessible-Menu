@@ -17,9 +17,15 @@ export type Held = { sections: number; dishes: number; options: number };
 
 export const HOLDS_NOTHING: Held = { sections: 0, dishes: 0, options: 0 };
 
-// A menu as the menus list reads it, with what it holds and whether it is
-// published, which its delete question names (migration 12).
-export type ListedMenu = OwnerMenu & Held & { published: boolean };
+// A menu as the menus list reads it, with what it holds and its publish
+// state as menu_publish_states() reports it (migration 12): whether it is
+// published, which its delete question names, and since when and whether
+// the draft differs from what was published, which the line under its name
+// says (Q-115). The state fields are MenuPublishState's, so the list builds
+// that line with the menu page's own sentence builder.
+export type ListedMenu = OwnerMenu &
+  Held &
+  Pick<MenuPublishState, "published" | "publishedAt" | "changed">;
 
 // A menu's publish state, as menu_publish_states() reports it (migration 12,
 // D-82): whether it is published, since when, and whether the draft differs

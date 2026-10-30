@@ -43,6 +43,9 @@ type Props<
   // What each saved row adds after its buttons: an option's allergen group
   // (D-166).
   afterRow?: (row: Row) => ReactNode;
+  // What each saved row adds after its texts and before its link and
+  // buttons: a menu's publish state, one line of text (Q-115).
+  afterFields?: (row: Row) => ReactNode;
   // The id of the heading that names the rows, for a list that sits under
   // a heading of the page's own: the rows are then an ordered list named
   // by it, apart from the page's own rows.
@@ -52,8 +55,9 @@ type Props<
 // One editing list on the page (D-128): the page's own texts when it has
 // them (D-135), the saved status and Undo, then the rows, then the add
 // form. Every list is drawn here, so every row is the same row: a heading
-// with the saved name, the name field, any other text the row has, then the
-// link to the row's own page, Move up, Move down, and Delete.
+// with the saved name, the name field, any other text the row has, a line
+// the list adds under them when it has one (Q-115), then the link to the
+// row's own page, Move up, Move down, and Delete.
 //
 // The heading is what a screen reader moves by, row to row, once a list is
 // long. It shows the saved name, never what is being typed, as the buttons'
@@ -74,6 +78,7 @@ export function RowList<
   status = true,
   rowHeading = 2,
   afterRow,
+  afterFields,
   labelledBy,
 }: Props<Row, Field, Other, OwnField>) {
   const { words, fields, link, editing, shown, unsaved, own } = list;
@@ -160,6 +165,7 @@ export function RowList<
                     />
                   );
                 })}
+                {afterFields?.(row)}
                 <div className="flex flex-wrap gap-3">
                   {link ? (
                     <PageLink

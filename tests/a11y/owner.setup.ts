@@ -60,7 +60,12 @@ const memberships = z.array(
   }),
 );
 const publishStates = z.array(
-  z.object({ menu: z.string(), menu_name: z.string(), published: z.boolean() }),
+  z.object({
+    menu: z.string(),
+    menu_name: z.string(),
+    published: z.boolean(),
+    changed: z.boolean().nullable(),
+  }),
 );
 
 setup(
@@ -327,6 +332,12 @@ setup(
         published: stateRows
           .filter((row) => row.published)
           .map((row) => row.menu_name),
+        states: stateRows.map((row) => ({
+          id: row.menu,
+          name: row.menu_name,
+          published: row.published,
+          changed: row.changed,
+        })),
         sectionsInRestaurant: sections.length,
       };
       writeFileSync(ownerFixturePath, JSON.stringify(fixture), { mode: 0o600 });

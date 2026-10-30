@@ -24,9 +24,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 // The restaurant's menus (D-111). The list is read here on every render, and
 // every save ends with a refresh, so what the page shows is what the server
 // holds, the number of sections in each menu included, which is what a
-// delete asks about (D-119). A read that fails throws to the owner error
-// page; it never shows as an empty list. The slices of copy the list needs
-// are passed on their own, since they travel with every refresh.
+// delete asks about (D-119), and each menu's publish state, which the line
+// under its name says (Q-115); a Publish or Unpublish on the menu's own
+// page reaches this list the next time it is read. A read that fails throws
+// to the owner error page; it never shows as an empty list. The slices of
+// copy the list needs are passed on their own, since they travel with every
+// refresh.
 export default async function RestaurantMenusPage({ params }: Props) {
   const { code } = await params;
   const { supabase, email, restaurant } = await loadRestaurant(code);
@@ -60,6 +63,9 @@ export default async function RestaurantMenusPage({ params }: Props) {
         editing={en.owner.editing}
         code={restaurant.code}
         menus={menus}
+        publishing={en.owner.publishing}
+        timeZone={restaurant.timezone}
+        lang={en.lang}
       />
     </PageFrame>
   );

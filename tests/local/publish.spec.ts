@@ -5,6 +5,7 @@ import {
   dashboardPath,
   restaurantDishPath,
   restaurantMenuPath,
+  restaurantMenusPath,
 } from "../../src/features/owner/paths";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
@@ -16,10 +17,12 @@ import { hearLog, heard } from "../a11y/owner-lists";
 // Publish said once and the state read back, Unpublish, Publish again, a
 // blank size added on the dish's page blocking Publish with the sentence
 // said once and nothing written, and a menu with no dishes blocked by the
-// menu (D-177). The gate cannot land a press, so this runs here. Each check
-// leaves the stand-in as it found it: Dinner published with nothing
-// changed since, its first section with its name, the soup with its two
-// sizes, Lunch not published.
+// menu (D-177), and the Menus list's line under each name following a
+// rename, Unpublish, and Publish the next time the list is read (Q-115).
+// The gate cannot land a press, so this runs here. Each check leaves the
+// stand-in as it found it: Dinner published with nothing changed since, its
+// first section with its name, the soup with its two sizes, Lunch not
+// published.
 
 const { code } = ownerEnv();
 const strings = en.owner.publishing;
@@ -69,6 +72,23 @@ async function renameFirstSection(page: Page, to: string): Promise<void> {
   await firstSectionName(page).fill(to);
   await page.keyboard.press("Enter");
   await expect.poll(() => said(page, saved)).toBe(before + 1);
+}
+
+// The Menus list, read fresh (the server reads it on every render).
+async function openMenus(page: Page): Promise<void> {
+  await page.goto(restaurantMenusPath(code));
+  await page.waitForLoadState("networkidle");
+}
+
+// The line under a menu's name on the Menus list (Q-115): the one paragraph
+// in the row whose heading is the menu's name.
+function menuLine(page: Page, menu: string) {
+  return page
+    .locator("main ul > li")
+    .filter({
+      has: page.getByRole("heading", { level: 2, name: menu, exact: true }),
+    })
+    .locator("p");
 }
 
 test("a rename makes changes not published yet, Publish is said once and clears that, Unpublish takes the menu back, and Publish again", async ({
@@ -139,6 +159,51 @@ test("a rename makes changes not published yet, Publish is said once and clears 
   await expect.poll(() => said(page, strings.spoken.published)).toBe(1);
   await expect(group(page).getByText(publishedNow)).toBeVisible();
   await expect(button(page, strings.unpublish)).toBeVisible();
+});
+
+// The list has no live update: a change on the menu's page shows on the
+// list the next time the list is read, and not before.
+test("the Menus list says each menu's state under its name, and follows a rename, Unpublish, and Publish the next time it is read", async ({
+  page,
+}) => {
+  const { withSections, empty } = ownerFixture();
+  await openMenus(page);
+  await expect(menuLine(page, withSections.name)).toHaveText(publishedNow);
+  await expect(menuLine(page, empty.name)).toHaveText(
+    strings.state.notPublished,
+  );
+
+  await openMenu(page);
+  const original = await firstSectionName(page).inputValue();
+  await renameFirstSection(page, `${original} renamed`);
+  await openMenus(page);
+  await expect(
+    menuLine(page, withSections.name),
+    "a change shows on the next read of the list",
+  ).toHaveText(changedNow);
+
+  await openMenu(page);
+  await renameFirstSection(page, original);
+  await button(page, strings.unpublish).click();
+  await expect.poll(() => said(page, strings.spoken.unpublished)).toBe(1);
+  await openMenus(page);
+  await expect(menuLine(page, withSections.name)).toHaveText(
+    strings.state.notPublished,
+  );
+  await expect(
+    menuLine(page, "Drinks"),
+    "the other published menus keep their line",
+  ).toHaveText(publishedNow);
+
+  // As it was.
+  await openMenu(page);
+  await button(page, strings.publish).click();
+  await expect.poll(() => said(page, strings.spoken.published)).toBe(1);
+  await openMenus(page);
+  await expect(menuLine(page, withSections.name)).toHaveText(publishedNow);
+  await expect(menuLine(page, empty.name)).toHaveText(
+    strings.state.notPublished,
+  );
 });
 
 test("a menu with no dishes blocks Publish: the page names the menu, the press is refused once with nothing written, and the status shows the sentence with no Try again (D-177)", async ({

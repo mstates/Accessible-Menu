@@ -15,21 +15,33 @@ import {
   restoreMenu,
 } from "./menu-actions";
 import { restaurantMenuPath } from "./paths";
+import { stateSentence, type PublishingStrings } from "./publishing-words";
 
 type Props = {
   strings: Copy["owner"]["menus"];
   editing: Copy["owner"]["editing"];
   code: string;
   // The restaurant's menus that are not deleted, in order, as the server
-  // holds them, each with the sections and the dishes it holds. Every save
-  // ends with a refresh, so this is always the truth.
+  // holds them, each with the sections and the dishes it holds and its
+  // publish state. Every save ends with a refresh, so this is always the
+  // truth.
   menus: ListedMenu[];
+  // The publishing words, for the line under each name (Q-115), with the
+  // restaurant's time zone and the page's language for the day in it.
+  publishing: PublishingStrings;
+  timeZone: string;
+  lang: string;
 };
 
 // The menus of one restaurant (D-111, D-128): the shared list, with one
 // field a row, its name. Each row links to the menu's own page, where its
 // sections are (D-122). Delete on a menu that holds sections asks first,
 // and names them and their dishes; an empty menu goes at once (D-119).
+// Under each name, one line of plain text says what the menu's own page
+// says of its publish state (Q-115), from the same builder and the same
+// words (D-171), tied to no control: the states are read with the menus,
+// so a Publish or Unpublish on the menu's page shows here the next time
+// the list is read, never live.
 export function MenuList(props: Props) {
   return (
     <Announcer>
@@ -38,7 +50,15 @@ export function MenuList(props: Props) {
   );
 }
 
-function MenuRows({ strings, editing, code, menus }: Props) {
+function MenuRows({
+  strings,
+  editing,
+  code,
+  menus,
+  publishing,
+  timeZone,
+  lang,
+}: Props) {
   const words = useMemo(
     () => menuList.words(strings, editing),
     [strings, editing],
@@ -73,5 +93,12 @@ function MenuRows({ strings, editing, code, menus }: Props) {
       href: (menu) => restaurantMenuPath(code, menu.id),
     },
   });
-  return <RowList list={list} />;
+  return (
+    <RowList
+      list={list}
+      afterFields={(menu) => (
+        <p>{stateSentence(publishing, menu, timeZone, lang)}</p>
+      )}
+    />
+  );
 }

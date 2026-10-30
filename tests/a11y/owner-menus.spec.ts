@@ -20,7 +20,7 @@ import {
   setLargestText,
 } from "./checks";
 import { expectLabelShape } from "./label-shape";
-import { ownerEnv, ownerFixture } from "./owner-env";
+import { ownerEnv, ownerFixture, type OwnerFixture } from "./owner-env";
 import { listRowChecks, stopClock } from "./owner-lists";
 import { restaurantName } from "./pages";
 import { expectWrites, guardWrites } from "./write-guard";
@@ -33,7 +33,9 @@ import { expectWrites, guardWrites } from "./write-guard";
 // page's own. Typing, real saves and the "Saved." they say (D-118), add, a
 // delete that lands, Undo with something to undo, and a name that is taken
 // are covered by the unit tests and by hand. The shared page checks for
-// this page run from owner-pages.spec.ts.
+// this page run from owner-pages.spec.ts. The line under each name that
+// says whether the menu is published (Q-115) is read here too, against the
+// states the setup wrote.
 //
 // The delete confirmation (D-119) is one piece for every list, and its
 // clock tests run here: its first focus (D-136), the dialog itself and then
@@ -53,6 +55,7 @@ const details = restaurantDetailsPath(code);
 const strings = en.owner.menus;
 const editing = en.owner.editing;
 const nav = en.owner.restaurants.nav;
+const publishing = en.owner.publishing;
 
 guardWrites();
 
@@ -171,6 +174,100 @@ test("a menu's name field is named by one label of one node, the whole name, wit
     `${strings.nameLabel} ${fill(strings.labelFor, { menu: first })}`,
     { visible: strings.nameLabel },
   );
+});
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// The sentence a row shows for its menu's state (Q-115): the menu page's
+// own words (D-171), with the day as a pattern, since the data file's days
+// are its own.
+function stateLine(state: OwnerFixture["states"][number]): RegExp {
+  if (!state.published) {
+    return new RegExp(`^${escapeRegExp(publishing.state.notPublished)}$`);
+  }
+  const key = state.changed
+    ? publishing.state.changed
+    : publishing.state.published;
+  const [before = "", after = ""] = key.split("{date}");
+  return new RegExp(
+    `^${escapeRegExp(before)}\\w+ \\d{1,2}, \\d{4}${escapeRegExp(after)}$`,
+  );
+}
+
+// The line under each name (Q-115): one paragraph of plain text saying what
+// the menu's own page says of its publish state, after the name field and
+// before the row's link and buttons, tied to nothing, so the field, the
+// link, and the buttons read exactly as before (D-193). The data file
+// leaves the test restaurant with menus in both states.
+test("each menu's row says under its name whether it is published, as text tied to nothing", async ({
+  page,
+}) => {
+  const { states } = ownerFixture();
+  const names = await openMenus(page);
+  expect(
+    states.map((state) => state.name),
+    "the setup wrote a state for every row, in the page's order",
+  ).toEqual(names);
+  expect(
+    states.some((state) => state.published) &&
+      states.some((state) => !state.published),
+    "the rows show both states",
+  ).toBe(true);
+  for (const state of states) {
+    const row = rows(page).filter({
+      has: page.getByRole("heading", {
+        level: 2,
+        name: state.name,
+        exact: true,
+      }),
+    });
+    await expect(row).toHaveCount(1);
+    const line = row.locator("p");
+    await expect(line, "one line of text in the row").toHaveCount(1);
+    await expect(line).toHaveText(stateLine(state));
+    const shape = await line.evaluate((element) => {
+      const item = element.closest("li");
+      const field = item?.querySelector('input[id$="-name"]') ?? null;
+      const link = item?.querySelector("a") ?? null;
+      const id = element.id;
+      const pointedAt =
+        id === ""
+          ? 0
+          : [
+              ...document.querySelectorAll(
+                "[aria-describedby], [aria-labelledby]",
+              ),
+            ].filter((other) =>
+              `${other.getAttribute("aria-describedby") ?? ""} ${other.getAttribute("aria-labelledby") ?? ""}`
+                .split(/\s+/)
+                .includes(id),
+            ).length;
+      const follows = (first: Node, second: Node) =>
+        (first.compareDocumentPosition(second) &
+          Node.DOCUMENT_POSITION_FOLLOWING) !==
+        0;
+      return {
+        role: element.getAttribute("role"),
+        pointedAt,
+        inLabel: element.closest("label") !== null,
+        afterField: field ? follows(field, element) : null,
+        beforeLink: link ? follows(element, link) : null,
+      };
+    });
+    expect(shape.role, "plain text, no role").toBeNull();
+    expect(shape.pointedAt, "nothing on the page points at it").toBe(0);
+    expect(shape.inLabel, "and it is in no label").toBe(false);
+    expect(shape.afterField, "it sits after the name field").toBe(true);
+    expect(shape.beforeLink, "and before the row's link").toBe(true);
+    const field = nameField(page, state.name);
+    await expect(field, "the field's name is unchanged").toHaveCount(1);
+    await expect(
+      field,
+      "and the line is not its description",
+    ).toHaveAccessibleDescription("");
+  }
 });
 
 // What a menu holds, as the setup counted it: its sections and their dishes.

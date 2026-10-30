@@ -21,7 +21,8 @@ import { listSectionDishes } from "./sections";
 // counts what the menu holds in the statement that marks it (migration 5).
 // The only place the row shape is known; features see OwnerMenu, and the
 // list sees it with the sections and the dishes each menu holds (D-119)
-// and whether it is published, which its delete question names.
+// and its publish state, which its delete question and the line under its
+// name read (Q-115).
 
 const columns = "id, name, sort, published";
 
@@ -72,12 +73,16 @@ const failed: MenuWriteResult<never> = { ok: false, error: { kind: "failed" } };
 // Each menu comes with what it holds: its sections that are not deleted and
 // their dishes that are not deleted, which decides whether a delete asks
 // first and what the question says (D-119). The database counts the dishes
-// (migration 5), one row a section, and the rows are added up here.
+// (migration 5), one row a section, and the rows are added up here. Each
+// menu also comes with its publish state from menu_publish_states()
+// (migration 12), read with the menus, for the line under its name on the
+// list (Q-115): the list shows the states as they were read, and a Publish
+// or Unpublish on the menu's own page reaches it the next time it is read.
 export async function listOwnerMenus(
   client: SupabaseClient,
   restaurantId: string,
 ): Promise<ListedMenu[]> {
-  const [menus, counts] = await Promise.all([
+  const [menus, counts, publishStates] = await Promise.all([
     client
       .from("menus")
       .select(columns)
@@ -87,6 +92,7 @@ export async function listOwnerMenus(
       .order("created_at")
       .order("id"),
     listSectionDishes(client, restaurantId),
+    listOwnerMenuPublishStates(client, restaurantId),
   ]);
   if (menus.error) throw new Error("menus could not be read");
   const rows = shaped(z.array(rowSchema), menus.data, "menus");
@@ -100,11 +106,20 @@ export async function listOwnerMenus(
       options: 0,
     });
   }
-  return rows.map((row) => ({
-    ...toMenu(row),
-    ...(held.get(row.id) ?? { sections: 0, dishes: 0, options: 0 }),
-    published: row.published,
-  }));
+  const states = new Map(publishStates.map((state) => [state.id, state]));
+  return rows.map((row) => {
+    const state = states.get(row.id);
+    return {
+      ...toMenu(row),
+      ...(held.get(row.id) ?? { sections: 0, dishes: 0, options: 0 }),
+      // The function's row is the one reading of a menu's state (D-170). A
+      // menu it does not report, added between the two reads, keeps the
+      // column's flag, with no day and nothing compared.
+      published: state ? state.published : row.published,
+      publishedAt: state?.publishedAt ?? null,
+      changed: state?.changed ?? null,
+    };
+  });
 }
 
 // The restaurant's menus that are not deleted, in the owner's order, with

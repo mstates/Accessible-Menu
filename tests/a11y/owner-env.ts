@@ -100,6 +100,16 @@ const fixtureSchema = z.object({
   // The names of the published menus, in the order the dashboard joins
   // them (D-171).
   published: z.array(z.string()),
+  // Every live menu's publish state, in the order the pages list them: what
+  // the line under each name on the Menus list says (Q-115).
+  states: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      published: z.boolean(),
+      changed: z.boolean().nullable(),
+    }),
+  ),
   // Every live section of the restaurant, across its menus: what a dish's
   // move lists, less the dish's own (D-129).
   sectionsInRestaurant: z.number(),
