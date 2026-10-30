@@ -1,0 +1,36 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+  - status
+- navigation "CI Diner (test restaurant, not real)":
+  - paragraph: CI Diner (test restaurant, not real)
+  - list:
+    - listitem:
+      - link "Details"
+    - listitem:
+      - link "Menus"
+- main:
+  - navigation "Breadcrumb":
+    - list:
+      - listitem:
+        - link "Menus"
+      - listitem: Lunch
+  - heading "Lunch" [level=1]
+  - region "Publishing":
+    - heading "Publishing" [level=2]
+    - paragraph: Not published yet. Diners do not see this menu.
+    - paragraph: "Publish is waiting on:"
+    - list:
+      - listitem: Lunch has no dishes.
+    - button "Publish"
+    - paragraph: Publish sends this menu's words, prices, allergens, and choices to diners. Availability and specials reach diners on their own, with no Publish.
+  - paragraph: Sections are the headings on this menu, like Starters and Mains. Edit dishes opens a section's own page, with its dishes and its note. Each change saves when you leave its field.
+  - status: All changes saved
+  - button "Undo" [disabled]
+  - paragraph: No sections yet. Add the first one below.
+  - text: New section name
+  - textbox "New section name"
+  - button "Add section"
+  - log
+- contentinfo: Accessible Menu
+- alert

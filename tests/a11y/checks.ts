@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expectAriaSnapshot, snapshotName, withScope } from "./aria-snapshot";
 import { expectChromeNamesAgree } from "./chrome-names";
 
 // The checks every page gets (D-62, D-103, D-107), shared by the public pages
@@ -822,6 +823,10 @@ export type PageCheckOptions = {
   // the page, axe also leaves nothing to review: the pages that hold a
   // label hiding its visible words from assistive technology (D-193).
   review?: boolean;
+  // The page's aria snapshot file, without the owner prefix or the
+  // extension (D-194), for a page whose path is known only when the test
+  // runs, or whose tree the clock chooses; a string path names its own.
+  snapshot?: string | (() => string);
 };
 
 // Registers the checks for one path. Call it inside a describe. A path that
@@ -840,12 +845,28 @@ export function pageChecks(
   const at = () => (typeof target === "string" ? target : target());
   const controls = (page: Page) =>
     options.controls ? options.controls(page) : Promise.resolve([]);
+  const { snapshot } = options;
+  if (snapshot === undefined && typeof target !== "string") {
+    throw new Error(
+      "a page whose path is known only when the test runs names its snapshot through PageCheckOptions",
+    );
+  }
+  const snapshotFile = () =>
+    withScope(
+      typeof snapshot === "function"
+        ? snapshot()
+        : (snapshot ?? snapshotName(at())),
+    );
 
   test(
-    "arrives whole: the title, axe, every id it points at, the keyboard walk, every control shown, reflow, and the largest text",
+    "arrives whole: the title, axe, every id it points at, the tree's snapshot, the keyboard walk, every control shown, reflow, and the largest text",
     { tag: "@arrival" },
     async ({ page }) => {
       const path = at();
+      // Chosen before the page is fetched, so a file the clock chooses is
+      // the one for the instant of the fetch (D-174's one-second window at
+      // a timed end is the whole exposure, the same the diner spec takes).
+      const file = snapshotFile();
       await steps([
         [
           "the title is in the served head and is the document title from first paint",
@@ -867,6 +888,14 @@ export function pageChecks(
               await expectNoAxeViolations(page, { review: true });
             }
           },
+        ],
+        // The tree as Playwright computes it, against the page's committed
+        // file (D-194): the structure net, read once the page has settled
+        // and before the walk moves focus. What it is and is not, and how
+        // a later task updates the file, is in aria-snapshot.ts.
+        [
+          "the accessibility tree matches its snapshot",
+          () => expectAriaSnapshot(page, file),
         ],
         [
           "keyboard reaches every control, focus is visible, nothing traps",

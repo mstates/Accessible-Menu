@@ -36,7 +36,11 @@
 -- America/New_York, hours with a closed Monday, a split Tuesday, Wednesday
 -- to Friday 11 am to 9 pm, an overnight Saturday, and an around-the-clock
 -- Sunday, the shared-fryer sentence, no allergen note of its own, and icons
--- on, so the diner page draws the allergen and diet icons (D-189); and
+-- on, so the diner page draws the allergen and diet icons (D-189); the
+-- restaurant's identity, the name CI Diner (test restaurant, not real) at
+-- 1 Main Street, Reading, PA 19601 with no phone and no website, pinned
+-- here since the aria snapshots (D-194) share one file per page between
+-- the stand-in and this restaurant; and
 -- Drinks holding the section Soft drinks with the dish Lemonade at one
 -- price, checked with none, published beside Dinner, so the diner page
 -- has a menu switcher and a second menu's page; and Drinks' second
@@ -100,23 +104,42 @@ begin
   -- 0. The live details the diner page reads (the diner page task, D-82,
   -- D-92): the time zone, the week's hours, the preparation sentence, no
   -- allergen note of its own, so the default sentence renders, and icons
-  -- on (the icons toggle, D-189). Written only when they differ, as the
-  -- table owner, since the details are the restaurant's and not a draft.
+  -- on (the icons toggle, D-189); and the restaurant's identity, its name
+  -- and address, with no phone and no website, cleared on purpose (the
+  -- aria snapshots, D-194): the gate's snapshot files are shared with the
+  -- stand-in, whose row mirrors this statement field for field, and the
+  -- Details page's fields are in them. Written only when they differ, as
+  -- the table owner, since the details are the restaurant's and not a
+  -- draft.
   update public.restaurants r
   set timezone = 'America/New_York',
     hours = '{"mon":[],"tue":[{"open":"11:00","close":"14:00"},{"open":"17:00","close":"21:00"}],"wed":[{"open":"11:00","close":"21:00"}],"thu":[{"open":"11:00","close":"21:00"}],"fri":[{"open":"11:00","close":"21:00"}],"sat":[{"open":"17:00","close":"02:00"}],"sun":[{"open":"00:00","close":"00:00"}]}'::jsonb,
     prep_notes = '{shared-fryer}',
     allergen_note = null,
-    show_icons = true
+    show_icons = true,
+    name = 'CI Diner (test restaurant, not real)',
+    address = '1 Main Street',
+    city = 'Reading',
+    region = 'PA',
+    postal_code = '19601',
+    phone = null,
+    website = null
   where r.id = diner
     and (r.timezone is distinct from 'America/New_York'
       or r.hours is distinct from '{"mon":[],"tue":[{"open":"11:00","close":"14:00"},{"open":"17:00","close":"21:00"}],"wed":[{"open":"11:00","close":"21:00"}],"thu":[{"open":"11:00","close":"21:00"}],"fri":[{"open":"11:00","close":"21:00"}],"sat":[{"open":"17:00","close":"02:00"}],"sun":[{"open":"00:00","close":"00:00"}]}'::jsonb
       or r.prep_notes is distinct from '{shared-fryer}'::public.prep_note[]
       or r.allergen_note is not null
+      or r.name is distinct from 'CI Diner (test restaurant, not real)'
+      or r.address is distinct from '1 Main Street'
+      or r.city is distinct from 'Reading'
+      or r.region is distinct from 'PA'
+      or r.postal_code is distinct from '19601'
+      or r.phone is not null
+      or r.website is not null
       or not r.show_icons);
   get diagnostics placed = row_count;
   if placed > 0 then
-    raise notice 'set CI Diner''s time zone, hours, preparation sentence, and icons';
+    raise notice 'set CI Diner''s time zone, hours, preparation sentence, icons, name, and address';
   end if;
 
   -- 1. The menus. A name matches the way menus_name_key reads it, whatever

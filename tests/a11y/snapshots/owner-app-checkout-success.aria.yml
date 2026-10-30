@@ -1,0 +1,23 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+  - status
+- main:
+  - heading "Owner dashboard" [level=1]
+  - paragraph: /Signed in as \S+/
+  - paragraph: Thanks. Your free trial has started.
+  - paragraph:
+    - link "Add a restaurant"
+  - region "CI Diner (test restaurant, not real)":
+    - heading "CI Diner (test restaurant, not real)" [level=2]
+    - paragraph: /Menu link \S+/
+    - paragraph: Dinner, Drinks, and Brunch are published.
+    - paragraph:
+      - link "Edit details for CI Diner (test restaurant, not real)"
+    - paragraph:
+      - link "Edit menus for CI Diner (test restaurant, not real)"
+    - paragraph: /Your free trial has not started\. Start it to keep your menu up after the first \d+ days\./
+    - button "Start your free trial for CI Diner (test restaurant, not real)"
+  - button "Sign out"
+- contentinfo: Accessible Menu
+- alert

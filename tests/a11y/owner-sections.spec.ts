@@ -48,11 +48,11 @@ function emptyPath(): string {
 const checks = { controls: menuControls, marks: breadcrumbMarks };
 
 test.describe("a menu's page, with sections", () => {
-  pageChecks(sectionsPath, checks);
+  pageChecks(sectionsPath, { ...checks, snapshot: "menus-with-sections" });
 });
 
 test.describe("a menu's page, with no sections", () => {
-  pageChecks(emptyPath, checks);
+  pageChecks(emptyPath, { ...checks, snapshot: "menus-empty" });
 });
 
 // What the confirmation asks, which is also its name (D-119): the section

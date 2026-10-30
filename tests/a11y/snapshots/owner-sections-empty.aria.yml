@@ -1,0 +1,45 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+  - status
+- navigation "CI Diner (test restaurant, not real)":
+  - paragraph: CI Diner (test restaurant, not real)
+  - list:
+    - listitem:
+      - link "Details"
+    - listitem:
+      - link "Menus"
+- main:
+  - navigation "Breadcrumb":
+    - list:
+      - listitem:
+        - link "Menus"
+      - listitem:
+        - link "Dinner"
+      - listitem: Desserts
+  - heading "Desserts" [level=1]
+  - paragraph: Each change saves when you leave its field.
+  - text: Note
+  - textbox "Note"
+  - text: For the whole section. Diners read it once, under the section name.
+  - heading "Choice lists" [level=2]
+  - paragraph: What a diner picks or adds with any dish in this section, like a side, a dressing, or an add-on. Each list has a lead, like Choose one side, and its options.
+  - paragraph: No choice lists yet. Add the first one below.
+  - text: New choice list
+  - textbox "New choice list"
+  - text: The words diners read first, like Choose one side or Add on.
+  - button "Add choice list"
+  - status: All changes saved
+  - button "Undo" [disabled]
+  - paragraph: Dishes are the items in this section, like soup or a salad.
+  - paragraph: No dishes yet. Add the first one below.
+  - text: New dish name
+  - textbox "New dish name"
+  - button "Add dish"
+  - heading "Move this section" [level=2]
+  - text: Choose a menu Move to
+  - button "Choose a menu Move to": Choose a menu
+  - button "Move section"
+  - log
+- contentinfo: Accessible Menu
+- alert

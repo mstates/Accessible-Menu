@@ -70,11 +70,11 @@ const checks = {
 };
 
 test.describe("a section's page, with dishes", () => {
-  pageChecks(dishesPath, checks);
+  pageChecks(dishesPath, { ...checks, snapshot: "sections-with-dishes" });
 });
 
 test.describe("a section's page, with no dishes", () => {
-  pageChecks(emptyPath, checks);
+  pageChecks(emptyPath, { ...checks, snapshot: "sections-empty" });
 });
 
 listRowChecks({

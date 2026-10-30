@@ -1,0 +1,35 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+- main:
+  - heading "Accessibility statement for CI Diner (test restaurant, not real)" [level=1]
+  - paragraph: Built to WCAG 2.2 AA and tested with real screen readers on every release.
+  - heading "How it is tested" [level=2]
+  - paragraph: "/Before every release, automated checks run on every menu page: axe, a keyboard walk of every control, contrast, \\d+% zoom, a \\d+ pixel wide screen, and text spacing\\. Then we test by hand with VoiceOver on iPhone, TalkBack on Android, NVDA on Windows, and a keyboard alone\\./"
+  - heading "If something is in your way" [level=2]
+  - paragraph: If something gets in your way, tell us. Reported barriers are fixed within five business days.
+  - paragraph: A person replies within two business days.
+  - paragraph: Michael, founder, reads every barrier report.
+  - paragraph:
+    - link "Feedback about this menu"
+  - heading "What we count" [level=2]
+  - paragraph: "Totals, never people. The menu sets no cookie, loads nothing from anyone else, and keeps nothing about you. The only things we ever count are:"
+  - list:
+    - listitem: how many times a menu is read each day
+    - listitem: which languages are used
+    - listitem: how often read aloud starts
+    - listitem: which text sizes are chosen
+    - listitem: which contrast setting is chosen
+    - listitem: how often allergen lines are hidden
+  - heading "Menus" [level=2]
+  - list:
+    - listitem:
+      - link "Dinner"
+    - listitem:
+      - link "Drinks"
+    - listitem:
+      - link "Brunch"
+  - paragraph:
+    - link "Back to the menu"
+- contentinfo: Accessible Menu
+- alert

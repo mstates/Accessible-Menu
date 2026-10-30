@@ -1,18 +1,23 @@
 import { expect, test } from "@playwright/test";
 import { en } from "../../src/copy";
+import { menuPath } from "../../src/domain/menu-url";
 import {
   expectFocusResetThenSkipLink,
   expectLandedOutline,
   open,
   pageChecks,
 } from "./checks";
-import { pages } from "./pages";
+import { dinnerSnapshot, menuCode, pages } from "./pages";
 
 // Every public page, scanned signed out. The checks live in checks.ts and
-// are shared with the owner pages.
+// are shared with the owner pages. The Dinner page's snapshot follows the
+// clock (D-194).
 for (const path of pages) {
   test.describe(path, () => {
-    pageChecks(path);
+    pageChecks(
+      path,
+      path === menuPath(menuCode) ? { snapshot: dinnerSnapshot } : {},
+    );
   });
 }
 

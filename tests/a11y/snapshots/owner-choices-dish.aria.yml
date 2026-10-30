@@ -1,0 +1,115 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+  - status
+- navigation "CI Diner (test restaurant, not real)":
+  - paragraph: CI Diner (test restaurant, not real)
+  - list:
+    - listitem:
+      - link "Details"
+    - listitem:
+      - link "Menus"
+- main:
+  - navigation "Breadcrumb":
+    - list:
+      - listitem:
+        - link "Menus"
+      - listitem:
+        - link "Dinner"
+      - listitem:
+        - link "Starters"
+      - listitem:
+        - link "House salad"
+      - listitem: Choose a dressing
+  - heading "Choose a dressing" [level=1]
+  - paragraph: Each change saves when you leave its field.
+  - text: Lead
+  - combobox "Lead": Choose a dressing
+  - button "Show suggested leads"
+  - text: The words diners read first, like Choose one side or Add on.
+  - status: All changes saved
+  - button "Undo" [disabled]
+  - paragraph: Options are what a diner picks or adds, like Fries or Ranch. Each has its own allergen list.
+  - list:
+    - listitem:
+      - heading "Ranch" [level=2]
+      - text: Option name for Ranch
+      - textbox "Option name for Ranch": Ranch
+      - text: Added price for Ranch
+      - textbox "Added price for Ranch"
+      - text: /In dollars, like 1 or \d+\.\d+\. Leave blank when it costs nothing extra\. Calories for Ranch/
+      - textbox "Calories for Ranch": /\d+/
+      - text: /A number, like \d+, or a range, like \d+ to \d+\./
+      - button "Move up, Ranch" [disabled]: Move up
+      - button "Move down, Ranch": Move down
+      - button "Remove, Ranch": Remove
+      - heading "Allergens for Ranch" [level=3]
+      - paragraph: Tick each major allergen this option contains, add any others below, then check the list once it is complete.
+      - group "Major allergens":
+        - text: Major allergens
+        - checkbox "Milk" [checked]
+        - text: Milk Butter, ghee, cheese, cream, yogurt, and whey count too.
+        - checkbox "Eggs" [checked]
+        - text: Eggs Mayonnaise, aioli, meringue, and egg wash count too.
+        - checkbox "Fish"
+        - text: Fish Anchovies, fish sauce, and Worcestershire sauce count too.
+        - checkbox "Shellfish"
+        - text: Shellfish Shrimp, crab, and lobster, and also clams, mussels, oysters, and scallops.
+        - checkbox "Tree nuts"
+        - text: Tree nuts Almonds, walnuts, pecans, cashews, pistachios, and pesto count too.
+        - checkbox "Peanuts"
+        - text: Peanuts Peanut oil, peanut butter, and satay sauce count too.
+        - checkbox "Wheat"
+        - text: Wheat Flour, bread crumbs, pasta, soy sauce, and beer batter count too.
+        - checkbox "Soy"
+        - text: Soy Soy sauce, tofu, edamame, miso, and tempeh count too.
+        - checkbox "Sesame"
+        - text: Sesame Tahini, hummus, sesame oil, and seeds on buns count too.
+      - button "Add another allergen"
+      - checkbox "The allergen list is complete" [checked]
+      - text: The allergen list is complete Check this once every allergen in this option is listed above. A change to the option's name or its list clears the check.
+      - paragraph: "/Diners read: Contains milk, eggs\\. Checked by you on \\w+ \\d+, \\d+\\./"
+    - listitem:
+      - heading "Vinaigrette" [level=2]
+      - text: Option name for Vinaigrette
+      - textbox "Option name for Vinaigrette": Vinaigrette
+      - text: Added price for Vinaigrette
+      - textbox "Added price for Vinaigrette"
+      - text: /In dollars, like 1 or \d+\.\d+\. Leave blank when it costs nothing extra\. Calories for Vinaigrette/
+      - textbox "Calories for Vinaigrette": /\d+/
+      - text: /A number, like \d+, or a range, like \d+ to \d+\./
+      - button "Move up, Vinaigrette": Move up
+      - button "Move down, Vinaigrette" [disabled]: Move down
+      - button "Remove, Vinaigrette": Remove
+      - heading "Allergens for Vinaigrette" [level=3]
+      - paragraph: Tick each major allergen this option contains, add any others below, then check the list once it is complete.
+      - group "Major allergens":
+        - text: Major allergens
+        - checkbox "Milk"
+        - text: Milk Butter, ghee, cheese, cream, yogurt, and whey count too.
+        - checkbox "Eggs"
+        - text: Eggs Mayonnaise, aioli, meringue, and egg wash count too.
+        - checkbox "Fish"
+        - text: Fish Anchovies, fish sauce, and Worcestershire sauce count too.
+        - checkbox "Shellfish"
+        - text: Shellfish Shrimp, crab, and lobster, and also clams, mussels, oysters, and scallops.
+        - checkbox "Tree nuts"
+        - text: Tree nuts Almonds, walnuts, pecans, cashews, pistachios, and pesto count too.
+        - checkbox "Peanuts"
+        - text: Peanuts Peanut oil, peanut butter, and satay sauce count too.
+        - checkbox "Wheat"
+        - text: Wheat Flour, bread crumbs, pasta, soy sauce, and beer batter count too.
+        - checkbox "Soy"
+        - text: Soy Soy sauce, tofu, edamame, miso, and tempeh count too.
+        - checkbox "Sesame"
+        - text: Sesame Tahini, hummus, sesame oil, and seeds on buns count too.
+      - button "Add another allergen"
+      - checkbox "The allergen list is complete" [checked]
+      - text: The allergen list is complete Check this once every allergen in this option is listed above. A change to the option's name or its list clears the check.
+      - paragraph: "/Diners read: Checked\\. No major allergens\\. Checked by you on \\w+ \\d+, \\d+\\./"
+  - text: New option name
+  - textbox "New option name"
+  - button "Add option"
+  - log
+- contentinfo: Accessible Menu
+- alert

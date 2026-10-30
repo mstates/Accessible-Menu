@@ -96,15 +96,22 @@ const checks = {
 // The sized dish holds labels of one node, its size fields (D-193): axe
 // also leaves nothing to review on it.
 test.describe("a dish's page, priced by size", () => {
-  pageChecks(() => dishPath("sizes"), { ...checks, review: true });
+  pageChecks(() => dishPath("sizes"), {
+    ...checks,
+    review: true,
+    snapshot: "dishes-sizes",
+  });
 });
 
 test.describe("a dish's page, at one price", () => {
-  pageChecks(() => dishPath("one"), checks);
+  pageChecks(() => dishPath("one"), { ...checks, snapshot: "dishes-one" });
 });
 
 test.describe("a dish's page, at market price", () => {
-  pageChecks(() => dishPath("market"), checks);
+  pageChecks(() => dishPath("market"), {
+    ...checks,
+    snapshot: "dishes-market",
+  });
 });
 
 function savedStatus(page: Page) {

@@ -8,7 +8,6 @@ import {
   menuPath,
   statementPath,
 } from "../../src/domain/menu-url";
-import { showingAt } from "../../src/domain/schedule";
 import {
   expectControlsShown,
   expectForcedColorsKept,
@@ -21,7 +20,7 @@ import {
   setRootText,
   tabTo,
 } from "./checks";
-import { menuCode } from "./pages";
+import { dinnerSnapshot, menuCode, soupShows } from "./pages";
 
 // The diner page from real data (the diner page task), on CI Diner's
 // published Dinner and Drinks as its data file leaves them (D-126), or on
@@ -45,10 +44,6 @@ import { menuCode } from "./pages";
 
 const bare = menuPath(menuCode);
 const madeUp = menuPath(menuCode, "00000000-0000-4000-8000-000000000000");
-const zone = "America/New_York";
-const soupShows = () =>
-  showingAt({ hours: { open: "16:00", close: "21:00" } }, new Date(), zone)
-    .showing;
 
 // The second and third published menus' pages, found from the switcher
 // before the checks that need them run. A failure says what the fetch got,
@@ -114,20 +109,22 @@ async function headings(page: Page) {
   );
 }
 
+// The Dinner page's snapshot follows the clock; the others name theirs
+// (D-194).
 test.describe(bare, () => {
-  pageChecks(bare);
+  pageChecks(bare, { snapshot: dinnerSnapshot });
 });
 
 test.describe("the second menu's page", () => {
-  pageChecks(() => drinksPath);
+  pageChecks(() => drinksPath, { snapshot: "m-code-drinks" });
 });
 
 test.describe("the third menu's page", () => {
-  pageChecks(() => brunchPath);
+  pageChecks(() => brunchPath, { snapshot: "m-code-brunch" });
 });
 
 test.describe(madeUp, () => {
-  pageChecks(madeUp);
+  pageChecks(madeUp, { snapshot: "m-code-made-up" });
 });
 
 test("the headings list is exactly Accessible menu, the restaurant's name, then each section with its dishes (D-181)", async ({

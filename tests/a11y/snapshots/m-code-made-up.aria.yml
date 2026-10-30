@@ -1,0 +1,17 @@
+- link "Skip to main content"
+- main:
+  - heading "Accessible menu" [level=1]
+  - heading "CI Diner (test restaurant, not real)" [level=2]
+  - paragraph: That menu isn't available right now.
+  - paragraph:
+    - link "See CI Diner (test restaurant, not real)'s menu."
+- contentinfo:
+  - list:
+    - listitem:
+      - link "Feedback about this menu"
+    - listitem:
+      - link "Accessibility statement"
+  - paragraph:
+    - text: Menu by
+    - link "Accessible Menu"
+- alert

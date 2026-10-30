@@ -1,0 +1,8 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+- main:
+  - heading "Accessible Menu" [level=1]
+  - paragraph: A restaurant menu anyone can read.
+- contentinfo: Accessible Menu
+- alert

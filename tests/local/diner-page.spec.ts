@@ -598,7 +598,7 @@ test("a failed read is never cached: the page answers 500 once and the menu on t
 test("a known code with nothing published shows the name and one line, never a 404, and the menu returns on Publish", async ({
   page,
 }) => {
-  const name = "Stand-in Diner (test restaurant, not real)";
+  const name = "CI Diner (test restaurant, not real)";
   const { withSections } = ownerFixture();
   const drinks = await menuId("Drinks");
   const brunch = await menuId("Brunch");
@@ -672,7 +672,7 @@ test("the page carries one schema.org script with the stand-in's city and countr
     address: Record<string, string>;
     hasMenu: { name: string; hasMenuSection: { name: string }[] };
   };
-  expect(graph.name).toBe("Stand-in Diner (test restaurant, not real)");
+  expect(graph.name).toBe("CI Diner (test restaurant, not real)");
   expect(graph.address).toEqual({
     "@type": "PostalAddress",
     addressLocality: "Reading",
@@ -702,7 +702,7 @@ test("the page carries one schema.org script with the stand-in's city and countr
 test("a menu id that is not published shows the name, its line, and the way to the menu, for a minute at a time", async ({
   page,
 }) => {
-  const name = "Stand-in Diner (test restaurant, not real)";
+  const name = "CI Diner (test restaurant, not real)";
   for (const id of [
     "00000000-0000-4000-8000-000000000000",
     await menuId("Lunch"),
@@ -805,7 +805,7 @@ test("a section's lists past the constant show once under the heading with a lin
 test("with one menu published the page names it under the restaurant's name and in the title, and with two the switcher takes its place", async ({
   page,
 }) => {
-  const name = "Stand-in Diner (test restaurant, not real)";
+  const name = "CI Diner (test restaurant, not real)";
   const drinks = await menuId("Drinks");
   const brunch = await menuId("Brunch");
   await openOwner(page, restaurantMenuPath(code, drinks));
@@ -840,7 +840,7 @@ test("with one menu published the page names it under the restaurant's name and 
 test("a published menu whose every dish is off the menu says nothing is served where its sections would be, keeps the note, and shows its dishes again when one is available (D-177)", async ({
   page,
 }) => {
-  const name = "Stand-in Diner (test restaurant, not real)";
+  const name = "CI Diner (test restaurant, not real)";
   const brunch = menuPath(code, await menuId("Brunch"));
   const shakshuka = await dishId("Shakshuka");
   const line = en.menu.nothingServed;

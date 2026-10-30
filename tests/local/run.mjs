@@ -15,7 +15,16 @@
 //   npm run local -- --public-gate   then the public gate, against the same
 //                                    stand-in, whose diner pages are the
 //                                    stand-in restaurant's; PUBLIC_GATE_PROJECTS
-//                                    narrows it, as "chromium-*" does
+//                                    narrows it, as "chromium-*" does, and
+//                                    OWNER_GATE_PROJECTS the owner gate
+//   npm run local -- --public-gate --update-snapshots
+//                                    the gate run writes every aria snapshot
+//                                    file it visits again, from the page's
+//                                    raw tree through the rules in
+//                                    tests/a11y/snapshot-files.mjs, and reads
+//                                    the page against it (D-194); the
+//                                    commands, one project per gate, are in
+//                                    tests/a11y/aria-snapshot.ts
 //   npm run local -- --no-build      serve the build already in .next-local,
 //                                    which this script built
 //   npm run local -- --grep "<title>"
@@ -36,11 +45,18 @@ const args = process.argv.slice(2);
 const build = !args.includes("--no-build");
 const ownerGate = args.includes("--owner-gate");
 const publicGate = args.includes("--public-gate");
+const updateSnapshots = args.includes("--update-snapshots");
+const ownFlags = [
+  "--no-build",
+  "--owner-gate",
+  "--public-gate",
+  "--update-snapshots",
+];
 // The rest is for the local specs' Playwright run, --grep among them.
-const playwrightArgs = args.filter(
-  (arg) =>
-    arg !== "--no-build" && arg !== "--owner-gate" && arg !== "--public-gate",
-);
+const playwrightArgs = args.filter((arg) => !ownFlags.includes(arg));
+// The gate runs write their snapshot files only when asked (the helper in
+// tests/a11y/aria-snapshot.ts reads the flag); the local specs hold none.
+const gateEnv = updateSnapshots ? { A11Y_UPDATE_SNAPSHOTS: "1" } : {};
 
 const STANDIN_PORT = 54400;
 const APP_PORT = 3200;
@@ -175,7 +191,11 @@ try {
 
   if (ownerGate) {
     await fetch(`${standin}/__test/reset`);
-    const gate = await run(bin("playwright"), ["test"], {
+    const projects = process.env.OWNER_GATE_PROJECTS
+      ? [`--project=${process.env.OWNER_GATE_PROJECTS}`]
+      : [];
+    const gate = await run(bin("playwright"), ["test", ...projects], {
+      ...gateEnv,
       A11Y_SCOPE: "owner",
       A11Y_BASE_URL: app,
     });
@@ -188,6 +208,7 @@ try {
       ? [`--project=${process.env.PUBLIC_GATE_PROJECTS}`]
       : [];
     const gate = await run(bin("playwright"), ["test", ...projects], {
+      ...gateEnv,
       A11Y_BASE_URL: app,
       A11Y_MENU_CODE: "12345678",
     });

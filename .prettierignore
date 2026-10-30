@@ -9,3 +9,4 @@ playwright-report
 blob-report
 next-env.d.ts
 package-lock.json
+tests/a11y/snapshots

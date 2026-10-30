@@ -1,0 +1,87 @@
+- link "Skip to main content"
+- main:
+  - heading "Accessible menu" [level=1]
+  - heading "CI Diner (test restaurant, not real)" [level=2]
+  - navigation "Menus":
+    - list:
+      - listitem:
+        - link "Dinner"
+      - listitem:
+        - link "Drinks"
+      - listitem:
+        - link "Brunch"
+  - paragraph: Hours
+  - list:
+    - listitem: Monday, closed.
+    - listitem: /Tuesday, \d+ am to 2 pm and 5 to 9 pm\./
+    - listitem: /Wednesday to Friday, \d+ am to 9 pm\./
+    - listitem: Saturday, 5 pm to 2 am.
+    - listitem: /Sunday, open \d+ hours\./
+  - paragraph: Tell your server about any food allergy, intolerance, or celiac disease. We want to cook safely for everyone.
+  - paragraph: Fried items share a fryer with breaded foods.
+  - paragraph: Allergens confirmed for every dish.
+  - navigation "Sections":
+    - list:
+      - listitem:
+        - link "Soft drinks, 1 item"
+      - listitem:
+        - link "Kids, 3 items"
+  - region "Soft drinks":
+    - heading "Soft drinks" [level=3]
+    - list:
+      - listitem:
+        - heading "Lemonade" [level=4]
+        - paragraph: three dollars
+        - paragraph: Checked. No major allergens.
+  - region "Kids":
+    - heading "Kids" [level=3]
+    - group "Choices for every dish in Kids":
+      - paragraph: Choose one side
+      - list:
+        - listitem: /Fries, \d+ calories\. Checked\. No major allergens\./
+        - listitem: /Apple slices, \d+ calories\. Checked\. No major allergens\./
+        - listitem: /Mac and cheese, \d+ calories\. Contains milk, wheat\./
+        - listitem: Steamed broccoli. Checked. No major allergens.
+        - listitem: Mashed potatoes. Contains milk.
+        - listitem: Side salad. Checked. No major allergens.
+      - paragraph: Choose one drink
+      - list:
+        - listitem: Milk. Contains milk.
+        - listitem: Chocolate milk. Contains milk.
+        - listitem: Apple juice. Checked. No major allergens.
+        - listitem: Orange juice. Checked. No major allergens.
+        - listitem: Water. Checked. No major allergens.
+    - list:
+      - listitem:
+        - heading "Kids burger" [level=4]
+        - paragraph: seven dollars
+        - paragraph: A small beef patty on a soft bun.
+        - paragraph: Contains wheat.
+        - paragraph:
+          - link "Choices for every dish in Kids"
+      - listitem:
+        - heading "Chicken tenders" [level=4]
+        - paragraph: seven dollars
+        - paragraph: Three crispy tenders.
+        - paragraph: Contains wheat.
+        - paragraph:
+          - link "Choices for every dish in Kids"
+      - listitem:
+        - heading "Grilled cheese" [level=4]
+        - paragraph: six dollars
+        - paragraph: Melted cheddar on white bread.
+        - paragraph: Contains milk, wheat.
+        - paragraph:
+          - link "Choices for every dish in Kids"
+- contentinfo:
+  - paragraph: /\d+,\d+ calories a day is used for general nutrition advice, but calorie needs vary\./
+  - paragraph: More nutrition information is available on request.
+  - list:
+    - listitem:
+      - link "Feedback about this menu"
+    - listitem:
+      - link "Accessibility statement"
+  - paragraph:
+    - text: Menu by
+    - link "Accessible Menu"
+- alert

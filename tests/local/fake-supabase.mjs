@@ -37,11 +37,15 @@ const user = {
 // Tuesday, an overnight Saturday, an around-the-clock Sunday, and the
 // shared-fryer sentence, so the details and diner checks run on the same
 // hours here as on the preview, and icons on (D-189), so the public gate
-// reads the on state here as on CI Diner. A reset puts the details back.
+// reads the on state here as on CI Diner; and its identity as the file
+// pins it (the aria snapshots, D-194): the name, 1 Main Street, Reading,
+// PA, 19601, no phone, no website, field for field, since the gate's
+// snapshot files are shared with CI Diner and pin the Details fields. Only
+// the code is the stand-in's own. A reset puts the details back.
 const restaurantDefaults = {
   id: "11111111-1111-4111-8111-111111111111",
   code: "12345678",
-  name: "Stand-in Diner (test restaurant, not real)",
+  name: "CI Diner (test restaurant, not real)",
   address: "1 Main Street",
   city: "Reading",
   region: "PA",

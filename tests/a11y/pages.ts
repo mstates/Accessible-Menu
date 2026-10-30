@@ -4,6 +4,7 @@ import {
   menuPath,
   statementPath,
 } from "../../src/domain/menu-url";
+import { showingAt } from "../../src/domain/schedule";
 import {
   dashboardPath,
   restaurantDetailsPath,
@@ -16,6 +17,20 @@ import {
 // `npm run local -- --public-gate` names it. The second published menu's
 // page is found from the switcher when the diner spec runs.
 export const menuCode = process.env.A11Y_MENU_CODE ?? "56097672";
+
+// CI Diner's Starters soup is a special every day from 4 to 9 pm New York,
+// on the stand-in as in its data file: the diner page shows it from
+// midnight until 9 pm and drops it after, so the checks that read Dinner
+// compute whether it shows now, and the Dinner page's aria snapshot is one
+// of two files by the same clock (D-194, aria-snapshot.ts).
+export const soupShows = () =>
+  showingAt(
+    { hours: { open: "16:00", close: "21:00" } },
+    new Date(),
+    "America/New_York",
+  ).showing;
+
+export const dinnerSnapshot = () => (soupShows() ? "m-code" : "m-code-night");
 
 // Every page the accessibility gate scans signed out. A 404 fails the run;
 // nothing skips. Add a page here in the same task that builds it.

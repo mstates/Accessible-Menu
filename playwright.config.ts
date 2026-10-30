@@ -225,6 +225,22 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "retain-on-failure",
+    // The new-restaurant page preselects the browser's time zone. A UTC
+    // runner matches nothing and falls back to Eastern; this zone keeps a
+    // Mac in another zone from reading a different tree than CI reads, so
+    // the shared aria snapshots (D-194) hold on every machine.
+    timezoneId: "America/New_York",
+  },
+  // The aria snapshots (D-194): one file per page under tests/a11y/snapshots,
+  // named by the page alone, never by the project or the platform, so every
+  // engine, size, and operating system reads the same file; and the page's
+  // whole tree, deep-equal at every depth, so an added node fails as a
+  // missing one does. See tests/a11y/aria-snapshot.ts.
+  expect: {
+    toMatchAriaSnapshot: {
+      pathTemplate: "{testDir}/snapshots/{arg}{ext}",
+      children: "deep-equal",
+    },
   },
   projects: ownerScope ? ownerProjects : publicProjects,
   webServer: process.env.A11Y_BASE_URL

@@ -1,0 +1,122 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+  - status
+- navigation "CI Diner (test restaurant, not real)":
+  - paragraph: CI Diner (test restaurant, not real)
+  - list:
+    - listitem:
+      - link "Details"
+    - listitem:
+      - link "Menus"
+- main:
+  - heading "Details" [level=1]
+  - paragraph: Saved.
+  - paragraph: /Menu link \S+/
+  - paragraph:
+    - link "Back to the dashboard"
+  - paragraph: Details save when you press Save and show on the menu page right away.
+  - paragraph: Fields marked with * are required.
+  - text: Restaurant name
+  - textbox "Restaurant name": CI Diner (test restaurant, not real)
+  - group "Location":
+    - heading "Location" [level=2]
+    - text: Find the address
+    - combobox "Find the address"
+    - button "Show address matches"
+    - text: Type a few characters of the street or the restaurant's name, then choose a match from Google. The fields below fill in and stay yours to change. Or type the address by hand. Street address
+    - textbox "Street address": 1 Main Street
+    - text: City
+    - textbox "City": Reading
+    - text: Pennsylvania State
+    - button "Pennsylvania State": Pennsylvania
+    - text: ZIP code
+    - textbox "ZIP code": /\d+/
+  - group "Contact":
+    - heading "Contact" [level=2]
+    - text: Phone
+    - textbox "Phone"
+    - text: Website
+    - textbox "Website"
+    - text: We add https:// if you leave it off.
+  - group "Hours":
+    - heading "Hours" [level=2]
+    - paragraph: /Leave a day blank if you are closed that day\. Check Open \d+ hours for a day you are open around the clock\./
+    - text: Eastern Time Time zone
+    - button "Eastern Time Time zone": Eastern Time
+    - paragraph: /For example, \d+ am, 5:\d+ pm, or \d+:\d+\./
+    - group "Monday":
+      - text: Monday
+      - checkbox /Open \d+ hours on Monday/
+      - text: /Open \d+ hours on Monday Monday opens/
+      - textbox "Monday opens"
+      - text: Monday closes
+      - textbox "Monday closes"
+      - button "Add a second time for Monday"
+    - group "Tuesday":
+      - text: Tuesday
+      - checkbox /Open \d+ hours on Tuesday/
+      - text: /Open \d+ hours on Tuesday Tuesday opens/
+      - textbox "Tuesday opens": /\d+ am/
+      - text: Tuesday closes
+      - textbox "Tuesday closes": 2 pm
+      - text: Tuesday opens again
+      - textbox "Tuesday opens again": 5 pm
+      - text: Tuesday closes again
+      - textbox "Tuesday closes again": 9 pm
+      - button "Remove the second time for Tuesday"
+    - group "Wednesday":
+      - text: Wednesday
+      - checkbox /Open \d+ hours on Wednesday/
+      - text: /Open \d+ hours on Wednesday Wednesday opens/
+      - textbox "Wednesday opens": /\d+ am/
+      - text: Wednesday closes
+      - textbox "Wednesday closes": 9 pm
+      - button "Add a second time for Wednesday"
+    - group "Thursday":
+      - text: Thursday
+      - checkbox /Open \d+ hours on Thursday/
+      - text: /Open \d+ hours on Thursday Thursday opens/
+      - textbox "Thursday opens": /\d+ am/
+      - text: Thursday closes
+      - textbox "Thursday closes": 9 pm
+      - button "Add a second time for Thursday"
+    - group "Friday":
+      - text: Friday
+      - checkbox /Open \d+ hours on Friday/
+      - text: /Open \d+ hours on Friday Friday opens/
+      - textbox "Friday opens": /\d+ am/
+      - text: Friday closes
+      - textbox "Friday closes": 9 pm
+      - button "Add a second time for Friday"
+    - group "Saturday":
+      - text: Saturday
+      - checkbox /Open \d+ hours on Saturday/
+      - text: /Open \d+ hours on Saturday Saturday opens/
+      - textbox "Saturday opens": 5 pm
+      - text: Saturday closes
+      - textbox "Saturday closes": 2 am
+      - button "Add a second time for Saturday"
+    - group "Sunday":
+      - text: Sunday
+      - checkbox /Open \d+ hours on Sunday/ [checked]
+      - text: /Open \d+ hours on Sunday/
+  - group "Allergens":
+    - heading "Allergens" [level=2]
+    - text: Allergen note
+    - textbox "Allergen note"
+    - text: "Shown once near the top of your menu. Leave it blank to show: Tell your server about any food allergy, intolerance, or celiac disease. We want to cook safely for everyone."
+    - group "Preparation notes":
+      - text: Preparation notes Pick any that apply. Each one shows under your allergen note.
+      - checkbox "Fried items share a fryer with breaded foods." [checked]
+      - text: Fried items share a fryer with breaded foods.
+      - checkbox "We keep a dedicated fryer for dishes made without gluten ingredients."
+      - text: We keep a dedicated fryer for dishes made without gluten ingredients.
+      - checkbox "Dishes made without gluten ingredients are cooked in a shared kitchen. Not suitable for celiac disease."
+      - text: Dishes made without gluten ingredients are cooked in a shared kitchen. Not suitable for celiac disease.
+    - checkbox "Show icons for allergens and diets" [checked]
+    - text: Show icons for allergens and diets Small pictures appear under each allergen line and each diet line on the menu. The words stay.
+  - button "Save details"
+  - log
+- contentinfo: Accessible Menu
+- alert

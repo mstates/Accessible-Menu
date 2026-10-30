@@ -79,10 +79,12 @@ describe("CI Diner's data file (D-126)", () => {
   });
 
   // The live details the diner page reads (the diner page task, and the
-  // icons toggle, D-189): one statement on the restaurant's row, writing
-  // the five columns and nothing else, never the name, the code, or the
-  // status.
-  it("sets the time zone, hours, preparation sentence, allergen note, and icons in one statement and writes nothing else to the restaurant", () => {
+  // icons toggle, D-189) and the restaurant's identity (the aria
+  // snapshots, D-194): one statement on the restaurant's row, writing the
+  // five details and the seven identity columns, the name and the address
+  // with no phone and no website, and nothing else, never the code, the
+  // status, the plan, or the Stripe customer.
+  it("sets the time zone, hours, preparation sentence, allergen note, icons, name, and address in one statement and writes nothing else to the restaurant", () => {
     const writes = [
       ...code.matchAll(/update public\.restaurants r\n  set [^;]*;/g),
     ].map((match) => match[0]);
@@ -90,9 +92,18 @@ describe("CI Diner's data file (D-126)", () => {
     expect(writes[0]).toMatch(/where r\.id = diner/);
     expect(writes[0]).toMatch(/show_icons = true/);
     expect(writes[0]).toMatch(/or not r\.show_icons\)/);
+    for (const column of ["name", "address", "city", "region", "postal_code"]) {
+      expect(writes[0]).toMatch(new RegExp(`\\b${column} = ''`));
+      expect(writes[0]).toMatch(
+        new RegExp(`or r\\.${column} is distinct from ''`),
+      );
+    }
+    expect(writes[0]).toMatch(/phone = null/);
+    expect(writes[0]).toMatch(/website = null/);
     expect(writes[0]).not.toMatch(
-      /\b(name|code|status|plan|address|city|region|postal_code|phone|website|stripe_customer_id)\s*=/,
+      /\b(code|status|plan|stripe_customer_id|city_slug|country|enabled_languages)\s*=/,
     );
+    expect(text).toMatch(/name = 'CI Diner \(test restaurant, not real\)'/);
   });
 
   // The tags, availability, and schedule updates (migration 9, task 5)

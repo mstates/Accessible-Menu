@@ -1,0 +1,61 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+  - status
+- navigation "CI Diner (test restaurant, not real)":
+  - paragraph: CI Diner (test restaurant, not real)
+  - list:
+    - listitem:
+      - link "Details"
+    - listitem:
+      - link "Menus"
+- main:
+  - heading "Menus" [level=1]
+  - paragraph:
+    - link "Back to the dashboard"
+  - paragraph: Each change saves when you leave its field.
+  - status: All changes saved
+  - button "Undo" [disabled]
+  - list:
+    - listitem:
+      - heading "Lunch" [level=2]
+      - text: Menu name for Lunch
+      - textbox "Menu name for Lunch": Lunch
+      - link "Edit sections, Lunch":
+        - text: Edit sections
+      - button "Move up, Lunch" [disabled]: Move up
+      - button "Move down, Lunch": Move down
+      - button "Delete, Lunch": Delete
+    - listitem:
+      - heading "Dinner" [level=2]
+      - text: Menu name for Dinner
+      - textbox "Menu name for Dinner": Dinner
+      - link "Edit sections, Dinner":
+        - text: Edit sections
+      - button "Move up, Dinner": Move up
+      - button "Move down, Dinner": Move down
+      - button "Delete, Dinner": Delete
+    - listitem:
+      - heading "Drinks" [level=2]
+      - text: Menu name for Drinks
+      - textbox "Menu name for Drinks": Drinks
+      - link "Edit sections, Drinks":
+        - text: Edit sections
+      - button "Move up, Drinks": Move up
+      - button "Move down, Drinks": Move down
+      - button "Delete, Drinks": Delete
+    - listitem:
+      - heading "Brunch" [level=2]
+      - text: Menu name for Brunch
+      - textbox "Menu name for Brunch": Brunch
+      - link "Edit sections, Brunch":
+        - text: Edit sections
+      - button "Move up, Brunch": Move up
+      - button "Move down, Brunch" [disabled]: Move down
+      - button "Delete, Brunch": Delete
+  - text: New menu name
+  - textbox "New menu name"
+  - button "Add menu"
+  - log
+- contentinfo: Accessible Menu
+- alert

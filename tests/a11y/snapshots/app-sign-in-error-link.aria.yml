@@ -1,0 +1,15 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+  - status
+- main:
+  - heading "Sign in" [level=1]
+  - paragraph: Sign in with an emailed link or with Google. No password to remember.
+  - paragraph: That sign-in link did not work. It may have expired. Ask for a new one below.
+  - text: Email address
+  - textbox "Email address"
+  - button "Email me a sign-in link"
+  - paragraph: Or
+  - button "Continue with Google"
+- contentinfo: Accessible Menu
+- alert

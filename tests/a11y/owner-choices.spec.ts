@@ -90,11 +90,17 @@ const checks = (which: Which) => ({
 });
 
 test.describe("a section's choice list", () => {
-  pageChecks(() => listPath("section"), checks("section"));
+  pageChecks(() => listPath("section"), {
+    ...checks("section"),
+    snapshot: "choices-section",
+  });
 });
 
 test.describe("a dish's choice list", () => {
-  pageChecks(() => listPath("dish"), checks("dish"));
+  pageChecks(() => listPath("dish"), {
+    ...checks("dish"),
+    snapshot: "choices-dish",
+  });
 });
 
 function savedStatus(page: Page) {

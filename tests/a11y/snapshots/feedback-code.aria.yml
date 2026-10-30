@@ -1,0 +1,10 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+- main:
+  - heading "Feedback about this menu" [level=1]
+  - paragraph: The feedback form is not ready yet.
+  - paragraph:
+    - link "Back to the menu"
+- contentinfo: Accessible Menu
+- alert
