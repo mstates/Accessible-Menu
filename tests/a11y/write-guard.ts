@@ -7,7 +7,11 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 // A GET goes through. A request to the site that is not a GET is answered
 // inside the browser with the response Next gives for an action it does not
 // know, the case a save from before a deploy meets (Q-41), and is never
-// passed to the network. A request that is not a GET to any other origin is
+// passed to the network. Since Next 16.4 that response is 409 Conflict with
+// the not-found header and a plain-text body (read from the installed
+// version with one POST, D-196); before it was a 404 with the header alone.
+// The client reads the header alone, so the status is fidelity, not the
+// trigger. A request that is not a GET to any other origin is
 // stopped and fails the test: owner pages make none, since the session is
 // refreshed on the server and nothing in the app calls another origin from
 // the browser. A task that adds one names it here. The address finder's
@@ -74,9 +78,12 @@ export function guardWrites(): void {
       guard.answered.push(request.url());
       await guard.held;
       await route.fulfill({
-        status: 404,
-        headers: { "x-nextjs-action-not-found": "1" },
-        body: "",
+        status: 409,
+        headers: {
+          "x-nextjs-action-not-found": "1",
+          "content-type": "text/plain",
+        },
+        body: "Server Action unavailable.",
       });
     });
   });
