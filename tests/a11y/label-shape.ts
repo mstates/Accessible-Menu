@@ -10,8 +10,8 @@ import { expect, type Page } from "@playwright/test";
 // text node, clipped out of the flow (sr-only, not 0px), with the visible
 // short words inside the same label hidden from assistive technology
 // (src/ui/OneNode.tsx). The readings here hold that shape and its cost:
-// the visible words begin the name, or, for a Select's button, end it
-// after the button's own visible value (D-188's order), so what the eye
+// the visible words begin the name, and for a Select's button a comma and
+// the button's own visible value follow them (D-195), so what the eye
 // reads is in what is heard (2.5.3).
 
 export type Piece = { text: string; hidden: "size" | "clip" | null };
@@ -27,7 +27,8 @@ export type LabelShape = {
   // The words of each aria-hidden descendant that holds a letter or a
   // digit; a required asterisk and a drawn mark hold none.
   hiddenWords: string[];
-  // The control's own visible text, a Select button's value.
+  // The control's own visible text: a Select button's value or placeholder,
+  // nothing for an input.
   controlText: string;
 } | null;
 
@@ -81,22 +82,20 @@ export type LabelOptions = {
   // holds the whole name as its one clipped node; absent for a label of
   // plain visible words, which is one node already.
   visible?: string;
-  // Where the visible words sit in the name: first (a suffixed field or
-  // box), or last, after the control's own visible value (a Select).
-  order?: "first" | "last";
 };
 
 // A control named by one label, as the page holds it: no aria-label on
 // the control; one label element names it, pointing back at it with for
 // or wrapping it; and the label is one text node, the whole name. With
 // visible words, that node is clipped, the visible words are the one run
-// hidden from assistive technology, and the name begins with them, or
-// ends with them after the control's own words.
+// hidden from assistive technology, and the name begins with them; a
+// Select's button, which has words of its own, is named by the visible
+// words, a comma, then those words (D-195).
 export async function expectLabelShape(
   page: Page,
   id: string,
   name: string,
-  { wrapping = false, visible, order = "first" }: LabelOptions = {},
+  { wrapping = false, visible }: LabelOptions = {},
 ): Promise<void> {
   const control = page.locator(`[id="${id}"]`);
   await expect(
@@ -144,7 +143,7 @@ export async function expectLabelShape(
     shape.hiddenWords,
     `${name}: the visible words, hidden from assistive technology`,
   ).toEqual([visible]);
-  if (order === "first") {
+  if (shape.controlText === "") {
     expect(
       name.startsWith(`${visible} `),
       `${name}: begins with the visible words "${visible}"`,
@@ -152,7 +151,7 @@ export async function expectLabelShape(
   } else {
     expect(
       name,
-      `${name}: the control's own visible words, then the label's`,
-    ).toBe(`${shape.controlText} ${visible}`);
+      `${name}: the visible words, a comma, then the button's own words`,
+    ).toBe(`${visible}, ${shape.controlText}`);
   }
 }

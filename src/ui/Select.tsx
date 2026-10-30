@@ -46,20 +46,21 @@ const itemClassName =
 // field shows an asterisk after its label, hidden from assistive technology
 // because isRequired already sets aria-required.
 //
-// The name (D-188, D-193). React Aria names the button by two elements, the
+// The name (D-193, D-195). React Aria names the button by two elements, the
 // value span and then a span label, and VoiceOver on iOS folds a label into
 // its control only when that one element labels it, so the span label was
 // a stop of its own, read twice (Q-119). Here the label is a real label for
 // the button and the button's one labelling element, and its accessible
-// text is one node: the chosen value's words then the visible label,
-// "Pennsylvania State", as a single clipped text node rendered again on
-// each pick, with the visible label inside it hidden from assistive
-// technology (OneNode). So the name stays React Aria's, the value then the
-// label, and the label folds; with the value as hidden words of its own
-// before the visible label, the label was a stop before the button
-// (Q-124). The value's words stay in the button for the eye. The id is set
-// on the Select itself, so React Aria gives the button that id and the
-// label's for agrees with it from the first render (D-187).
+// text is one node: the visible label, a comma and a space, then the
+// chosen value's words, "State, Pennsylvania", as a single clipped text
+// node rendered again on each pick, with the visible label inside it
+// hidden from assistive technology (OneNode). One node is what folds, and
+// its order is ours to write: every other field reads label then value,
+// and the comma gives the pause the ear wants, so D-188's value-then-label
+// order, kept from React Aria's default, is superseded (D-195). The
+// value's words stay in the button for the eye. The id is set on the
+// Select itself, so React Aria gives the button that id and the label's
+// for agrees with it from the first render (D-187).
 export function Select({
   label,
   description,
@@ -142,9 +143,9 @@ export function Select({
   );
 }
 
-// The label's one node: the chosen value's words, or the placeholder's
-// while nothing is chosen, then the visible label, so the one label names
-// the button value then label.
+// The label's one node: the visible label, a comma and a space, then the
+// chosen value's words, or the placeholder's while nothing is chosen; the
+// label alone with neither (D-195).
 function Words({
   label,
   placeholder,
@@ -157,7 +158,7 @@ function Words({
   return (
     <OneNode
       visible={label}
-      whole={value === "" ? label : `${value} ${label}`}
+      whole={value === "" ? label : `${label}, ${value}`}
     />
   );
 }

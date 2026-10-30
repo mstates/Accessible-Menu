@@ -29,9 +29,9 @@ import { labelShape } from "./label-shape";
 // piece and wherever the label sits (D-193). So a label Chrome hands over
 // must be exactly one piece in its tree, and a label that hides its
 // visible words from assistive technology (src/ui/OneNode.tsx) must hold
-// the whole name as one clipped text node that begins with those words,
-// or, for a Select's button, is the button's own visible value then those
-// words (D-188's order).
+// the whole name as one clipped text node that begins with those words;
+// for a Select's button, a comma and the button's own visible value follow
+// them (D-195).
 
 type Reading = "name" | "label pieces" | "one node";
 
@@ -223,8 +223,8 @@ export async function expectChromeNamesAgree(page: Page): Promise<void> {
 
       // A label that hides its visible words from assistive technology is
       // the one node: the whole name as one clipped text node, beginning
-      // with those words, or, for a button, the button's own visible value
-      // then those words.
+      // with those words, and for a button followed by a comma and the
+      // button's own visible value (D-195).
       const shape = await control.evaluate(labelShape);
       if (shape && shape.hiddenWords.length > 0) {
         const visible = shape.hiddenWords[0] ?? "";
@@ -235,7 +235,7 @@ export async function expectChromeNamesAgree(page: Page): Promise<void> {
           collapse(piece.text) === chrome;
         const whole =
           role === "button"
-            ? chrome === `${shape.controlText} ${visible}`
+            ? chrome === `${visible}, ${shape.controlText}`
             : chrome.startsWith(`${visible} `);
         if (
           (shape.hiddenWords.length !== 1 || !oneClipped || !whole) &&
@@ -244,7 +244,7 @@ export async function expectChromeNamesAgree(page: Page): Promise<void> {
           problems.push(
             `${role}: its label hides "${shape.hiddenWords.join('" and "')}" from assistive technology, so it must be the one node, one clipped text node holding the name, which ${
               role === "button"
-                ? "is the button's own words then the visible words"
+                ? "is the visible words, a comma, then the button's own words"
                 : "begins with the visible words"
             }; the page holds ${JSON.stringify(shape.pieces)} and Chrome names it "${chrome}"`,
           );

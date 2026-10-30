@@ -19,8 +19,8 @@
     - textbox "Street address"
     - text: City
     - textbox "City"
-    - text: Choose a state State
-    - button "Choose a state State": Choose a state
+    - text: State, Choose a state
+    - button "State, Choose a state": Choose a state
     - text: ZIP code
     - textbox "ZIP code"
   - group "Contact":
@@ -33,8 +33,8 @@
   - group "Hours":
     - heading "Hours" [level=2]
     - paragraph: /Leave a day blank if you are closed that day\. Check Open \d+ hours for a day you are open around the clock\./
-    - text: Eastern Time Time zone
-    - button "Eastern Time Time zone": Eastern Time
+    - text: Time zone, Eastern Time
+    - button "Time zone, Eastern Time": Eastern Time
     - paragraph: /For example, \d+ am, 5:\d+ pm, or \d+:\d+\./
     - group "Monday":
       - text: Monday

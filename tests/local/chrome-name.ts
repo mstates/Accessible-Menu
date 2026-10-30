@@ -64,7 +64,7 @@ export async function chromeLabelling(
 }
 
 // A control named by one label, the shape VoiceOver on iOS folds into the
-// control (D-188, D-193): the label's shape as the page holds it
+// control (D-188, D-193, D-195): the label's shape as the page holds it
 // (expectLabelShape), then Chrome's own reading. Chrome names the control
 // from that one element, its name is the whole name, and the element is
 // exactly one piece of text in Chrome's tree, the whole name, with the

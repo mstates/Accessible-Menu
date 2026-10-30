@@ -20,10 +20,10 @@ import { chromeName, expectNamedByOneLabel } from "./chrome-name";
 // an answer with errors, since its saves are answered in the browser
 // (D-108), so they are checked here; a range that opens and closes at the
 // same time is refused for its day, and nothing is written. Then how
-// Details is named (D-188, D-193): the box and the two Selects each by one
-// label whose accessible text is one node, the shape VoiceOver on iOS
-// folds into the control, with Chrome's own reading of the name and of the
-// label's pieces, and the box's visible words, hidden from assistive
+// Details is named (D-188, D-193, D-195): the box and the two Selects each
+// by one label whose accessible text is one node, the shape VoiceOver on
+// iOS folds into the control, with Chrome's own reading of the name and of
+// the label's pieces, and the box's visible words, hidden from assistive
 // technology, still taking a tap.
 const { code } = ownerEnv();
 const strings = en.owner.restaurants;
@@ -107,10 +107,9 @@ test("on Details, the Open 24 hours box, the icons box, and the State and Time z
     wrapping: true,
     visible: strings.fields.allDay,
   });
-  const stateName = (state: string) => `${state} ${strings.fields.region}`;
+  const stateName = (state: string) => `${strings.fields.region}, ${state}`;
   const select = (field: "region" | "timezone") => ({
     visible: strings.fields[field],
-    order: "last" as const,
   });
   await expectNamedByOneLabel(
     page,
@@ -121,7 +120,7 @@ test("on Details, the Open 24 hours box, the icons box, and the State and Time z
   await expectNamedByOneLabel(
     page,
     fieldId("timezone"),
-    `${strings.timezones["America/New_York"]} ${strings.fields.timezone}`,
+    `${strings.fields.timezone}, ${strings.timezones["America/New_York"]}`,
     select("timezone"),
   );
   // The icons box (D-189): named by its wrapping label, one visible node,

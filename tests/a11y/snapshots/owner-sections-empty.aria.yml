@@ -37,8 +37,8 @@
   - textbox "New dish name"
   - button "Add dish"
   - heading "Move this section" [level=2]
-  - text: Choose a menu Move to
-  - button "Choose a menu Move to": Choose a menu
+  - text: Move to, Choose a menu
+  - button "Move to, Choose a menu": Choose a menu
   - button "Move section"
   - log
 - contentinfo: Accessible Menu

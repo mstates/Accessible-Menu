@@ -176,8 +176,8 @@
   - paragraph:
     - 'link "Next dish: Garlic bread"'
   - heading "Move this dish" [level=2]
-  - text: Choose a section Move to
-  - button "Choose a section Move to": Choose a section
+  - text: Move to, Choose a section
+  - button "Move to, Choose a section": Choose a section
   - button "Move dish"
   - log
 - contentinfo: Accessible Menu

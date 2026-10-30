@@ -324,8 +324,8 @@ test("Open 24 hours hides a day's times with focus kept, a second press brings b
 
   // The one node (D-193), in every engine: the box's wrapping label holds
   // the whole name as one clipped text node with the visible words hidden
-  // from assistive technology; each Select's label the same, its value
-  // then its visible words.
+  // from assistive technology; each Select's label the same, its visible
+  // words, a comma, then its value (D-195).
   await expectLabelShape(page, fieldId("hours.mon"), allDayName("mon"), {
     wrapping: true,
     visible: fields.allDay,
@@ -338,9 +338,8 @@ test("Open 24 hours hides a day's times with focus kept, a second press brings b
     const value = ((await button.textContent()) ?? "")
       .replace(/\s+/g, " ")
       .trim();
-    await expectLabelShape(page, fieldId(field), `${value} ${label}`, {
+    await expectLabelShape(page, fieldId(field), `${label}, ${value}`, {
       visible: label,
-      order: "last",
     });
   }
 });

@@ -1,7 +1,7 @@
 // The one node (D-193): a label's accessible text as a single text node
 // holding the whole name, beside the visible words hidden from assistive
 // technology. A field named with words beyond its visible ones, "Menu name
-// for Dinner", "Open 24 hours on Monday", "Pennsylvania State", is named by
+// for Dinner", "Open 24 hours on Monday", "State, Pennsylvania", is named by
 // one label, React Aria's, and this is what that label holds. Two hearings
 // on the iPhone (October 26 and 27, 2026) settled the rule: VoiceOver on
 // iOS folds a label into its control, a checkbox, a button, or a text
@@ -15,8 +15,8 @@
 // VoiceOver on macOS (D-140). The cost, accepted: touching the visible
 // words speaks nothing, while a tap on them still activates the control
 // through the label; and the visible words must stay the start of the
-// name, or the end of a Select's after its value (2.5.3), which the
-// readings in tests/a11y/label-shape.ts and the unit guard hold.
+// name, with a Select's comma and value after them (2.5.3, D-195), which
+// the readings in tests/a11y/label-shape.ts and the unit guard hold.
 export function OneNode({
   visible,
   whole,

@@ -18,7 +18,8 @@ import { TextField } from "../../src/ui/TextField";
 // the retired primitive is gone, the node renders as the hearing had it,
 // and each of the four primitives with a suffix renders a label of exactly
 // one text node, the whole name, with its visible words the start of that
-// name (or the end, after a Select's value), as the page renders them.
+// name (a Select's followed by a comma and its value, D-195), as the page
+// renders them.
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const thisFile = "tests/unit/one-node.test.ts";
@@ -169,25 +170,47 @@ describe("the one-node label (D-193)", () => {
     expect(html).toMatch(/<label\b[^>]*>[\s\S]*<svg[\s\S]*<\/label>/);
   });
 
-  it("a select is named by one label holding its value then its visible words as one node", () => {
+  it("a select is named by one label holding its visible words, a comma, then its value as one node; the placeholder's words the same while nothing is chosen; the label alone with neither", () => {
+    const states = [
+      { id: "PA", label: "Pennsylvania" },
+      { id: "NJ", label: "New Jersey" },
+    ];
     const html = renderToStaticMarkup(
       createElement(Select, {
         triggerId: "state",
         label: "State",
-        items: [
-          { id: "PA", label: "Pennsylvania" },
-          { id: "NJ", label: "New Jersey" },
-        ],
+        items: states,
         defaultSelectedKey: "PA",
         isRequired: true,
       }),
     );
     expectOneNode(html, {
       visible: "State",
-      whole: "Pennsylvania State",
+      whole: "State, Pennsylvania",
       required: true,
     });
     expect(html).toContain('for="state"');
+    expectOneNode(
+      renderToStaticMarkup(
+        createElement(Select, {
+          triggerId: "move",
+          label: "Move to",
+          placeholder: "Choose a section",
+          items: [{ id: "starters", label: "Starters" }],
+        }),
+      ),
+      { visible: "Move to", whole: "Move to, Choose a section" },
+    );
+    expectOneNode(
+      renderToStaticMarkup(
+        createElement(Select, {
+          triggerId: "bare",
+          label: "State",
+          items: states,
+        }),
+      ),
+      { visible: "State", whole: "State" },
+    );
   });
 
   it("the retired primitive is gone, and the four primitives take the one node and hide nothing on their own", () => {
