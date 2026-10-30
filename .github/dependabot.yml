@@ -7,6 +7,13 @@ version: 2
 updates:
   - package-ecosystem: npm
     directory: /
+    # A bump of @playwright/test (playwright-core moves with it) is read by
+    # running the two aria snapshot update commands first and reading the
+    # files' diff (the commands are in tests/a11y/aria-snapshot.ts):
+    # tests/a11y/snapshot-files.mjs imports Playwright's renderer from
+    # playwright-core/lib/coreBundle, not a public API, so a release that
+    # moves it fails at that import, and one that changes what the renderer
+    # writes shows as a diff of every file (D-194).
     schedule:
       interval: monthly
     # An update joins the first group it matches, so the order matters.

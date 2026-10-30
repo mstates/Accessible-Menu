@@ -60,12 +60,13 @@ import { snapshotFromRaw } from "./snapshot-files.mjs";
 //
 // A task that changes a page updates its snapshots in the same commit, and
 // the snapshot's diff is part of that commit's review. Against the stand-in,
-// one project per gate, writing every file the run visits again (a page
+// one project per gate, the gate alone (--gates-only skips the local specs,
+// which hold no snapshot), writing every file the run visits again (a page
 // that did not change comes out byte for byte the same, so the diff shows
 // exactly the pages that changed, and a new page's file appears):
 //
-//   PUBLIC_GATE_PROJECTS=chromium-phone-light npm run local -- --public-gate --update-snapshots
-//   OWNER_GATE_PROJECTS=owner-chromium-phone-light npm run local -- --no-build --owner-gate --update-snapshots
+//   PUBLIC_GATE_PROJECTS=chromium-phone-light npm run local -- --gates-only --public-gate --update-snapshots
+//   OWNER_GATE_PROJECTS=owner-chromium-phone-light npm run local -- --no-build --gates-only --owner-gate --update-snapshots
 //
 // A diner page change also needs the first line run once between 9 pm and
 // midnight Eastern, which writes m-code-night. Then every engine and size
@@ -77,6 +78,15 @@ import { snapshotFromRaw } from "./snapshot-files.mjs";
 // An engine or a size that disagrees with the shared file is a finding,
 // filed as a Question with both trees; the file is never split and the
 // difference never hidden behind a pattern.
+//
+// A Playwright upgrade runs the two update commands first, before anything
+// else about the bump is judged, and reads the snapshot diff:
+// snapshot-files.mjs imports Playwright's renderer and quoting from
+// playwright-core/lib/coreBundle, not a public API, so a release that moves
+// it fails at that import, and one that changes what the renderer writes
+// (its patterns, its quoting, its escaping) shows as a diff of every file,
+// to be read as the release's doing before any page is read as changed.
+// The same rule sits beside the npm block in .github/dependabot.yml.
 
 // The file's name for a path: the restaurant's code as "code", the leading
 // slash gone, every run outside letters and digits a dash, the root "home".

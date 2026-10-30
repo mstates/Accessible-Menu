@@ -17,7 +17,11 @@
 //                                    stand-in restaurant's; PUBLIC_GATE_PROJECTS
 //                                    narrows it, as "chromium-*" does, and
 //                                    OWNER_GATE_PROJECTS the owner gate
-//   npm run local -- --public-gate --update-snapshots
+//   npm run local -- --gates-only --owner-gate
+//                                    the gate alone, without the local specs
+//                                    first; needs --owner-gate, --public-gate,
+//                                    or both
+//   npm run local -- --gates-only --public-gate --update-snapshots
 //                                    the gate run writes every aria snapshot
 //                                    file it visits again, from the page's
 //                                    raw tree through the rules in
@@ -33,9 +37,15 @@
 //                                    script does not use itself goes to
 //                                    their Playwright run
 //
+// The ports are fixed, 54400 for the stand-in and 3200 for the app. When
+// one is held, this script names the holder, its PID and command line
+// through lsof and ps, and refuses to start: the holder may be another
+// run.mjs, one typed in a Terminal window, so nothing is ever killed here;
+// wait for it to finish, then run again.
+//
 // The build goes to .next-local, so .next, where next dev, npm run build,
 // and the gate's build go, never holds a build against the stand-in.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { createConnection } from "node:net";
 import { fileURLToPath } from "node:url";
@@ -46,11 +56,13 @@ const build = !args.includes("--no-build");
 const ownerGate = args.includes("--owner-gate");
 const publicGate = args.includes("--public-gate");
 const updateSnapshots = args.includes("--update-snapshots");
+const gatesOnly = args.includes("--gates-only");
 const ownFlags = [
   "--no-build",
   "--owner-gate",
   "--public-gate",
   "--update-snapshots",
+  "--gates-only",
 ];
 // The rest is for the local specs' Playwright run, --grep among them.
 const playwrightArgs = args.filter((arg) => !ownFlags.includes(arg));
@@ -92,6 +104,21 @@ function portTaken(port) {
       resolve(true);
     });
     socket.once("error", () => resolve(false));
+  });
+}
+
+// Who holds a port: each listener's PID with its command line, from lsof
+// and ps, so a refusal says what is there. Empty when neither can say.
+function holders(port) {
+  const read = (command, commandArgs) =>
+    spawnSync(command, commandArgs, { encoding: "utf8" }).stdout ?? "";
+  const pids = read("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"])
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  return pids.map((pid) => {
+    const line = read("ps", ["-o", "command=", "-p", pid]).trim();
+    return `PID ${pid}: ${line === "" ? "(no command line read)" : line}`;
   });
 }
 
@@ -152,12 +179,24 @@ let standinProcess;
 let appProcess;
 let failed = false;
 try {
+  if (gatesOnly && !ownerGate && !publicGate) {
+    throw new Error(
+      "nothing to run: --gates-only needs --owner-gate or --public-gate",
+    );
+  }
   for (const [port, what] of [
     [STANDIN_PORT, "the stand-in"],
     [APP_PORT, "the app"],
   ]) {
     if (await portTaken(port)) {
-      throw new Error(`port ${port}, for ${what}, is already in use`);
+      const who = holders(port);
+      const by =
+        who.length === 0 ? "a process lsof could not name" : who.join("; ");
+      throw new Error(
+        `port ${port}, for ${what}, is already in use by ${by}.\n` +
+          "That may be another run.mjs, one typed in a Terminal window. " +
+          "Do not kill it: wait for it to finish, then run this again.",
+      );
     }
   }
 
@@ -181,13 +220,15 @@ try {
   appProcess = start(bin("next"), ["start", "-p", String(APP_PORT)], "app");
   await until(app, "the app");
 
-  const local = await run(bin("playwright"), [
-    "test",
-    "-c",
-    "tests/local/playwright.config.ts",
-    ...playwrightArgs,
-  ]);
-  failed ||= local !== 0;
+  if (!gatesOnly) {
+    const local = await run(bin("playwright"), [
+      "test",
+      "-c",
+      "tests/local/playwright.config.ts",
+      ...playwrightArgs,
+    ]);
+    failed ||= local !== 0;
+  }
 
   if (ownerGate) {
     await fetch(`${standin}/__test/reset`);
