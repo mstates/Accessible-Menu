@@ -156,13 +156,22 @@ export const en = {
         showIconsHint:
           "Small pictures appear under each allergen line and each diet line on the menu. The words stay.",
       },
-      // The address finder above the address fields (D-83), shown only
-      // when the server holds a Places key. The hint names where the
-      // matches come from (Q-113).
+      // The address finder above the address fields (D-83, D-200), shown
+      // only when the server holds a Places key: a search field whose
+      // matches are listed under it in the page flow, each a button. The
+      // hint names where the matches come from (Q-113) and where they
+      // appear. A reply's count, or that it brought no match, is said once
+      // through the page's polite log when it lands.
       finder: {
         label: "Find the address",
-        buttonLabel: "Show address matches",
-        hint: "Type a few characters of the street or the restaurant's name, then choose a match from Google. The fields below fill in and stay yours to change. Or type the address by hand.",
+        clearLabel: "Clear the address search",
+        hint: "Type a few characters of the street or the restaurant's name. Matches from Google appear under this field. Choose one, and the fields below fill in and stay yours to change. Or type the address by hand.",
+        matchesLabel: "Address matches",
+        count: {
+          one: "1 match is listed under the field.",
+          other: "{count} matches are listed under the field.",
+        },
+        noMatches: "No matches. Type more of the address, or type it by hand.",
         filled:
           "The address fields below are filled in from your choice. Check them, and add anything missing.",
         unavailable:

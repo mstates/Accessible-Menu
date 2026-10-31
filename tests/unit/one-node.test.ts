@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { Checkbox } from "../../src/ui/CheckboxGroup";
 import { ComboBox, suggestionItems } from "../../src/ui/ComboBox";
 import { OneNode } from "../../src/ui/OneNode";
+import { SearchField } from "../../src/ui/SearchField";
 import { Select } from "../../src/ui/Select";
 import { TextField } from "../../src/ui/TextField";
 
@@ -16,10 +17,11 @@ import { TextField } from "../../src/ui/TextField";
 // holding the whole name as a single clipped text node, with the visible
 // words inside the same label hidden from assistive technology. The guard:
 // the retired primitive is gone, the node renders as the hearing had it,
-// and each of the four primitives with a suffix renders a label of exactly
-// one text node, the whole name, with its visible words the start of that
-// name (a Select's followed by a comma and its value, D-195), as the page
-// renders them.
+// each of the four primitives with a suffix renders a label of exactly one
+// text node, the whole name, with its visible words the start of that name
+// (a Select's followed by a comma and its value, D-195), as the page
+// renders them, and the search field, which takes no suffix (D-200),
+// renders its label as the visible words alone.
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const thisFile = "tests/unit/one-node.test.ts";
@@ -30,6 +32,8 @@ const primitives = [
   "src/ui/Select.tsx",
   "src/ui/CheckboxGroup.tsx",
 ];
+// A labelled primitive with no suffix hides nothing of its own either.
+const plain = ["src/ui/SearchField.tsx"];
 
 function sourceFiles(dir: string): string[] {
   let entries;
@@ -149,6 +153,7 @@ describe("the one-node label (D-193)", () => {
         items: suggestionItems(["Cup", "Bowl"]),
         value: "Cup",
         onChange: () => {},
+        onCommit: () => {},
       }),
     );
     expectOneNode(html, { visible: "Size name", whole: "Size name for Cup" });
@@ -213,7 +218,44 @@ describe("the one-node label (D-193)", () => {
     );
   });
 
-  it("the retired primitive is gone, and the four primitives take the one node and hide nothing on their own", () => {
+  it("a search field is named by one label of its visible words alone, for the input, with no name on the input and its clear button named from copy", () => {
+    const render = (value: string) =>
+      renderToStaticMarkup(
+        createElement(SearchField, {
+          id: "finder",
+          label: "Find the address",
+          clearLabel: "Clear the address search",
+          value,
+          onChange: () => {},
+        }),
+      );
+    const html = render("");
+    const label = readLabel(html);
+    expect(label.hidden, "no words hidden from assistive technology").toEqual(
+      [],
+    );
+    expect(label.text).toBe("Find the address");
+    expect(label.rest).not.toContain("sr-only");
+    expect(html).toContain('for="finder"');
+    const input = /<input\b[^>]*>/.exec(html)?.[0] ?? "";
+    expect(input).toContain('id="finder"');
+    expect(input).toContain('type="search"');
+    expect(input).toMatch(/enterkeyhint="search"/i);
+    expect(input).not.toContain("aria-label=");
+    const button = /<button\b[^>]*>/.exec(html)?.[0] ?? "";
+    expect(button).toContain('type="button"');
+    expect(button).toMatch(/tabindex="-1"/i);
+    expect(button, "the name from copy").toContain(
+      'aria-label="Clear the address search"',
+    );
+    expect(html, "React Aria's own name lost").not.toContain('"Clear search"');
+    expect(html, "empty, so the clear button hides").toContain(
+      'data-empty="true"',
+    );
+    expect(render("Penn")).not.toContain("data-empty");
+  });
+
+  it("the retired primitive is gone, the four suffixed primitives take the one node, and no labelled primitive hides text on its own", () => {
     expect(existsSync(join(root, "src/ui", `${retired}.tsx`))).toBe(false);
     expect(files.length).toBeGreaterThan(10);
     for (const file of files) {
@@ -227,6 +269,9 @@ describe("the one-node label (D-193)", () => {
       expect(source, `${file} takes the one node`).toContain(
         'from "./OneNode"',
       );
+    }
+    for (const file of [...primitives, ...plain]) {
+      const source = readFileSync(join(root, file), "utf8");
       expect(source, `${file} hides text on its own`).not.toMatch(
         /sr-only|size-0|fontSize: 0|font-size: 0/,
       );

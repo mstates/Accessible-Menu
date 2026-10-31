@@ -15,8 +15,9 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 // stopped and fails the test: owner pages make none, since the session is
 // refreshed on the server and nothing in the app calls another origin from
 // the browser. A task that adds one names it here. The address finder's
-// lookups (D-83) go to this site's own /api/address, so this guard answers
-// them with the 404 below, and no gate test types into the finder.
+// lookups (D-83, D-200) go to this site's own /api/address, so this guard
+// would answer them with the 409 below, and no gate test types into the
+// finder.
 //
 // After each test every such request must have been answered here, and
 // there must have been none at all unless the test said it expects them. So

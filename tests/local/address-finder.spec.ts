@@ -1,27 +1,29 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { en } from "../../src/copy";
+import { fill } from "../../src/copy/fill";
 import { fieldId, restaurantDetailsPath } from "../../src/features/owner/paths";
 import { expectNoAxeViolations, expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
 import { chromeName, expectNamedByOneLabel } from "./chrome-name";
 
-// The address finder on the details form (D-83, D-87) against the stand-in,
-// whose fake Places endpoints answer the route with no key and no network:
-// typing lists the matches, a pick fills the four fields and says so, an
-// edit after the pick stays, the save sends the parts, and a lookup that
-// fails says once that matches are not available. Then what the finder is
-// heard as (D-187): named once by its label, with the hint as its
-// description and the button under its own name; a second lookup silent
-// until the third character brings the new count; an open list closed, not
-// emptied, under three characters; zero said once for a text with no match;
-// and a list that never reopens on a keystroke, nor when a reply lands for
-// a list the owner closed. And a pick from a reply with several matches
-// (D-188): the match's words, then the words with "selected", no count
-// between, since the list keeps its items while it is open. The gate never
-// sees the finder on the preview until the key is set there, and never
-// types into it (write-guard.ts).
+// The address finder on the details form (D-83, D-87, D-200) against the
+// stand-in, whose fake Places endpoints answer the route with no key and
+// no network: a search field with the last reply's matches listed under it
+// in the page flow, as buttons. Typing lists the matches and says their
+// count once through the page's polite log; a pick fills the four fields,
+// says so, empties the list, keeps the match's text in the field, and
+// moves focus to Street address; an edit after the pick stays; the save
+// sends the parts; a lookup that fails says once that matches are not
+// available; Return runs the lookup at once and never saves the page;
+// Escape and the clear button empty the field and the list and stop a
+// lookup in flight; the last list stays until the next reply lands; and
+// the field is named once by its label with the hint as its description.
+// Everything said is read from the page's own log, never from React Aria's
+// announcer, which the finder no longer uses. The owner gate renders the
+// finder on the stand-in and on the preview but never types into it
+// (write-guard.ts).
 
 const { code } = ownerEnv();
 const standin = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -44,8 +46,16 @@ async function knob(path: string, params: Record<string, string> = {}) {
   return response;
 }
 
+// The stand-in's places log, cleared by the read.
 async function placesLog(): Promise<PlacesCall[]> {
   return (await (await knob("places-log")).json()) as PlacesCall[];
+}
+
+// The inputs of the suggests in the log, in order; the read clears it.
+async function suggests(): Promise<(string | null | undefined)[]> {
+  return (await placesLog())
+    .filter((each) => each.call === "suggest")
+    .map((each) => each.input);
 }
 
 async function writes(): Promise<string[]> {
@@ -56,42 +66,9 @@ async function said(page: Page, sentence: string): Promise<number> {
   return (await heard(page)).filter((each) => each === sentence).length;
 }
 
-// React Aria's own announcer, where the combobox says how many options the
-// list holds: a div put before everything in body on its first message,
-// holding two logs, assertive and polite, each message a child removed
-// after seven seconds. The div is not there until something is said, so
-// the observer watches body and keeps what lands in those logs.
-async function hearReactAria(page: Page) {
-  await page.evaluate(() => {
-    const w = window as unknown as { __announced: string[] };
-    w.__announced = [];
-    new MutationObserver((records) => {
-      for (const record of records) {
-        const log = record.target as Element;
-        if (log.getAttribute?.("role") !== "log") continue;
-        if (!log.closest('[data-live-announcer="true"]')) continue;
-        for (const node of record.addedNodes) {
-          w.__announced.push(node.textContent ?? "");
-        }
-      }
-    }).observe(document.body, { childList: true, subtree: true });
-  });
-}
-
-// Everything React Aria said, in order: the counts, and, on what React
-// Aria takes for an Apple platform, the focused option's words and the
-// pick's words with "selected".
-async function announced(page: Page): Promise<string[]> {
-  return page.evaluate(
-    () => (window as unknown as { __announced: string[] }).__announced,
-  );
-}
-
-// What React Aria said about the count of options, in order. The focus and
-// selection messages it also says on Apple platforms are left out.
-async function counted(page: Page): Promise<string[]> {
-  const all = await announced(page);
-  return all.filter((each) => /^\d+ options? available\.$/.test(each));
+// The count sentence for a reply, as the finder builds it.
+function counted(count: number): string {
+  return fill(count === 1 ? finder.count.one : finder.count.other, { count });
 }
 
 function field(page: Page, name: string) {
@@ -99,26 +76,25 @@ function field(page: Page, name: string) {
 }
 
 function finderField(page: Page) {
-  return page.getByRole("combobox", { name: finder.label, exact: true });
+  return page.getByRole("searchbox", { name: finder.label, exact: true });
 }
 
-function finderButton(page: Page) {
-  return page.getByRole("button", { name: finder.buttonLabel, exact: true });
+function matchList(page: Page) {
+  return page.getByRole("list", { name: finder.matchesLabel, exact: true });
 }
 
-function option(page: Page, text: string) {
-  return page.getByRole("option", { name: text, exact: true });
+function match(page: Page, text: string) {
+  return matchList(page).getByRole("button", { name: text, exact: true });
 }
 
-function options(page: Page) {
-  return page.getByRole("option");
+function clearButton(page: Page) {
+  return page.getByRole("button", { name: finder.clearLabel, exact: true });
 }
 
 async function openDetails(page: Page) {
   await page.goto(restaurantDetailsPath(code));
   await page.waitForLoadState("networkidle");
   await hearLog(page);
-  await hearReactAria(page);
 }
 
 test.afterEach(async () => {
@@ -126,16 +102,30 @@ test.afterEach(async () => {
   await knob("places-log");
 });
 
-test("typing in the finder lists the stand-in's matches, a pick fills the four fields and says so, an edit after the pick stays, the save sends the parts, and the next lookup gets a new session", async ({
+test("typing in the finder lists the stand-in's matches under the field and says their count, a pick by keyboard fills the four fields, says so, and moves focus to Street address, an edit after the pick stays, the save sends the parts, and the next lookup gets a new session", async ({
   page,
 }) => {
   await openDetails(page);
   const writesBefore = (await writes()).length;
   const box = finderField(page);
   await expect(box).toBeVisible();
+  await expect(box).toHaveAttribute("type", "search");
+  await expect(box).toHaveAttribute("enterkeyhint", "search");
+  await expect(
+    clearButton(page),
+    "no clear button while the field is empty",
+  ).toHaveCount(0);
+  await expect(matchList(page), "no list until a reply").toHaveCount(0);
+
   await box.fill("2 Mai");
-  await expect(option(page, mainStreet)).toBeVisible();
-  await page.keyboard.press("ArrowDown");
+  await expect(match(page, mainStreet)).toBeVisible();
+  await expect.poll(() => said(page, counted(1))).toBe(1);
+  await expect(clearButton(page)).toBeVisible();
+
+  // Tab from the field lands on the match: the clear button is out of the
+  // tab order.
+  await page.keyboard.press("Tab");
+  await expect(match(page, mainStreet)).toBeFocused();
   await page.keyboard.press("Enter");
 
   await expect(field(page, restaurants.fields.address)).toHaveValue(
@@ -150,8 +140,16 @@ test("typing in the finder lists the stand-in's matches, a pick fills the four f
     "19601-1234",
   );
   await expect.poll(() => said(page, finder.filled)).toBe(1);
+  await expect(matchList(page), "the list is gone").toHaveCount(0);
   await expect(box).toHaveValue(mainStreet);
-  await expect(box).toBeFocused();
+  await expect(
+    clearButton(page),
+    "the field keeps the match's text",
+  ).toBeVisible();
+  await expect(
+    field(page, restaurants.fields.address),
+    "focus moves to Street address",
+  ).toBeFocused();
   expect(
     (await writes()).length,
     "the finder writes nothing to the restaurant",
@@ -169,14 +167,18 @@ test("typing in the finder lists the stand-in's matches, a pick fills the four f
   const [token] = tokens;
   expect(token).toMatch(/^[0-9a-f-]{36}$/);
 
+  // The next lookup gets a new token; Escape in the field empties it and
+  // the list, with focus kept in the field.
   await box.fill("bistro");
-  await expect(option(page, bistro)).toBeVisible();
+  await expect(match(page, bistro)).toBeVisible();
   const second = await placesLog();
   expect(second.every((each) => each.call === "suggest")).toBe(true);
   expect(second[0]?.session).toMatch(/^[0-9a-f-]{36}$/);
   expect(second[0]?.session).not.toBe(token);
   await page.keyboard.press("Escape");
-  await expect(options(page)).toHaveCount(0);
+  await expect(box).toHaveValue("");
+  await expect(matchList(page)).toHaveCount(0);
+  await expect(box).toBeFocused();
 
   // What the finder filled is the owner's to change, and the save sends
   // the four parts as the form holds them.
@@ -212,22 +214,18 @@ test("a lookup that fails says once that matches are not available, lists nothin
   const box = finderField(page);
   await box.fill("2 Mai");
   await expect.poll(() => said(page, finder.unavailable)).toBe(1);
-  await expect(options(page)).toHaveCount(0);
+  await expect(matchList(page)).toHaveCount(0);
 
   // The next lookup is answered, and the sentence is not said again.
   await box.pressSequentially("n");
-  await expect(option(page, mainStreet)).toBeVisible();
+  await expect(match(page, mainStreet)).toBeVisible();
   expect(await said(page, finder.unavailable), "said once").toBe(1);
-  // While the list is open React Aria hides the rest of the page from
-  // assistive technology, so the list is closed before the field is read.
-  await page.keyboard.press("Escape");
-  await expect(options(page)).toHaveCount(0);
   await expect(field(page, restaurants.fields.address)).toHaveValue(
     "9 Hand Street",
   );
 });
 
-test("the finder is named once by its label, which is for the input, the hint describes it, the button keeps its own name, and axe finds nothing with the list closed", async ({
+test("the finder is a search field named once by its label, which is for the input, the hint describes it, the matches are a list of buttons in the Location group between the field and Street address, Return runs the lookup at once and never saves, and axe finds nothing with the matches listed", async ({
   page,
 }) => {
   await openDetails(page);
@@ -256,10 +254,64 @@ test("the finder is named once by its label, which is for the input, the hint de
     hintId,
   );
 
-  // React Aria would name the button with the field's label after its own
-  // words; the button's words are its whole name (D-187).
-  await expect(finderButton(page)).toHaveCount(1);
-  await expect(finderButton(page)).not.toHaveAttribute("aria-labelledby");
+  // No combobox and nothing of one: the field expands nothing and opens no
+  // popup.
+  await expect(page.getByRole("combobox")).toHaveCount(0);
+  await expect(box).not.toHaveAttribute("aria-expanded");
+  await expect(box).not.toHaveAttribute("aria-haspopup");
+
+  // Both of the stand-in's places hold "Reading".
+  await box.fill("Rea");
+  await expect(match(page, mainStreet)).toBeVisible();
+  await expect(match(page, bistro)).toBeVisible();
+  await expect.poll(() => said(page, counted(2))).toBe(1);
+
+  // The matches: a ul named from copy inside the Location group, after the
+  // finder and before Street address, each item one button and nothing
+  // else; no listbox, no option, nothing hidden around them.
+  const list = matchList(page);
+  await expect(
+    page
+      .getByRole("group", { name: restaurants.sections.location })
+      .getByRole("list", { name: finder.matchesLabel, exact: true }),
+  ).toHaveCount(1);
+  expect(await list.evaluate((element) => element.tagName)).toBe("UL");
+  await expect(list.locator("> li")).toHaveCount(2);
+  await expect(list.locator("> li > button")).toHaveCount(2);
+  expect(
+    await list.evaluate((element) =>
+      Array.from(element.querySelectorAll("li")).every(
+        (item) =>
+          item.children.length === 1 &&
+          item.children[0]?.tagName === "BUTTON" &&
+          item.textContent?.trim() === item.children[0].textContent?.trim(),
+      ),
+    ),
+    "each item holds one button and nothing else",
+  ).toBe(true);
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(page.getByRole("option")).toHaveCount(0);
+  const order = await list.evaluate(
+    (element, ids) => {
+      const finderInput = document.getElementById(ids.finder);
+      const street = document.getElementById(ids.street);
+      if (!finderInput || !street) return null;
+      const following = Node.DOCUMENT_POSITION_FOLLOWING;
+      return {
+        afterFinder: Boolean(
+          finderInput.compareDocumentPosition(element) & following,
+        ),
+        beforeStreet: Boolean(
+          element.compareDocumentPosition(street) & following,
+        ),
+      };
+    },
+    { finder: id, street: fieldId("address") },
+  );
+  expect(order, "after the finder, before Street address").toEqual({
+    afterFinder: true,
+    beforeStreet: true,
+  });
 
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
@@ -268,93 +320,81 @@ test("the finder is named once by its label, which is for the input, the hint de
     results.incomplete.map((each) => each.id),
     "axe has nothing to review either",
   ).toEqual([]);
-});
 
-test("a second lookup in the finder is silent: after a pick nothing opens the gone list, one and two characters say nothing, and the third brings the new count once", async ({
-  page,
-}) => {
-  await openDetails(page);
-  const box = finderField(page);
-  await box.fill("2 Mai");
-  await expect(option(page, mainStreet)).toBeVisible();
-  await expect.poll(() => counted(page)).toEqual(["1 option available."]);
-  await page.keyboard.press("ArrowDown");
+  // Return runs the lookup at once and says the count again; the form
+  // never submits, so nothing is saved and the page stays.
+  const writesBefore = (await writes()).length;
+  const url = page.url();
+  expect(await suggests()).toEqual(["Rea"]);
+  await box.focus();
   await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, finder.filled)).toBe(1);
-  await expect(options(page)).toHaveCount(0);
-  await expect(box).toBeFocused();
+  await expect.poll(() => said(page, counted(2))).toBe(2);
+  expect(page.url()).toBe(url);
+  expect(await suggests(), "the lookup went at once").toEqual(["Rea"]);
+  expect((await writes()).length, "Return saves nothing").toBe(writesBefore);
 
-  // The picked list is gone: the arrow keys and the button open nothing.
-  await page.keyboard.press("ArrowDown");
-  await expect(options(page)).toHaveCount(0);
-  await expect(box).toHaveAttribute("aria-expanded", "false");
-  await finderButton(page).click();
-  await expect(options(page)).toHaveCount(0);
-  await expect(box).toBeFocused();
-
-  await box.fill("b");
-  await box.pressSequentially("i");
-  await expect(options(page)).toHaveCount(0);
-  await box.pressSequentially("s");
-  await expect(option(page, bistro)).toBeVisible();
-  await expect
-    .poll(() => counted(page), {
-      message: "one count a reply, and nothing said between",
-    })
-    .toEqual(["1 option available.", "1 option available."]);
-  const suggests = (await placesLog())
-    .filter((each) => each.call === "suggest")
-    .map((each) => each.input);
-  expect(suggests, "no lookup under three characters").toEqual([
-    "2 Mai",
-    "bis",
+  // Under three characters Return sends nothing and saves nothing; the
+  // next character's lookup is the only one in the log after it.
+  await box.fill("Re");
+  await expect(matchList(page)).toHaveCount(0);
+  await page.keyboard.press("Enter");
+  await box.pressSequentially("a");
+  await expect(match(page, bistro)).toBeVisible();
+  expect(await suggests(), "nothing was sent for two characters").toEqual([
+    "Rea",
   ]);
+  expect(page.url()).toBe(url);
+  expect((await writes()).length).toBe(writesBefore);
 });
 
-test("under three characters the finder closes an open list and nothing opens it, typing back brings the count once, and a text with no match says zero once", async ({
+test("under three characters the list empties and nothing is said, typing back brings the count once, and a text with no match empties the list and says so once", async ({
   page,
 }) => {
   await openDetails(page);
   const box = finderField(page);
   await box.fill("2 Mai");
-  await expect(option(page, mainStreet)).toBeVisible();
+  await expect(match(page, mainStreet)).toBeVisible();
+  await expect.poll(() => said(page, counted(1))).toBe(1);
   await page.keyboard.press("Backspace");
   await page.keyboard.press("Backspace");
   await page.keyboard.press("Backspace");
   await expect(box).toHaveValue("2 ");
-  await expect(options(page)).toHaveCount(0);
-  await expect(box).toHaveAttribute("aria-expanded", "false");
-  await page.keyboard.press("ArrowDown");
-  await expect(options(page)).toHaveCount(0);
+  await expect(matchList(page)).toHaveCount(0);
+  await expect(clearButton(page), "the field still holds text").toBeVisible();
 
   await box.pressSequentially("Ma");
-  await expect(option(page, mainStreet)).toBeVisible();
+  await expect(match(page, mainStreet)).toBeVisible();
   await expect
-    .poll(() => counted(page), {
-      message: "closing under three characters says nothing",
+    .poll(() => said(page, counted(1)), {
+      message: "emptying under three characters says nothing",
     })
-    .toEqual(["1 option available.", "1 option available."]);
+    .toBe(2);
+  expect(await said(page, finder.noMatches)).toBe(0);
 
-  // A reply with no match is the one time zero is said: once, when the
-  // reply lands, and the list closes.
+  // A reply with no match empties the list and says so, once, when the
+  // reply lands.
   await box.pressSequentially("xyz");
-  await expect(options(page)).toHaveCount(0);
+  await expect(matchList(page)).toHaveCount(0);
   await expect
-    .poll(() => counted(page), { message: "zero once, for the reply" })
-    .toEqual([
-      "1 option available.",
-      "1 option available.",
-      "0 options available.",
-    ]);
+    .poll(() => said(page, finder.noMatches), {
+      message: "no matches, once, for the reply",
+    })
+    .toBe(1);
+  expect(await said(page, counted(1))).toBe(2);
+  expect(await suggests(), "no lookup under three characters").toEqual([
+    "2 Mai",
+    "2 Ma",
+    "2 Maxyz",
+  ]);
 });
 
-test("the finder's list never reopens on a keystroke: a list closed with Escape stays closed when the lookup in flight lands, and typing on opens it only through the next reply", async ({
+test("Escape and the clear button empty the field and the list with focus kept in the field, the last list stays until the next reply lands, and a lookup in flight when the field is cleared never lands", async ({
   page,
 }) => {
   await openDetails(page);
-  // Every lookup for "2 Main" waits here until the test lets it through,
-  // so a keystroke can be seen on its own, before its reply.
+  // Every lookup for "2 Main" waits here until the test lets it through.
   const held: (() => void)[] = [];
+  let continued = 0;
   await page.route("**/api/address", async (route) => {
     const body = route.request().postDataJSON() as {
       kind?: string;
@@ -364,69 +404,91 @@ test("the finder's list never reopens on a keystroke: a list closed with Escape 
       await new Promise<void>((resolve) => held.push(resolve));
     }
     await route.continue();
+    continued += 1;
   });
   const box = finderField(page);
   await box.fill("2 Mai");
-  await expect(option(page, mainStreet)).toBeVisible();
+  await expect(match(page, mainStreet)).toBeVisible();
+  await expect.poll(() => said(page, counted(1))).toBe(1);
 
+  // Escape empties the field and the list; the clear button goes with the
+  // text; focus stays in the field.
+  await page.keyboard.press("Escape");
+  await expect(box).toHaveValue("");
+  await expect(matchList(page)).toHaveCount(0);
+  await expect(clearButton(page)).toHaveCount(0);
+  await expect(box).toBeFocused();
+
+  // The clear button: shown while the field holds text, out of the tab
+  // order, named from copy and not by React Aria's own words, and a press
+  // empties the field and the list with focus kept in the field.
+  await box.fill("2 Mai");
+  await expect(match(page, mainStreet)).toBeVisible();
+  await expect.poll(() => said(page, counted(1))).toBe(2);
+  const clear = clearButton(page);
+  await expect(clear).toBeVisible();
+  await expect(clear).toHaveAttribute("tabindex", "-1");
+  await expect(clear).toHaveAccessibleName(finder.clearLabel);
+  await expect(clear).not.toHaveAttribute("aria-label", "Clear search");
+  await clear.click();
+  await expect(box).toHaveValue("");
+  await expect(matchList(page)).toHaveCount(0);
+  await expect(clear).toHaveCount(0);
+  await expect(box).toBeFocused();
+
+  // A lookup in flight: the last list stays until the reply lands (Q-112);
+  // a clear aborts the lookup, so nothing lands once it is let through.
+  await box.fill("2 Mai");
+  await expect(match(page, mainStreet)).toBeVisible();
+  await expect.poll(() => said(page, counted(1))).toBe(3);
   await box.pressSequentially("n");
   await expect.poll(() => held.length).toBe(1);
-  await page.keyboard.press("Escape");
-  await expect(options(page)).toHaveCount(0);
-  const landed = page.waitForResponse("**/api/address");
-  held.shift()?.();
-  await landed;
   await expect(
-    options(page),
-    "the reply does not reopen a list the owner closed",
-  ).toHaveCount(0);
-
-  await box.pressSequentially(" ");
-  await expect.poll(() => held.length).toBe(1);
-  await expect(options(page), "a keystroke opens nothing").toHaveCount(0);
+    match(page, mainStreet),
+    "the last list stays while the lookup is in flight",
+  ).toBeVisible();
+  const aborted = page.waitForEvent("requestfailed", (request) =>
+    request.url().endsWith("/api/address"),
+  );
+  await page.keyboard.press("Escape");
+  await aborted;
+  await expect(box).toHaveValue("");
+  await expect(matchList(page)).toHaveCount(0);
+  const before = continued;
   held.shift()?.();
-  await expect(option(page, mainStreet)).toBeVisible();
-  await expect
-    .poll(() => counted(page), { message: "one count per list opened" })
-    .toEqual(["1 option available.", "1 option available."]);
+  await expect.poll(() => continued).toBe(before + 1);
+  await expect(matchList(page), "nothing lands after the clear").toHaveCount(0);
+  expect(await said(page, counted(1)), "nothing said after the clear").toBe(3);
+  expect(
+    await suggests(),
+    "the aborted lookup never reached the stand-in",
+  ).toEqual(["2 Mai", "2 Mai", "2 Mai"]);
 });
 
-test("a pick from a reply with several matches is said with no count: the count once when the list opened, and nothing counted on the pick", async ({
+test("a reply with several matches says their count once, and a pick by pointer fills the fields, keeps the match's text, moves focus to Street address, and counts nothing", async ({
   page,
 }) => {
   await openDetails(page);
   const box = finderField(page);
-  // Both of the stand-in's places hold "Reading".
   await box.fill("Rea");
-  await expect(option(page, mainStreet)).toBeVisible();
-  await expect(option(page, bistro)).toBeVisible();
-  await expect.poll(() => counted(page)).toEqual(["2 options available."]);
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("Enter");
+  await expect(match(page, mainStreet)).toBeVisible();
+  await expect(match(page, bistro)).toBeVisible();
+  await expect.poll(() => said(page, counted(2))).toBe(1);
+  await match(page, mainStreet).click();
   await expect(field(page, restaurants.fields.address)).toHaveValue(
     "2 Main Street, Suite 2",
   );
   await expect.poll(() => said(page, finder.filled)).toBe(1);
-  await expect(options(page)).toHaveCount(0);
+  await expect(matchList(page)).toHaveCount(0);
   await expect(box).toHaveValue(mainStreet);
-  await expect(box).toBeFocused();
-
-  // The count is said once, when the list opened, and never on the pick:
-  // on 750b09b the pick's render handed the list over as nothing while it
-  // was still open, React Aria filtered the reply it still held by the
-  // picked text, and said "1 option available." before "selected". The
-  // match's words and the pick's "selected" are said on Apple platforms
-  // only, by React Aria's own test, which this Chromium does not pass, so
-  // they are read when they are there and heard on the iPhone otherwise.
+  await expect(field(page, restaurants.fields.address)).toBeFocused();
   expect(
-    await counted(page),
-    "the count was said once, when the list opened",
-  ).toEqual(["2 options available."]);
-  const all = await announced(page);
-  const words = all.indexOf(mainStreet);
-  const selected = all.indexOf(`${mainStreet}, selected`);
-  if (words !== -1 || selected !== -1) {
-    expect(words, "the match's words, when the arrow reached them").toBe(1);
-    expect(selected, "the pick, right after the words").toBe(2);
-  }
+    await said(page, counted(2)),
+    "the count once, when the reply landed",
+  ).toBe(1);
+  expect(await said(page, counted(1)), "nothing counted on the pick").toBe(0);
+  expect((await placesLog()).at(-1)).toMatchObject({
+    call: "pick",
+    id: "standin-2-main",
+  });
 });

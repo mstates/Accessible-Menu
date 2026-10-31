@@ -342,6 +342,18 @@ test("Open 24 hours hides a day's times with focus kept, a second press brings b
       visible: label,
     });
   }
+
+  // The finder (D-200): a search field named by one label of plain visible
+  // words, its matches listed in the page flow, so no combobox is left on
+  // the page.
+  const finder = page.getByRole("searchbox", {
+    name: strings.finder.label,
+    exact: true,
+  });
+  await expect(finder).toHaveCount(1);
+  await expect(finder).toHaveAttribute("id", fieldId("addressFinder"));
+  await expectLabelShape(page, fieldId("addressFinder"), strings.finder.label);
+  await expect(page.getByRole("combobox")).toHaveCount(0);
 });
 
 // D-137: the two marks that show only in a state, checked in forced colors.

@@ -21,9 +21,8 @@
   - group "Location":
     - heading "Location" [level=2]
     - text: Find the address
-    - combobox "Find the address"
-    - button "Show address matches"
-    - text: Type a few characters of the street or the restaurant's name, then choose a match from Google. The fields below fill in and stay yours to change. Or type the address by hand. Street address
+    - searchbox "Find the address"
+    - text: Type a few characters of the street or the restaurant's name. Matches from Google appear under this field. Choose one, and the fields below fill in and stay yours to change. Or type the address by hand. Street address
     - textbox "Street address": 1 Main Street
     - text: City
     - textbox "City": Reading
