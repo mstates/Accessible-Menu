@@ -1001,6 +1001,15 @@ async function body(req) {
   return text ? JSON.parse(text) : {};
 }
 
+// A function's argument on a GET rpc (D-199). PostgREST reads a query
+// parameter named after an argument as that argument, never as a filter, so
+// it leaves the parameters matches() reads.
+function argument(params, name) {
+  const value = params.get(name);
+  params.delete(name);
+  return value;
+}
+
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const denied = (res, what) =>
   send(res, 403, { code: "42501", message: `permission denied for ${what}` });
@@ -1438,9 +1447,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (
       path === "/rest/v1/rpc/restaurant_name_by_code" &&
-      req.method === "POST"
+      req.method === "GET"
     ) {
-      const { p_code } = await body(req);
+      const p_code = argument(params, "p_code");
       const found = restaurants().find((row) => row.code === p_code);
       return send(res, 200, found ? [{ name: found.name }] : []);
     }
@@ -1584,8 +1593,8 @@ const server = http.createServer(async (req, res) => {
     // what would block Publish on one, and the two presses, in the database
     // functions' shape. changed is a value comparison of the snapshot the
     // draft would make against the one published, as it is in SQL.
-    if (path === "/rest/v1/rpc/menu_publish_states" && req.method === "POST") {
-      const { p_restaurant } = await body(req);
+    if (path === "/rest/v1/rpc/menu_publish_states" && req.method === "GET") {
+      const p_restaurant = argument(params, "p_restaurant");
       const rows = menus
         .filter(
           (m) => m.restaurant_id === p_restaurant && m.deleted_at === null,
@@ -1609,8 +1618,8 @@ const server = http.createServer(async (req, res) => {
         .filter((row) => matches(row, params));
       return respondRows(req, res, rows, params);
     }
-    if (path === "/rest/v1/rpc/publish_problems" && req.method === "POST") {
-      const { p_menu } = await body(req);
+    if (path === "/rest/v1/rpc/publish_problems" && req.method === "GET") {
+      const p_menu = argument(params, "p_menu");
       const rows = publishProblems(store(), p_menu).filter((row) =>
         matches(row, params),
       );
@@ -1941,9 +1950,9 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(204);
       return res.end();
     }
-    // A read, sent as a POST: it is not counted among the writes.
-    if (path === "/rest/v1/rpc/section_dish_counts" && req.method === "POST") {
-      const { p_restaurant } = await body(req);
+    // A read: it is not counted among the writes.
+    if (path === "/rest/v1/rpc/section_dish_counts" && req.method === "GET") {
+      const p_restaurant = argument(params, "p_restaurant");
       const rows = menus
         .filter(
           (m) => m.restaurant_id === p_restaurant && m.deleted_at === null,

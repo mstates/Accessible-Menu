@@ -199,9 +199,11 @@ async function readName(
   client: SupabaseClient,
   code: string,
 ): Promise<string | null> {
-  const { data, error } = await client.rpc("restaurant_name_by_code", {
-    p_code: code,
-  });
+  const { data, error } = await client.rpc(
+    "restaurant_name_by_code",
+    { p_code: code },
+    { get: true },
+  );
   if (error || !Array.isArray(data))
     throw unreadable("rpc/restaurant_name_by_code");
   const [first] = data;

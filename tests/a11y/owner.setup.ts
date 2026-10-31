@@ -278,9 +278,11 @@ setup(
       // The publishing checks read the menu with sections as published and
       // the empty menu as not (D-82), which the data file sets through
       // publish_menu() as the owner, so the gate never presses Publish.
-      const states = await supabase.rpc("menu_publish_states", {
-        p_restaurant: restaurantId,
-      });
+      const states = await supabase.rpc(
+        "menu_publish_states",
+        { p_restaurant: restaurantId },
+        { get: true },
+      );
       if (states.error) {
         throw new Error(
           `could not read the publish states: ${states.error.message}`,

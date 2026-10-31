@@ -311,9 +311,11 @@ export async function listOwnerMenuPublishStates(
   client: SupabaseClient,
   restaurantId: string,
 ): Promise<MenuPublishState[]> {
-  const { data, error } = await client.rpc("menu_publish_states", {
-    p_restaurant: restaurantId,
-  });
+  const { data, error } = await client.rpc(
+    "menu_publish_states",
+    { p_restaurant: restaurantId },
+    { get: true },
+  );
   if (error) throw new Error("the publish states could not be read");
   const rows = shaped(z.array(stateSchema), data, "menu_publish_states");
   if (!rows) throw new Error("the publish states could not be read");
@@ -353,9 +355,11 @@ export async function listPublishBlockers(
   client: SupabaseClient,
   menuId: string,
 ): Promise<PublishBlocker[]> {
-  const { data, error } = await client.rpc("publish_problems", {
-    p_menu: menuId,
-  });
+  const { data, error } = await client.rpc(
+    "publish_problems",
+    { p_menu: menuId },
+    { get: true },
+  );
   if (error) throw new Error("the publish problems could not be read");
   const rows = shaped(z.array(blockerSchema), data, "publish_problems");
   if (!rows) throw new Error("the publish problems could not be read");

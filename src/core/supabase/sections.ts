@@ -173,7 +173,7 @@ export async function listSectionDishes(
   const { data, error, count } = await client.rpc(
     "section_dish_counts",
     { p_restaurant: restaurantId },
-    { count: "exact" },
+    { count: "exact", get: true },
   );
   if (error) throw new Error("dishes could not be counted");
   const rows = shaped(z.array(countSchema), data, "rpc/section_dish_counts");
