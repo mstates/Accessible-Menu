@@ -614,34 +614,34 @@ test("a date reads in each of its forms and comes back with its year, a day-firs
   const last = field(page, schedule.lastDay);
   await expect(first).toHaveAccessibleDescription(schedule.dateHint);
 
-  await first.fill("10/31/2027");
+  await first.fill("10/31/2099");
   await page.keyboard.press("Enter");
   await expect.poll(() => said(page, saved)).toBe(1);
-  await expect(first).toHaveValue("October 31, 2027");
+  await expect(first).toHaveValue("October 31, 2099");
   expect((await row(dishes.one.id)).special_schedule).toEqual({
-    from: "2027-10-31",
+    from: "2099-10-31",
   });
 
   const sent = await writesSoFar();
-  await last.fill("31/10/2027");
+  await last.fill("31/10/2099");
   await page.keyboard.press("Enter");
   await expect(status(page)).toHaveText(
     `${fill(schedule.notSaved.until, { dish: dishes.one.name })} ${schedule.errors.dateFormat}`,
   );
   await expect(last).toHaveAttribute("aria-invalid", "true");
-  await last.fill("Oct 30, 2027");
+  await last.fill("Oct 30, 2099");
   await page.keyboard.press("Enter");
   await expect(status(page)).toHaveText(
     `${fill(schedule.notSaved.until, { dish: dishes.one.name })} ${schedule.errors.dateOrder}`,
   );
   expect(await writesSoFar(), "the refusals are unsent").toBe(sent);
 
-  await last.fill("November 5, 2027");
+  await last.fill("November 5, 2099");
   await page.keyboard.press("Enter");
   await expect.poll(() => said(page, editing.savedAgain)).toBe(1);
-  await expect(last).toHaveValue("November 5, 2027");
+  await expect(last).toHaveValue("November 5, 2099");
   await expect(scheduleLine(page)).toHaveText(
-    reads({ from: "2027-10-31", until: "2027-11-05" }),
+    reads({ from: "2099-10-31", until: "2099-11-05" }),
   );
 
   // A date typed with no year is the next such day on or after today.
@@ -651,7 +651,7 @@ test("a date reads in each of its forms and comes back with its year, a day-firs
   await page.keyboard.press("Enter");
   await expect.poll(() => said(page, saved)).toBe(2);
   await expect(first).toHaveValue(formatDate(typed.day, "en"));
-  await first.fill("10/31/2027");
+  await first.fill("10/31/2099");
   await page.keyboard.press("Enter");
   await expect.poll(() => said(page, saved)).toBe(3);
 
@@ -681,8 +681,8 @@ test("a date reads in each of its forms and comes back with its year, a day-firs
   await expect
     .poll(() => said(page, fill(schedule.undo.back, { dish: dishes.one.name })))
     .toBe(1);
-  await expect(first).toHaveValue("October 31, 2027");
-  await expect(last).toHaveValue("November 5, 2027");
+  await expect(first).toHaveValue("October 31, 2099");
+  await expect(last).toHaveValue("November 5, 2099");
 
   // As it was.
   await first.fill("");
