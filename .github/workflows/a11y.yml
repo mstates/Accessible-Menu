@@ -37,7 +37,7 @@ jobs:
     # The runner's own user, so the workspace and HOME belong to the user
     # the browsers run as.
     container:
-      image: mcr.microsoft.com/playwright@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27 # v1.63.0-noble
+      image: mcr.microsoft.com/playwright@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f # v1.64.1-noble
       options: --user 1001
     timeout-minutes: 20
     strategy:
@@ -106,7 +106,7 @@ jobs:
     if: needs.on-main.outputs.on_main == 'true'
     runs-on: ubuntu-26.04
     container:
-      image: mcr.microsoft.com/playwright@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27 # v1.63.0-noble
+      image: mcr.microsoft.com/playwright@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f # v1.64.1-noble
       options: --user 1001
     timeout-minutes: 20
     strategy:
