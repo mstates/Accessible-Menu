@@ -7,6 +7,9 @@
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+# npm run hear: what VoiceOver said, and Guidepup's image with the plist backup
+/tests/local/hear-logs/
+/tests/local/hear-cache/
 
 # next.js
 /.next/

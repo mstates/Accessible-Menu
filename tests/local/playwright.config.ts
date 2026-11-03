@@ -32,6 +32,25 @@ if (
 
 const quiet = { trace: "off", video: "off" } as const;
 
+// npm run hear (D-194 (b), D-202): VoiceOver on macOS driven through
+// Guidepup, in tests/local/voiceover.hear.ts, which the local project's
+// .spec.ts never takes. These projects exist only when run.mjs --hear sets
+// A11Y_HEAR, so npm run local and CI never see them. A screen reader needs a
+// window it can reach, so the browser is headed; one VoiceOver runs at a
+// time, which workers: 1 already holds; and VoiceOver can take half a minute
+// to start, so a test gets five minutes. Chromium is the reading that
+// matters, since the readings were first heard in Chrome on macOS (D-140);
+// Playwright's WebKit is not Safari, so voiceover-webkit, run only by name,
+// is a hint.
+const hear = process.env.A11Y_HEAR === "1";
+const voiceover = (name: string, device: keyof typeof devices) => ({
+  name,
+  testMatch: /voiceover\.hear\.ts$/,
+  dependencies: ["owner-setup"],
+  timeout: 300_000,
+  use: { ...devices[device], storageState: ownerStatePath, headless: false },
+});
+
 export default defineConfig({
   testDir: ".",
   fullyParallel: false,
@@ -58,5 +77,11 @@ export default defineConfig({
       dependencies: ["owner-setup"],
       use: { ...devices["Desktop Chrome"], storageState: ownerStatePath },
     },
+    ...(hear
+      ? [
+          voiceover("voiceover-chromium", "Desktop Chrome"),
+          voiceover("voiceover-webkit", "Desktop Safari"),
+        ]
+      : []),
   ],
 });

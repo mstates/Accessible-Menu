@@ -36,6 +36,44 @@
 //                                    title matches: every argument this
 //                                    script does not use itself goes to
 //                                    their Playwright run
+//   npm run hear                     macOS only: build, serve, and run
+//                                    tests/local/voiceover.hear.ts in the
+//                                    voiceover-chromium project, VoiceOver
+//                                    driven through Guidepup (D-194 (b),
+//                                    D-202); no local specs, no gate
+//   npm run hear -- --project=voiceover-webkit
+//                                    the same in Playwright's WebKit, a hint
+//                                    only, since it is not Safari; --grep and
+//                                    --no-build pass through as above
+//   npm run hear -- --restore        only the clean up below, for a run that
+//                                    was killed before it could clean up
+//
+// npm run hear runs on this Mac whenever React Aria, Next, or Playwright
+// moves, beside the npm run local rule above (D-142, D-202), never in CI.
+// Before a run, turn on Visual Studio Code's two switches in System
+// Settings, Privacy & Security, one under Accessibility and one under Full
+// Disk Access, quit and reopen Visual Studio Code for Full Disk Access to
+// take, and turn VoiceOver off; turn both switches off again after. Without
+// Full Disk Access, macOS refuses VoiceOver's preferences folder as another
+// app's data, with no prompt and no switch of its own. The first run in each
+// browser raises macOS's Automation prompt, Visual Studio Code asking to
+// control Google Chrome for Testing or Playwright (WebKit): allow it, once
+// each; while it stands, Guidepup's activation of the browser times out and
+// that test fails, and the next test activates. Keep your hands off the Mac
+// while it runs: the keys go to the front window. Each test writes what
+// VoiceOver said to tests/local/hear-logs, which git ignores.
+//
+// What it changes on the Mac (D-203): Guidepup starts VoiceOver on its own
+// portable preferences, from a disk image this script fetches into
+// tests/local/hear-cache and checks against the sha256 in the installed
+// Guidepup's manifest; @guidepup/setup is never run. Guidepup adds its
+// identifier to VoiceOver's local plist and makes four symlinks beside it,
+// and never takes them out. This script detaches Guidepup's image before and
+// after every run, copies the local plist into hear-cache once before
+// Guidepup first changes it, and after every run puts back exactly what
+// Guidepup added, printing what it put back and what it left alone
+// (tests/local/hear-mac.mjs). It refuses to start while VoiceOver is on, and
+// a run that ends with VoiceOver still on fails and says so.
 //
 // The ports are fixed, 54400 for the stand-in and 3200 for the app. When
 // one is held, this script names the holder, its PID and command line
@@ -57,12 +95,17 @@ const ownerGate = args.includes("--owner-gate");
 const publicGate = args.includes("--public-gate");
 const updateSnapshots = args.includes("--update-snapshots");
 const gatesOnly = args.includes("--gates-only");
+const restore = args.includes("--restore");
+// npm run hear passes --hear itself, so --restore arrives beside it and wins.
+const hear = args.includes("--hear") && !restore;
 const ownFlags = [
   "--no-build",
   "--owner-gate",
   "--public-gate",
   "--update-snapshots",
   "--gates-only",
+  "--hear",
+  "--restore",
 ];
 // The rest is for the local specs' Playwright run, --grep among them.
 const playwrightArgs = args.filter((arg) => !ownFlags.includes(arg));
@@ -175,10 +218,57 @@ function run(command, commandArgs, extra = {}) {
   });
 }
 
+// The Mac side of npm run hear, loaded only for it, so npm run local reads
+// nothing of Guidepup's.
+const mac =
+  hear || restore
+    ? await import(new URL("./hear-mac.mjs", import.meta.url).href)
+    : null;
+// The clean up after Guidepup, run after every hear run and by --restore.
+// It waits up to ten seconds for VoiceOver to be off, since Guidepup's stop
+// may still be quitting it when Playwright exits; with VoiceOver still on
+// after that, it says so and leaves everything as it is.
+async function cleanUp() {
+  for (let check = 0; check < 20 && mac.voiceOverRunning(); check += 1) {
+    await new Promise((done) => setTimeout(done, 500));
+  }
+  if (mac.voiceOverRunning()) {
+    console.error(
+      "VoiceOver is still on after the run: turn it off with Command-F5, then run npm run hear -- --restore.",
+    );
+    return false;
+  }
+  mac.detach();
+  return mac.putBack();
+}
+
+if (hear || restore) {
+  const refusal =
+    process.platform !== "darwin"
+      ? "npm run hear runs only on macOS, where VoiceOver is."
+      : ownerGate || publicGate || gatesOnly
+        ? "npm run hear runs on its own, without the gates."
+        : mac.voiceOverRunning()
+          ? "VoiceOver is on: turn it off with Command-F5, then run this again."
+          : null;
+  if (refusal) {
+    console.error(refusal);
+    process.exit(1);
+  }
+}
+if (restore) {
+  process.exit((await cleanUp()) ? 0 : 1);
+}
+
 let standinProcess;
 let appProcess;
 let failed = false;
 try {
+  if (hear) {
+    await mac.image();
+    mac.detach();
+    mac.backupOnce();
+  }
   if (gatesOnly && !ownerGate && !publicGate) {
     throw new Error(
       "nothing to run: --gates-only needs --owner-gate or --public-gate",
@@ -220,7 +310,26 @@ try {
   appProcess = start(bin("next"), ["start", "-p", String(APP_PORT)], "app");
   await until(app, "the app");
 
-  if (!gatesOnly) {
+  if (hear) {
+    // A fresh stand-in, as the gates get, then the readings alone, in
+    // Chromium unless a project is named.
+    await fetch(`${standin}/__test/reset`);
+    const named = playwrightArgs.some((arg) => arg.startsWith("--project"));
+    const voice = await run(
+      bin("playwright"),
+      [
+        "test",
+        "-c",
+        "tests/local/playwright.config.ts",
+        ...(named ? [] : ["--project=voiceover-chromium"]),
+        ...playwrightArgs,
+      ],
+      { A11Y_HEAR: "1", GUIDEPUP_SCREEN_READERS_PATH: mac.cachePath },
+    );
+    failed ||= voice !== 0;
+  }
+
+  if (!gatesOnly && !hear) {
     const local = await run(bin("playwright"), [
       "test",
       "-c",
@@ -261,6 +370,11 @@ try {
 } finally {
   stop(appProcess);
   stop(standinProcess);
+  if (hear) {
+    // Failed or not, and even when the run never reached the readings, so a
+    // detach before it is matched by one after.
+    failed = !(await cleanUp()) || failed;
+  }
 }
 
 console.log(
