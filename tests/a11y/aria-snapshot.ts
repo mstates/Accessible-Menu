@@ -33,7 +33,10 @@ import { snapshotFromRaw } from "./snapshot-files.mjs";
 // [data-live-announcer], whose contents come and go. Both are hidden from
 // assistive technology for the length of the read and restored before the
 // next step, the way the walk and the controls check already mark what
-// they read.
+// they read. Next's route announcer carries the same mark so that React
+// Aria's hide passes it over (D-201), and it stays in the read: it is empty
+// at every read the gate makes, the "- alert" that ends every file, so the
+// files keep pinning that it is there.
 //
 // One file per page, named from the page, under tests/a11y/snapshots:
 // snapshotName() derives it from a path, with the restaurant's code read as
@@ -120,7 +123,8 @@ export async function expectAriaSnapshot(
     for (const element of document.querySelectorAll("*")) {
       const ours =
         element.tagName.toLowerCase().startsWith("vercel-") ||
-        element.hasAttribute("data-live-announcer");
+        (element.hasAttribute("data-live-announcer") &&
+          element.localName !== "next-route-announcer");
       if (!ours || element.hasAttribute("aria-hidden")) continue;
       element.setAttribute("aria-hidden", "true");
       element.setAttribute(mark, "");
