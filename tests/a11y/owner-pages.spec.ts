@@ -145,6 +145,17 @@ function messagesNaming(page: Page, id: string) {
   return page.locator(`[data-live-announcer] [aria-labelledby~="${id}"]`);
 }
 
+// A message the Button renamed when it unmounted (D-207, Q-135): named by
+// the words the Save button's name had while pending, its text, a comma and
+// a space, then the pending label, and naming no element by id.
+const saveWords = `${strings.details.submit}, ${en.ui.pending}`;
+
+function renamedMessages(page: Page) {
+  return page.locator(
+    `[data-live-announcer] [aria-label=${JSON.stringify(saveWords)}]:not([aria-labelledby])`,
+  );
+}
+
 async function expectNoNamelessMessages(page: Page) {
   const dangling = await page.evaluate(
     () =>
@@ -716,108 +727,119 @@ test("at the largest phone text size, the pending state does not scroll sideways
   await page.waitForURL(`**${details}`);
 });
 
-// D-109 pins React Aria's announcer markup, which the Button relies on.
-// While the save is held, React Aria's pending message must name the Save
-// button by its id; once the error page replaces the form, the Button has
-// taken that message out. If React Aria ever announces another way, the
-// first expectation fails on the upgrade; nothing here can pass because a
-// selector found nothing.
-test("a save the server cannot take lands on the focused error page, and its pending message goes with the button", async ({
-  page,
-}) => {
-  const writes = expectWrites(page, { hold: true });
-  const id = await pressSave(page);
-  await expect(
-    messagesNaming(page, id),
-    "React Aria's pending message names the Save button",
-  ).toHaveCount(1);
+// D-109 and D-207 pin React Aria's announcer markup, which the Button relies
+// on. While the save is held, React Aria's pending message must name the
+// Save button by its id; once the error page replaces the form, the Button
+// has renamed that message with the words the button's name had, and the
+// node is still there. If React Aria ever announces another way, the first
+// expectation fails on the upgrade; nothing here can pass because a
+// selector found nothing. Tagged so WebKit runs it at the phone size too,
+// the iPhone's engine.
+test(
+  "a save the server cannot take lands on the focused error page, and its pending message is renamed with the button's words",
+  { tag: "@pending-message" },
+  async ({ page }) => {
+    const writes = expectWrites(page, { hold: true });
+    const id = await pressSave(page);
+    await expect(
+      messagesNaming(page, id),
+      "React Aria's pending message names the Save button",
+    ).toHaveCount(1);
 
-  writes.release();
-  await expect(
-    errorHeading(page),
-    "focus moves to the error heading",
-  ).toBeFocused();
-  await expect(
-    messagesNaming(page, id),
-    "the message went with the button",
-  ).toHaveCount(0);
-  expect(
-    writes.answered.length,
-    "the save was sent and answered in the browser",
-  ).toBeGreaterThan(0);
-  expect(
-    writes.attempted,
-    "every request that was not a GET was answered by the route",
-  ).toEqual(writes.answered);
-  await expect(page).toHaveTitle(pageTitle(en, en.owner.error.title));
-  await expect(statusRegion(page)).toHaveText("");
-  await expectNoMissingIds(page);
-  await expectNoAxeViolations(page);
-  await expectKeyboardWalk(page);
-  await expectNoNamelessMessages(page);
-  await expectNoHorizontalScroll(page);
+    writes.release();
+    await expect(
+      errorHeading(page),
+      "focus moves to the error heading",
+    ).toBeFocused();
+    await expect(
+      renamedMessages(page),
+      "the message keeps the gone button's words",
+    ).toHaveCount(1);
+    expect(
+      writes.answered.length,
+      "the save was sent and answered in the browser",
+    ).toBeGreaterThan(0);
+    expect(
+      writes.attempted,
+      "every request that was not a GET was answered by the route",
+    ).toEqual(writes.answered);
+    await expect(page).toHaveTitle(pageTitle(en, en.owner.error.title));
+    await expect(statusRegion(page)).toHaveText("");
+    await expectNoMissingIds(page);
+    await expectNoAxeViolations(page);
+    await expectKeyboardWalk(page);
+    await expectNoNamelessMessages(page);
+    await expectNoHorizontalScroll(page);
 
-  await page.getByRole("button", { name: en.owner.error.reload }).click();
-  await page.waitForURL(`**${details}`);
-  await expect(page.locator("main h1")).not.toHaveText(en.owner.error.heading);
-  const name = await restaurantName(page);
-  await expect(page).toHaveTitle(pageTitle(en, strings.details.title, name));
-});
+    await page.getByRole("button", { name: en.owner.error.reload }).click();
+    await page.waitForURL(`**${details}`);
+    await expect(page.locator("main h1")).not.toHaveText(
+      en.owner.error.heading,
+    );
+    const name = await restaurantName(page);
+    await expect(page).toHaveTitle(pageTitle(en, strings.details.title, name));
+  },
+);
 
 // The late path. Answered at once, the form can be gone before React Aria
 // adds its first message on the page, which it holds back for 100 ms; the
-// Button watches for that message and takes it out too. The recorder proves
-// React Aria still announced the Save button, so this cannot pass on an
-// empty log.
-test("answered at once, a late pending message is taken out as well", async ({
-  page,
-}) => {
-  await page.addInitScript(recordAnnouncerMessages);
-  const writes = expectWrites(page);
-  const id = await pressSave(page);
-  await expect(
-    errorHeading(page),
-    "focus moves to the error heading",
-  ).toBeFocused();
-  await expect
-    .poll(
-      () =>
-        page.evaluate(
-          (button) =>
-            (
-              window as unknown as {
-                __messages: { names: string[]; existed: boolean }[];
-              }
-            ).__messages.filter((m) => m.names.includes(button)).length,
-          id,
-        ),
-      { message: "React Aria announced the pending Save button" },
-    )
-    .toBeGreaterThan(0);
-  const late = await page.evaluate(
-    (button) =>
-      (
-        window as unknown as {
-          __messages: { names: string[]; existed: boolean }[];
-        }
-      ).__messages.some((m) => m.names.includes(button) && !m.existed),
-    id,
-  );
-  test.info().annotations.push({
-    type: "pending message",
-    description: late
-      ? "added after the Save button was gone"
-      : "added while the Save button existed",
-  });
-  await expect(messagesNaming(page, id)).toHaveCount(0);
-  await expectNoNamelessMessages(page);
-  await expectNoMissingIds(page);
-  await expectNoAxeViolations(page);
-  expect(
-    writes.attempted,
-    "every request that was not a GET was answered by the route",
-  ).toEqual(writes.answered);
-});
+// Button watches for that message and renames it too, with the words read
+// while the button was still on the page. The recorder proves React Aria
+// still announced the Save button, so this cannot pass on an empty log.
+test(
+  "answered at once, a late pending message is renamed as well",
+  { tag: "@pending-message" },
+  async ({ page }) => {
+    await page.addInitScript(recordAnnouncerMessages);
+    const writes = expectWrites(page);
+    const id = await pressSave(page);
+    await expect(
+      errorHeading(page),
+      "focus moves to the error heading",
+    ).toBeFocused();
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            (button) =>
+              (
+                window as unknown as {
+                  __messages: { names: string[]; existed: boolean }[];
+                }
+              ).__messages.filter((m) => m.names.includes(button)).length,
+            id,
+          ),
+        { message: "React Aria announced the pending Save button" },
+      )
+      .toBeGreaterThan(0);
+    const late = await page.evaluate(
+      (button) =>
+        (
+          window as unknown as {
+            __messages: { names: string[]; existed: boolean }[];
+          }
+        ).__messages.some((m) => m.names.includes(button) && !m.existed),
+      id,
+    );
+    test.info().annotations.push({
+      type: "pending message",
+      description: late
+        ? "added after the Save button was gone"
+        : "added while the Save button existed",
+    });
+    await expect(
+      renamedMessages(page),
+      "the message keeps the gone button's words",
+    ).toHaveCount(1);
+    await expectNoNamelessMessages(page);
+    await expectNoMissingIds(page);
+    await expectNoAxeViolations(page);
+    expect(
+      writes.attempted,
+      "every request that was not a GET was answered by the route",
+    ).toEqual(writes.answered);
+  },
+);
 
 test("at the largest phone text size, the error page does not scroll sideways", async ({
   page,
