@@ -14,14 +14,21 @@ import { PageLink } from "@/ui/PageLink";
 // deploy is one such error (Q-41): the server no longer knows the action,
 // and only a full load brings the new one, so Reload reloads the document
 // rather than retrying inside the old page. Focus moves to the heading on
-// arrival, which is what announces it. The React title is the document
-// title while this shows, and goes when it does.
+// arrival, which is what announces it. React hoists the title below into
+// head beside the one Next wrote for the page, and WebKit on the preview
+// (CI's Linux build, at 8db9610, twice) kept reading the page's title where
+// Chromium and macOS WebKit read this one, so the effect that focuses the
+// heading sets document.title to the same words as well (Q-137, D-208). The
+// page only leaves by reload or by navigation, each of which writes its own
+// title, so nothing restores this one.
 export default function OwnerError() {
   const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
-    heading.current?.focus();
-  }, []);
   const strings = en.owner.error;
+  const title = pageTitle(en, strings.title);
+  useEffect(() => {
+    document.title = title;
+    heading.current?.focus();
+  }, [title]);
 
   return (
     <PageFrame
@@ -29,7 +36,7 @@ export default function OwnerError() {
       homeHref="/"
       loadingLabel={en.ui.loading}
     >
-      <title>{pageTitle(en, strings.title)}</title>
+      <title>{title}</title>
       <h1 ref={heading} tabIndex={-1} className="text-3xl font-bold">
         {strings.heading}
       </h1>
