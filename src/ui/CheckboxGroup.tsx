@@ -1,14 +1,15 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
-  Checkbox as AriaCheckbox,
+  CheckboxButton,
+  CheckboxField,
   CheckboxGroup as AriaCheckboxGroup,
   FieldError,
   Label,
   Text,
+  type CheckboxFieldProps,
   type CheckboxGroupProps,
-  type CheckboxProps,
 } from "react-aria-components";
 import { fieldDescription } from "./field-description";
 import { OneNode } from "./OneNode";
@@ -50,10 +51,10 @@ export function CheckboxGroup({
   );
 }
 
-type ItemProps = Omit<CheckboxProps, "children"> & {
+type ItemProps = Omit<CheckboxFieldProps, "children"> & {
   // A hint shown under the box's words and tied to it, like a major
-  // allergen's hint (D-148). It sits beside the label, not inside it, or its
-  // words would join the box's name.
+  // allergen's hint (D-148). It sits in the field's description slot,
+  // outside the label, or its words would join the box's name.
   description?: string;
 } & (
     | { children: ReactNode; labelSuffix?: undefined }
@@ -63,22 +64,25 @@ type ItemProps = Omit<CheckboxProps, "children"> & {
     | { children: string; labelSuffix: string }
   );
 
-// One checkbox, in a group or on its own, like a day's Open 24 hours box.
-// The checked state is a check mark drawn in currentColor, not a fill alone,
-// so it survives forced colors. React Aria's Checkbox has no description
-// slot, so a hint is tied by id to a span that is always on the page while
-// the box is, joined with any ids the caller ties as well; nothing here
-// comes or goes, so the tie never points at a gone id (D-147). The box is
-// named by the label React Aria wraps it in, never by aria-label, which
-// left that label a stop of its own on iOS, read twice (D-188); with a
-// suffix that label holds the whole name as one node, the visible words
-// hidden from assistive technology beside it, since a label of two pieces
-// never folds on iOS (D-193, OneNode says why).
+// One checkbox, in a group or on its own, like a day's Open 24 hours box,
+// in the shape React Aria documents: CheckboxField around CheckboxButton,
+// the label that wraps the box, with a hint in the field's description
+// slot (D-206). React Aria ties the hint by id and joins any ids the caller
+// ties as well, the hint's first. It finds the hint through a ref on the
+// slotted Text, so the tie would follow a hint that came or went; every
+// caller's hint is fixed for as long as its box exists. The field draws no
+// box of its own (contents), so the label and the hint sit in the
+// caller's layout as two items, as they did before the field. The checked
+// state is a check mark drawn in currentColor, not a fill alone, so it
+// survives forced colors. The box is named by the label React Aria wraps
+// it in, never by aria-label, which left that label a stop of its own on
+// iOS, read twice (D-188); with a suffix that label holds the whole name as
+// one node, the visible words hidden from assistive technology beside it,
+// since a label of two pieces never folds on iOS (D-193, OneNode says why).
 export function Checkbox({
   children,
   labelSuffix,
   description,
-  "aria-describedby": describedByToo,
   ...props
 }: ItemProps) {
   const words =
@@ -87,18 +91,9 @@ export function Checkbox({
     ) : (
       <OneNode visible={children} whole={`${children} ${labelSuffix}`} />
     );
-  const hintId = useId();
-  const describedBy =
-    [description ? hintId : null, describedByToo ?? null]
-      .filter((id) => id !== null)
-      .join(" ") || undefined;
   return (
-    <>
-      <AriaCheckbox
-        {...props}
-        aria-describedby={describedBy}
-        className="group flex items-start gap-3 py-1"
-      >
+    <CheckboxField {...props} className="contents">
+      <CheckboxButton className="group flex items-start gap-3 py-1">
         <span
           aria-hidden="true"
           className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded border-2 border-border bg-background group-data-[focus-visible]:outline-3 group-data-[focus-visible]:outline-offset-2 group-data-[focus-visible]:outline-focus"
@@ -116,12 +111,15 @@ export function Checkbox({
           </svg>
         </span>
         {words}
-      </AriaCheckbox>
+      </CheckboxButton>
       {description ? (
-        <span id={hintId} className="-mt-1 pl-9 text-sm text-foreground-muted">
+        <Text
+          slot="description"
+          className="-mt-1 pl-9 text-sm text-foreground-muted"
+        >
           {description}
-        </span>
+        </Text>
       ) : null}
-    </>
+    </CheckboxField>
   );
 }
