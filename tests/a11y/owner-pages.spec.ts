@@ -36,6 +36,7 @@ import {
   newControls,
 } from "./owner-controls";
 import { ownerEnv, ownerFixture } from "./owner-env";
+import { stopClock } from "./owner-lists";
 import { ownerPages, restaurantName } from "./pages";
 import { expectWrites, guardWrites } from "./write-guard";
 
@@ -145,6 +146,12 @@ function messagesNaming(page: Page, id: string) {
   return page.locator(`[data-live-announcer] [aria-labelledby~="${id}"]`);
 }
 
+// React Aria's assertive log, made by the first announce call on a page
+// before that call holds its message back for 100 ms. Next's route
+// announcer carries the mark too (D-201), but it is no div and has no log.
+const reactAriaAssertiveLog =
+  'div[data-live-announcer] > [role="log"][aria-live="assertive"]';
+
 // A message the Button renamed when it unmounted (D-207, Q-135): named by
 // the words the Save button's name had while pending, its text, a comma and
 // a space, then the pending label, and naming no element by id.
@@ -173,12 +180,14 @@ async function expectNoNamelessMessages(page: Page) {
   ).toBe(0);
 }
 
-// Records every message React Aria adds to its log, and whether each element
-// it names existed when it was added. Runs in the page as an init script.
+type RecordedMessage = { names: string[]; existed: boolean; at: number };
+
+// Records every message React Aria adds to its log, whether each element it
+// names existed when it was added, and when it was added by the page's own
+// clock, which a test on Playwright's stopped clock moves itself. Runs in
+// the page as an init script.
 function recordAnnouncerMessages() {
-  const w = window as unknown as {
-    __messages: { names: string[]; existed: boolean }[];
-  };
+  const w = window as unknown as { __messages: RecordedMessage[] };
   w.__messages = [];
   new MutationObserver((records) => {
     for (const record of records) {
@@ -192,10 +201,22 @@ function recordAnnouncerMessages() {
         w.__messages.push({
           names,
           existed: names.every((name) => document.getElementById(name)),
+          at: Date.now(),
         });
       }
     }
   }).observe(document, { subtree: true, childList: true });
+}
+
+// The recorded messages that name an element by id.
+function recordedMessages(page: Page, id: string): Promise<RecordedMessage[]> {
+  return page.evaluate(
+    (button) =>
+      (
+        window as unknown as { __messages: RecordedMessage[] }
+      ).__messages.filter((m) => m.names.includes(button)),
+    id,
+  );
 }
 
 test("every owner page carries an empty status region", async ({ page }) => {
@@ -369,7 +390,8 @@ test("Open 24 hours hides a day's times with focus kept, a second press brings b
 
 // D-137: the two marks that show only in a state, checked in forced colors.
 // Monday's Open 24 hours box shows its check mark, and Save details, held by
-// the write guard, shows its spinner; each is drawn in a system color with
+// the write guard, shows its spinner once the save has run a second
+// (D-209); each is drawn in a system color with
 // 3:1 against what is behind it. Space on the box sends nothing (D-127). The
 // save is answered inside the browser, on a fresh form, so the error page
 // follows and nothing reaches the server.
@@ -727,14 +749,129 @@ test("at the largest phone text size, the pending state does not scroll sideways
   await page.waitForURL(`**${details}`);
 });
 
+// D-209: a button shows and says pending only once its save has run a
+// second, the rule a pending link follows before it says Loading (D-106),
+// and a second press inside that second sends nothing. On Playwright's
+// stopped clock, as the first focus's tests run (D-136), so the second is
+// the test's own and no runner's speed can move it. React Aria's first
+// message on a page is held 100 ms after the announce call by React Aria
+// itself, on the same clock, so the message lands at 1,100 ms; data-pending,
+// the spinner, and the announce call come at 1,000. The guard's count alone
+// cannot tell a blocked second press from a sent one: useActionState queues
+// a second action behind the held one and drops the queue when the first
+// fails. The page's count of submits is the proof.
+test(
+  "a held save shows and says nothing for its first second, takes no second press inside it, and announces once at the second",
+  { tag: "@pending-message" },
+  async ({ page }) => {
+    await page.clock.install();
+    await page.addInitScript(recordAnnouncerMessages);
+    await page.addInitScript(() => {
+      const w = window as unknown as { __submits: number };
+      w.__submits = 0;
+      document.addEventListener("submit", () => w.__submits++, true);
+    });
+    const submits = () =>
+      page.evaluate(
+        () => (window as unknown as { __submits: number }).__submits,
+      );
+    const writes = expectWrites(page, { hold: true });
+    await open(page, details);
+    const save = page.getByRole("button", { name: strings.details.submit });
+    const id = await save.getAttribute("id");
+    if (!id) throw new Error("the Save button has no id");
+    const spinner = save.locator('[role="progressbar"]');
+
+    await stopClock(page);
+    const pressedAt = await page.evaluate(() => Date.now());
+    await save.click();
+    await expect(save, "the press is held at once").toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await expect(save, "a held save submits nothing more").toHaveAttribute(
+      "type",
+      "button",
+    );
+    await expect(save).toBeFocused();
+    expect(await submits(), "the press submitted the form").toBe(1);
+
+    await page.clock.runFor(900);
+    await expect(
+      messagesNaming(page, id),
+      "no pending message inside the second",
+    ).toHaveCount(0);
+    expect(
+      await recordedMessages(page, id),
+      "React Aria announced nothing inside the second",
+    ).toEqual([]);
+    await expect(
+      save,
+      "no pending state inside the second",
+    ).not.toHaveAttribute("data-pending");
+    await expect(spinner, "no spinner inside the second").toHaveCount(0);
+
+    await page.keyboard.press("Enter");
+    await save.click({ force: true });
+    expect(
+      await submits(),
+      "a second press inside the second submits nothing",
+    ).toBe(1);
+
+    await page.clock.runFor(100);
+    await expect(save, "pending shows at the second").toHaveAttribute(
+      "data-pending",
+      "true",
+    );
+    await expect(
+      spinner.locator('svg[aria-hidden="true"]'),
+      "the spinner arrives at the second",
+    ).toBeVisible();
+    await expect(
+      page.locator(reactAriaAssertiveLog),
+      "React Aria's announce call has run at the second",
+    ).toHaveCount(1);
+
+    await page.clock.runFor(100);
+    await expect(
+      messagesNaming(page, id),
+      "the pending message lands once",
+    ).toHaveCount(1);
+    const recorded = await recordedMessages(page, id);
+    expect(recorded, "one message names the Save button").toHaveLength(1);
+    expect(
+      (recorded[0]?.at ?? 0) - pressedAt,
+      "the message lands at the second, not before",
+    ).toBeGreaterThanOrEqual(1000);
+    expect(await submits(), "still one submit").toBe(1);
+
+    await page.clock.resume();
+    writes.release();
+    await expect(
+      errorHeading(page),
+      "focus moves to the error heading",
+    ).toBeFocused();
+    await expect(
+      renamedMessages(page),
+      "the message keeps the gone button's words",
+    ).toHaveCount(1);
+    await expectNoNamelessMessages(page);
+    expect(writes.attempted, "one save was sent").toHaveLength(1);
+    expect(
+      writes.attempted,
+      "every request that was not a GET was answered by the route",
+    ).toEqual(writes.answered);
+  },
+);
+
 // D-109 and D-207 pin React Aria's announcer markup, which the Button relies
 // on. While the save is held, React Aria's pending message must name the
-// Save button by its id; once the error page replaces the form, the Button
-// has renamed that message with the words the button's name had, and the
-// node is still there. If React Aria ever announces another way, the first
-// expectation fails on the upgrade; nothing here can pass because a
-// selector found nothing. Tagged so WebKit runs it at the phone size too,
-// the iPhone's engine.
+// Save button by its id, once the save has run a second (D-209); once the
+// error page replaces the form, the Button has renamed that message with
+// the words the button's name had, and the node is still there. If React
+// Aria ever announces another way, the first expectation fails on the
+// upgrade; nothing here can pass because a selector found nothing. Tagged
+// so WebKit runs it at the phone size too, the iPhone's engine.
 test(
   "a save the server cannot take lands on the focused error page, and its pending message is renamed with the button's words",
   { tag: "@pending-message" },
@@ -744,7 +881,7 @@ test(
     await expect(
       messagesNaming(page, id),
       "React Aria's pending message names the Save button",
-    ).toHaveCount(1);
+    ).toHaveCount(1, { timeout: 10_000 });
 
     writes.release();
     await expect(
@@ -781,52 +918,51 @@ test(
   },
 );
 
-// The late path. Answered at once, the form can be gone before React Aria
-// adds its first message on the page, which it holds back for 100 ms; the
-// Button watches for that message and renames it too, with the words read
-// while the button was still on the page. The recorder proves React Aria
-// still announced the Save button, so this cannot pass on an empty log.
+// The late path. React Aria holds back its first message on a page for
+// 100 ms after the announce call; a form gone inside that hold leaves the
+// message to be added after its button, and the Button watches for it and
+// renames it too, with the words read while the button was still on the
+// page. On Playwright's stopped clock, so the late path is taken every
+// time: the clock runs to the second (D-209), where pending shows and React
+// Aria's announce call runs, then stands while the answer is let go and the
+// error page replaces the form, then runs out the hold. The recorder proves
+// React Aria announced the Save button after it was gone, so this cannot
+// pass on an empty log.
 test(
   "answered at once, a late pending message is renamed as well",
   { tag: "@pending-message" },
   async ({ page }) => {
+    await page.clock.install();
     await page.addInitScript(recordAnnouncerMessages);
-    const writes = expectWrites(page);
-    const id = await pressSave(page);
+    const writes = expectWrites(page, { hold: true });
+    await open(page, details);
+    const save = page.getByRole("button", { name: strings.details.submit });
+    const id = await save.getAttribute("id");
+    if (!id) throw new Error("the Save button has no id");
+
+    await stopClock(page);
+    await save.click();
+    await expect(save).toHaveAttribute("aria-disabled", "true");
+    await page.clock.runFor(1000);
+    await expect(save).toHaveAttribute("data-pending", "true");
+    await expect(
+      page.locator(reactAriaAssertiveLog),
+      "React Aria's announce call has run, its message held",
+    ).toHaveCount(1);
+    await expect(messagesNaming(page, id)).toHaveCount(0);
+
+    writes.release();
     await expect(
       errorHeading(page),
       "focus moves to the error heading",
     ).toBeFocused();
-    await expect
-      .poll(
-        () =>
-          page.evaluate(
-            (button) =>
-              (
-                window as unknown as {
-                  __messages: { names: string[]; existed: boolean }[];
-                }
-              ).__messages.filter((m) => m.names.includes(button)).length,
-            id,
-          ),
-        { message: "React Aria announced the pending Save button" },
-      )
-      .toBeGreaterThan(0);
-    const late = await page.evaluate(
-      (button) =>
-        (
-          window as unknown as {
-            __messages: { names: string[]; existed: boolean }[];
-          }
-        ).__messages.some((m) => m.names.includes(button) && !m.existed),
-      id,
-    );
-    test.info().annotations.push({
-      type: "pending message",
-      description: late
-        ? "added after the Save button was gone"
-        : "added while the Save button existed",
-    });
+    await page.clock.runFor(100);
+    await page.clock.resume();
+    const recorded = await recordedMessages(page, id);
+    expect(
+      recorded.map((m) => m.existed),
+      "React Aria announced the Save button once, after it was gone",
+    ).toEqual([false]);
     await expect(
       renamedMessages(page),
       "the message keeps the gone button's words",

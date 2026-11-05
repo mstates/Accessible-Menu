@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useRef } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import {
   Button as AriaButton,
   ProgressBar,
@@ -15,6 +15,13 @@ type PendingProps =
 
 type Props = Omit<ButtonProps, "isPending"> & PendingProps;
 
+// One second, the rule a pending link follows before it says Loading
+// (D-106, DELAY_MS in NavigationStatus.tsx); the two are one rule (D-209).
+// Under about a second a wait does not break the flow, and most saves land
+// inside it, so nothing is shown or said for them and the result's focus is
+// the only thing read.
+const PENDING_DELAY_MS = 1000;
+
 // React Aria announces pending through its live announcer, by reference: it
 // appends <div role="img" aria-labelledby={button id}> to an assertive log
 // inside [data-live-announcer], removes it after seven seconds, and holds
@@ -27,6 +34,16 @@ type Props = Omit<ButtonProps, "isPending"> & PendingProps;
 // it does for a button that stays (D-207).
 const MESSAGE_LIFETIME_MS = 7000;
 const LATE_MESSAGE_WINDOW_MS = 1000;
+
+// The class list. A caller's own aria-disabled (Move up on the first row)
+// dims the button and takes the system's disabled color in forced colors,
+// where opacity alone is not a signal. The aria-disabled this component sets
+// while a press is held inside the second is not styled: the dim comes with
+// the spinner at the second (D-209).
+const BASE_CLASS =
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded border-2 border-transparent bg-foreground px-3.5 py-1.5 font-semibold text-background data-[pressed]:opacity-90 data-[disabled]:opacity-60 data-[pending]:opacity-60";
+const CALLER_DISABLED_CLASS =
+  "opacity-60 forced-colors:border-[color:GrayText] forced-colors:text-[color:GrayText]";
 
 // Names each message that points at the button by the words the button's
 // name had, and drops the pointer, so the message keeps its words once the
@@ -55,6 +72,17 @@ function renameMessagesNaming(id: string, words: string): void {
 // there, and the border is what gets painted as the button's edge. Padding
 // gives back the border's two pixels, so the rendered size is unchanged.
 //
+// Pending is shown only once it has lasted a second (D-209). The caller's
+// isPending holds the press at once: from its first render the button is
+// aria-disabled, a submit button becomes type="button" so a second press
+// submits nothing, and the press handlers are left out, which is what React
+// Aria does while pending. React Aria is handed isPending only after a
+// second of it, so the spinner, the dim, data-pending, and React Aria's
+// assertive announcement arrive together, and a save that lands inside the
+// second says nothing but its result, read on focus. The second is timed in
+// a layout effect, from the commit that holds the press, and cleared at
+// once when pending ends or the button unmounts.
+//
 // A button that cannot act right now but must keep focus, a Move up on the
 // first row, takes aria-disabled instead of isDisabled: it stays in the tab
 // order and React Aria still fires the press, so its handler returns early
@@ -64,28 +92,39 @@ function renameMessagesNaming(id: string, words: string): void {
 // A button that unmounts while its pending message is still in React Aria's
 // log (a save remounting the form, the error page replacing it) would leave
 // an image named by nothing. So the button carries a known id, and on
-// unmount within seven seconds of a pending change it renames the messages
-// naming that id with the words its name had while pending: its text, a
-// comma and a space, then the pending label ("Save details, in progress"),
-// or the pending label alone when it has no text. The words are read in a
-// layout effect's cleanup, which React runs before it takes the button's
-// node off the page. A one-second watch renames the late first message
-// React Aria may still add the same way.
+// unmount within seven seconds of a change in the pending state React Aria
+// was handed, it renames the messages naming that id with the words its
+// name had while pending: its text, a comma and a space, then the pending
+// label ("Save details, in progress"), or the pending label alone when it
+// has no text. The words are read in a layout effect's cleanup, which React
+// runs before it takes the button's node off the page. A one-second watch
+// renames the late first message React Aria may still add the same way.
 export function Button({ children, pendingLabel, id, ...props }: Props) {
   const fallbackId = useId();
   const buttonId = id ?? fallbackId;
-  const isPending = props.isPending ?? false;
-  const wasPending = useRef(false);
-  const pendingChangedAt = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (isPending === wasPending.current) return;
-    wasPending.current = isPending;
-    pendingChangedAt.current = Date.now();
-  }, [isPending]);
+  const pending = props.isPending ?? false;
+  const [lasted, setLasted] = useState(false);
+  const shown = pending && lasted;
+  const wasShown = useRef(false);
+  const shownChangedAt = useRef<number | null>(null);
 
   useLayoutEffect(() => {
-    const changedAt = pendingChangedAt;
+    if (!pending) return;
+    const timer = window.setTimeout(() => setLasted(true), PENDING_DELAY_MS);
+    return () => {
+      window.clearTimeout(timer);
+      setLasted(false);
+    };
+  }, [pending]);
+
+  useEffect(() => {
+    if (shown === wasShown.current) return;
+    wasShown.current = shown;
+    shownChangedAt.current = Date.now();
+  }, [shown]);
+
+  useLayoutEffect(() => {
+    const changedAt = shownChangedAt;
     return () => {
       const at = changedAt.current;
       if (at === null || Date.now() - at > MESSAGE_LIFETIME_MS) return;
@@ -102,11 +141,29 @@ export function Button({ children, pendingLabel, id, ...props }: Props) {
     };
   }, [buttonId, pendingLabel]);
 
+  const disabledByCaller =
+    props["aria-disabled"] === true || props["aria-disabled"] === "true";
+  const held = pending
+    ? {
+        onPress: undefined,
+        onPressStart: undefined,
+        onPressEnd: undefined,
+        onPressChange: undefined,
+        onPressUp: undefined,
+      }
+    : {};
+
   return (
     <AriaButton
       {...props}
+      {...held}
+      isPending={shown}
+      aria-disabled={pending ? true : props["aria-disabled"]}
+      type={pending && props.type === "submit" ? "button" : props.type}
       id={buttonId}
-      className="inline-flex min-h-11 items-center justify-center gap-2 rounded border-2 border-transparent bg-foreground px-3.5 py-1.5 font-semibold text-background data-[pressed]:opacity-90 data-[disabled]:opacity-60 data-[pending]:opacity-60 aria-disabled:opacity-60 forced-colors:aria-disabled:not-data-[pending]:border-[color:GrayText] forced-colors:aria-disabled:not-data-[pending]:text-[color:GrayText]"
+      className={
+        disabledByCaller ? `${BASE_CLASS} ${CALLER_DISABLED_CLASS}` : BASE_CLASS
+      }
     >
       {(renderProps) => (
         <>

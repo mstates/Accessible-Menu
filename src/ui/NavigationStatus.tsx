@@ -21,7 +21,8 @@ import {
 
 // Under about a second a wait does not break the flow, and the page usually
 // arrives before the word could be spoken. Past a second, silence starts to
-// sound like nothing happened.
+// sound like nothing happened. A pending button follows the same rule, with
+// PENDING_DELAY_MS in Button.tsx: the two are one rule (D-209).
 const DELAY_MS = 1000;
 
 type Status = {
