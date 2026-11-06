@@ -81,8 +81,9 @@ export default async function RestaurantDetailsPage({
         {strings.details.heading}
       </h1>
       {/* The success banner at the top of the body content, under the
-          heading (D-211, Primer): read with the page that the save loads,
-          never focused. */}
+          heading (D-211, Primer), as GitHub's flash on the load the save
+          brings (D-214): its words an alert, its dismiss button focused by
+          the served autofocus. */}
       {saved ? (
         <SavedBanner
           code={restaurant.code}

@@ -12,10 +12,26 @@ import { Button as AriaButton } from "react-aria-components";
 // from assistive technology: the heading says the type, so the icon and its
 // color are never the only sign of it.
 //
-// No live region and no focus on arrival. A banner that comes with the page
-// is read with it, and found by its landmark and its heading; one added to
-// a page already open is the caller's to announce or to focus (Primer: a
-// success is announced, an essential banner takes focus).
+// By default no live region and no focus on arrival. A banner that comes
+// with the page is read with it, and found by its landmark and its heading;
+// one added to a page already open is the caller's to announce or to focus
+// (Primer: a success is announced, an essential banner takes focus).
+//
+// A flash (D-214) is the banner a page load brings as the result of what
+// was just done, built as GitHub's own flash: its words sit in an alert
+// with aria-atomic, and its dismiss button carries autofocus in the served
+// HTML, so the browser focuses the button as the page loads, before React
+// hydrates, and a screen reader says the words with it. This departs from
+// Primer's Banner accessibility page, which announces a success and never
+// focuses it (departure 6 on the UX reference page): after the load, iOS
+// left that unheard, VoiceOver stopping on the skip link, and GitHub's
+// flash is the shape heard to work on iOS and on macOS. React writes
+// autoFocus as the attribute on the server and never on the client, and
+// calls focus() only for a button it creates, never for one it hydrates,
+// so the browser's focus at the load is the only one. React Aria's own
+// autoFocus puts nothing in the HTML and focuses in an effect after
+// hydration, so the attribute goes on through the Button's render
+// function, which hands the element React Aria's props and its ref.
 //
 // The dismiss button, when there is one, is named by the caller's words, is
 // 44 pixels square (Primer asks 24 or more), and on press moves focus to
@@ -37,9 +53,15 @@ type Props = {
   title: string;
   children: ReactNode;
   dismiss?: { label: string; focusId: string };
+  // A flash (D-214): the words in an alert, the dismiss button focused by
+  // the served autofocus. Only for a banner the page load brings, never for
+  // one added to a page already open.
+  flash?: boolean;
   className?: string;
   ref?: Ref<HTMLElement>;
 };
+
+const wordsClass = "min-w-0 grow basis-32";
 
 const icons: Record<Kind, ReactNode> = {
   // A check in a circle, Primer's success mark.
@@ -56,6 +78,7 @@ export function Banner({
   title,
   children,
   dismiss,
+  flash = false,
   className,
   ref,
 }: Props) {
@@ -83,7 +106,13 @@ export function Banner({
       >
         {icons[kind]}
       </svg>
-      <p className="min-w-0 grow basis-32">{children}</p>
+      {flash ? (
+        <div role="alert" aria-atomic="true" className={wordsClass}>
+          {children}
+        </div>
+      ) : (
+        <p className={wordsClass}>{children}</p>
+      )}
       {dismiss ? (
         <AriaButton
           aria-label={dismiss.label}
@@ -91,6 +120,14 @@ export function Banner({
             document.getElementById(dismiss.focusId)?.focus();
             setShown(false);
           }}
+          render={
+            flash
+              ? ({ ref: buttonRef, ...buttonProps }) => (
+                  // eslint-disable-next-line jsx-a11y/no-autofocus -- D-214: the served autofocus is the flash's point
+                  <button ref={buttonRef} {...buttonProps} autoFocus />
+                )
+              : undefined
+          }
           className="-m-2 ms-auto inline-flex size-11 shrink-0 items-center justify-center rounded border-2 border-transparent data-[hovered]:bg-background data-[pressed]:bg-background"
         >
           <svg

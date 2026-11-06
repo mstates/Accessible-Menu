@@ -87,4 +87,10 @@ test("a Details page restored from the back-forward cache after a full load else
     en.owner.restaurants.details.heading,
   );
   await expect(banner, "restored, the banner hides itself").toHaveCount(0);
+  // The served autofocus left focus on the dismiss button when the page was
+  // left (D-214), so the restore sends it to the heading, never to the body.
+  await expect(
+    page.locator("main h1"),
+    "restored, focus that was in the banner goes to the heading",
+  ).toBeFocused();
 });

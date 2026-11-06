@@ -13,7 +13,7 @@
   - heading "Details" [level=1]
   - region "Success":
     - heading "Success" [level=2]
-    - paragraph: Details saved.
+    - alert: Details saved.
     - button "Dismiss this message"
   - paragraph: /Menu link \S+/
   - paragraph:

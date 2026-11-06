@@ -525,24 +525,55 @@ test("the icons box sits under Allergens with its hint, follows the restaurant's
 
 // D-211, Q-141: a Details save that lands loads the page again, and the
 // success banner arrives with it at the top of the body content, under the
-// heading, the container's full width. Nothing of ours moves focus: the
-// page's own reading carries the banner (Primer: a success banner is
-// non-essential, announced and not focused). Its icon sits beside the words
-// and is hidden from assistive technology; its dismiss button is named and
-// at least 24 by 24, and sends focus to the heading. The cookie is cleared
-// as the banner shows, so a reload and Back show none. The checks wait for
-// Details' own heading before counting banners, so a page still on its way
-// cannot pass for one without a banner.
-test("after a save, Details arrives with the success banner under its heading and nothing focused, dismiss sends focus to the heading, and a reload or Back shows no banner (D-211)", async ({
+// heading, the container's full width. D-214 refines it to GitHub's flash:
+// the dismiss button carries autofocus in the served HTML, so the browser
+// focuses it as the page loads, before React hydrates, and the words sit in
+// one alert with aria-atomic. Its icon sits beside the words and is hidden
+// from assistive technology; its dismiss button is named and at least 24 by
+// 24, and sends focus to the heading, by Enter and by pointer, through
+// React Aria's press on the button our render function draws. The cookie is
+// cleared as the banner shows, so a reload and Back show no banner, no
+// alert, and nothing focused. Alerts are counted inside main, since Next's
+// route announcer is an alert of its own under the body. The checks wait
+// for Details' own heading before counting banners, so a page still on its
+// way cannot pass for one without a banner.
+test("after a save, Details arrives with the success banner under its heading, its dismiss button focused by the served autofocus and its words in one atomic alert; dismiss by Enter or pointer sends focus to the heading, and a reload or Back shows no banner, no alert, and nothing focused (D-211, D-214)", async ({
   page,
 }) => {
   const heading = page.locator("main h1");
+  const alerts = page.locator("main").getByRole("alert");
   await setSavedNotice(page, code);
-  await open(page, details);
+  const response = await open(page, details);
+  const served = await response.text();
   await page.waitForLoadState("networkidle");
   expect(new URL(page.url()).search, "nothing in the address").toBe("");
   const banner = savedBanner(page);
   await expect(banner).toHaveCount(1);
+  const dismiss = banner.getByRole("button", {
+    name: en.ui.banner.dismiss,
+    exact: true,
+  });
+  const servedDismiss = [...served.matchAll(/<button\b[^>]*>/g)]
+    .map(([tag]) => tag)
+    .filter((tag) => tag.includes(`aria-label="${en.ui.banner.dismiss}"`));
+  expect(
+    servedDismiss,
+    "the served HTML holds one dismiss button",
+  ).toHaveLength(1);
+  expect(
+    servedDismiss[0],
+    "the served dismiss button carries autofocus, so the browser focuses it as the page loads",
+  ).toMatch(/\sautofocus(=""|\s|>)/);
+  await expect(
+    dismiss,
+    "the dismiss button has focus on arrival",
+  ).toBeFocused();
+  await expectLandedOutline(page);
+  const alert = banner.getByRole("alert");
+  await expect(alert, "the words are in one alert").toHaveCount(1);
+  await expect(alert).toHaveAttribute("aria-atomic", "true");
+  await expect(alert).toHaveText(strings.details.saved);
+  await expect(alerts, "the banner's is the one alert in main").toHaveCount(1);
   await expect(
     banner.getByRole("heading", {
       level: 2,
@@ -557,7 +588,7 @@ test("after a save, Details arrives with the success banner under its heading an
     const main = section.closest("main");
     const h1 = main?.querySelector("h1");
     const icon = section.querySelector(":scope > svg");
-    const words = section.querySelector(":scope > p");
+    const words = section.querySelector(':scope > [role="alert"]');
     const padding = main ? getComputedStyle(main) : null;
     const inner = main
       ? main.clientWidth -
@@ -584,10 +615,6 @@ test("after a save, Details arrives with the success banner under its heading an
   expect(shape.iconHidden, "the icon is hidden from assistive tech").toBe(true);
   expect(shape.iconShown, "the icon shows").toBe(true);
   expect(shape.iconBeforeWords, "the icon sits before the words").toBe(true);
-  const dismiss = banner.getByRole("button", {
-    name: en.ui.banner.dismiss,
-    exact: true,
-  });
   const box = await dismiss.boundingBox();
   expect(
     box?.width ?? 0,
@@ -597,16 +624,13 @@ test("after a save, Details arrives with the success banner under its heading an
     box?.height ?? 0,
     "the dismiss button is 24 high or more",
   ).toBeGreaterThanOrEqual(24);
-  expect(
-    await page.evaluate(() => document.activeElement === document.body),
-    "nothing of ours moved focus on arrival",
-  ).toBe(true);
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page, { review: true });
 
   await tabTo(page, dismiss);
   await page.keyboard.press("Enter");
   await expect(banner, "dismissed, the banner goes").toHaveCount(0);
+  await expect(alerts, "dismissed, no alert is left").toHaveCount(0);
   await expect(heading, "focus moves to the heading").toBeFocused();
   await expectLandedOutline(page);
 
@@ -614,6 +638,22 @@ test("after a save, Details arrives with the success banner under its heading an
   await page.waitForLoadState("networkidle");
   await expect(heading).toHaveText(strings.details.heading);
   await expect(banner, "a reload shows no banner").toHaveCount(0);
+  await expect(alerts, "a reload shows no alert").toHaveCount(0);
+  expect(
+    await page.evaluate(() => document.activeElement === document.body),
+    "after a reload nothing is focused",
+  ).toBe(true);
+
+  // By pointer: React Aria's press reaches the button our render function
+  // draws, and focus still goes to the heading.
+  await setSavedNotice(page, code);
+  await open(page, details);
+  await page.waitForLoadState("networkidle");
+  await expect(banner).toHaveCount(1);
+  await expect(dismiss).toBeFocused();
+  await dismiss.click();
+  await expect(banner, "dismissed by pointer, the banner goes").toHaveCount(0);
+  await expect(heading, "focus moves to the heading").toBeFocused();
 
   await setSavedNotice(page, code);
   await open(page, details);
@@ -625,6 +665,7 @@ test("after a save, Details arrives with the success banner under its heading an
   await page.waitForURL(`**${details}`);
   await expect(heading).toHaveText(strings.details.heading);
   await expect(banner, "Back shows no banner").toHaveCount(0);
+  await expect(alerts, "Back shows no alert").toHaveCount(0);
   await expectFocusResetThenSkipLink(page);
 });
 

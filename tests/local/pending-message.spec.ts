@@ -107,10 +107,13 @@ test("a save held past the second announces while the Save button is there, and 
     await page.evaluate(() => performance.timeOrigin),
     "a new document",
   ).toBeGreaterThan(before);
-  expect(
-    await page.evaluate(() => document.activeElement === document.body),
-    "nothing of ours moved focus",
-  ).toBe(true);
+  await expect(
+    savedBanner(page).getByRole("button", {
+      name: en.ui.banner.dismiss,
+      exact: true,
+    }),
+    "the banner's dismiss button has focus (D-214)",
+  ).toBeFocused();
   await expect(naming, "no node names the gone Save button").toHaveCount(0);
   expect(await dangling(page), "no node names a gone id").toBe(0);
   await expect(

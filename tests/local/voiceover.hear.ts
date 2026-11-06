@@ -23,9 +23,9 @@ import { savedBanner } from "../a11y/saved-banner";
 // first made by ear: the one-node label (D-193, D-140), a dialog's first
 // focus (D-136), and "Saved." after a rename with Enter (D-118, D-140). Each
 // was proven able to go red against a one-line undo before it was trusted.
-// A fourth, Details' save as a page load with its banner (D-211), carries
-// its own negative control (HEAR_CONTROL=1), to be run red once by hand
-// before it is trusted.
+// A fourth, Details' save as a page load with its banner (D-211, D-214),
+// carries its own negative control (HEAR_CONTROL=1), to be run red once by
+// hand before it is trusted.
 // D-202's fourth, a Select opened after an in-page move (Q-127, D-201), was
 // heard here with D-201's mark on and off and never read the title in either
 // engine, so it cannot go red on the Mac and is not a reading; what it heard
@@ -459,22 +459,20 @@ test('reading 3 on Menus: a rename with Enter says "Saved.", and the field is no
 });
 
 // Four: Save details that lands loads Details again as a new document
-// (D-211, Q-141), and the result is said once, never over the load. On a
-// load VoiceOver on macOS says the page's title, not the page, so no phrase
-// in the window after Enter may hold "Details saved.": nothing of ours,
-// React Aria's, or Next's speaks the result over the load. The banner is
-// then found the way an owner finds it, by its heading after the page's
-// own, and its words are read; across everything said after Enter they are
-// said in one phrase. The save changes nothing, so the stand-in stays as it
-// was, and the banner clears its own cookie.
+// (D-211, Q-141), and the banner works as GitHub's flash (D-214): its
+// dismiss button carries autofocus in the served HTML and takes focus as
+// the page loads, and its words sit in an alert with aria-atomic. So
+// "Details saved." is said over the load, once: across every phrase in the
+// window after Enter, the words are in exactly one. The save changes
+// nothing, so the stand-in stays as it was, and the banner clears its own
+// cookie.
 //
-// Its negative control, run by hand: HEAR_CONTROL=1 adds an alert holding
-// the words to the page the save loads, once that page has loaded, the
-// shape a live region added later would take; the reading must go red at
-// its first check. If VoiceOver ever reads the whole new page on its own
-// (a setting that speaks a page as it loads), the first check is red with
-// the page's own words around the result; that is the load's one voice,
-// and the check is the one to read again.
+// Its negative control, run by hand: HEAR_CONTROL=1 adds a second alert
+// holding the words to the page the save loads, once that page has loaded;
+// the reading must go red at its count, heard twice. Polling cannot tell
+// the same phrase said twice with nothing between from one phrase, so if
+// the control's words follow ours with nothing said between, the control
+// stays green; that is a finding about the control, to read in the log.
 const strayAlertArm = "hear-control";
 
 // Runs in the page as an init script, so it names the key itself: the same
@@ -494,7 +492,7 @@ function strayAlert(words: string) {
   });
 }
 
-test('reading 4 on Details: Save details loads the page again, nothing says "Details saved." over the load, and the banner\'s words are said once when reached (D-211)', async ({
+test("reading 4 on Details: Save details loads the page again, focus lands on the banner's dismiss button, and \"Details saved.\" is said once in the load's window (D-211, D-214)", async ({
   page,
   voiceOver,
   hear,
@@ -505,7 +503,7 @@ test('reading 4 on Details: Save details loads the page again, nothing says "Det
   if (control) await page.addInitScript(strayAlert, words);
   hear.note(
     "expected",
-    `the title only, then ${en.ui.banner.success} / ${words}${control ? " (control: an alert with the words, which must go red)" : ""}`,
+    `${words} once in the load's window, focus on ${en.ui.banner.dismiss}${control ? " (control: a second alert with the words, which must go red at twice)" : ""}`,
   );
 
   await arrive(page, restaurantDetailsPath(code), voiceOver);
@@ -530,35 +528,19 @@ test('reading 4 on Details: Save details loads the page again, nothing says "Det
       strayAlertArm,
     );
   }
-  const before = hear.steps.length;
-  const overLoad = await hear.listen(
+  const heard = await hear.listen(
     "Enter on Save details, then 6 seconds",
     enter(voiceOver),
     6_000,
   );
-  await expect(savedBanner(page), "the new page has the banner").toHaveCount(1);
+  const banner = savedBanner(page);
+  await expect(banner, "the new page has the banner").toHaveCount(1);
+  await expect(
+    banner.getByRole("button", { name: en.ui.banner.dismiss, exact: true }),
+    "the dismiss button has focus",
+  ).toBeFocused();
   expect(
-    overLoad.filter((phrase) => has(phrase, words)),
-    "nothing says the result over the load",
-  ).toEqual([]);
-
-  await voiceOver.navigateToWebContent();
-  await hear.seek(
-    "VO-Command-H to the banner's heading",
-    commands(voiceOver).findNextHeading,
-    en.ui.banner.success,
-  );
-  await hear.seek(
-    "VO-Right to the banner's words",
-    commands(voiceOver).moveToNext,
-    words,
-    4,
-  );
-  const said = hear.steps
-    .slice(before)
-    .flatMap(({ lines }) => lines)
-    .filter((line) => !line.startsWith("[before]"))
-    .filter((line) => !line.startsWith("(nothing new)"))
-    .filter((line) => has(line, words));
-  expect(said, "the words are said in one phrase").toHaveLength(1);
+    heard.filter((phrase) => has(phrase, words)),
+    `"${words}" is said once in the load's window`,
+  ).toHaveLength(1);
 });

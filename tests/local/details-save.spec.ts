@@ -8,14 +8,15 @@ import { savedBanner } from "../a11y/saved-banner";
 // land a save (D-108), so the save itself is checked here: it ends in a
 // real load of Details, a new document read from the top, never a client
 // navigation; the address carries nothing; the success banner is there and
-// nothing of ours moved focus; and a refresh shows no banner. The gate pins
+// its dismiss button is the active element, focused by the served autofocus
+// as the page loads (D-214); and a refresh shows no banner. The gate pins
 // the banner's arrival from the cookie (tests/a11y/owner-pages.spec.ts).
 
 const { code } = ownerEnv();
 const details = restaurantDetailsPath(code);
 const strings = en.owner.restaurants.details;
 
-test("Save details that lands loads Details as a new document at the top, with the success banner, nothing focused, and nothing in the address, and a refresh shows no banner (D-211)", async ({
+test("Save details that lands loads Details as a new document at the top, with the success banner, its dismiss button the active element, and nothing in the address, and a refresh shows no banner (D-211, D-214)", async ({
   page,
 }) => {
   const documents: string[] = [];
@@ -56,7 +57,6 @@ test("Save details that lands loads Details as a new document at the top, with t
     )?.type,
     search: location.search,
     scrollY: window.scrollY,
-    nothingFocused: document.activeElement === document.body,
   }));
   expect(
     after.origin,
@@ -68,7 +68,10 @@ test("Save details that lands loads Details as a new document at the top, with t
   ).toBe("navigate");
   expect(after.search, "nothing in the address").toBe("");
   expect(after.scrollY, "the new page starts at the top").toBe(0);
-  expect(after.nothingFocused, "nothing of ours moved focus").toBe(true);
+  await expect(
+    banner.getByRole("button", { name: en.ui.banner.dismiss, exact: true }),
+    "after the real load the dismiss button is the active element",
+  ).toBeFocused();
   expect(documents, "the first load, then the save's load of Details").toEqual([
     details,
     details,
