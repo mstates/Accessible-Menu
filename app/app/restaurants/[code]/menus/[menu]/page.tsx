@@ -11,7 +11,7 @@ import {
 } from "@/core/supabase/menus";
 import { listOwnerSectionsWithDishes } from "@/core/supabase/sections";
 import { loadRestaurant } from "@/features/owner/load-restaurant";
-import { restaurantMenusPath } from "@/features/owner/paths";
+import { dashboardPath, restaurantMenusPath } from "@/features/owner/paths";
 import { RestaurantNav } from "@/features/owner/RestaurantNav";
 import { SectionList } from "@/features/owner/SectionList";
 import { Breadcrumb } from "@/ui/Breadcrumb";
@@ -82,7 +82,7 @@ export default async function RestaurantMenuPage({ params }: Props) {
   return (
     <PageFrame
       siteName={en.site.name}
-      homeHref="/"
+      homeHref={dashboardPath}
       loadingLabel={en.ui.loading}
       nav={
         <RestaurantNav

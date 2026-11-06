@@ -30,6 +30,7 @@ import { placeIn } from "@/features/owner/choices/choice-words";
 import { DishPage } from "@/features/owner/dish/DishPage";
 import { loadRestaurant } from "@/features/owner/load-restaurant";
 import {
+  dashboardPath,
   restaurantMenuPath,
   restaurantMenusPath,
   restaurantSectionPath,
@@ -192,7 +193,7 @@ export default async function RestaurantDishPage({ params }: Props) {
   return (
     <PageFrame
       siteName={en.site.name}
-      homeHref="/"
+      homeHref={dashboardPath}
       loadingLabel={en.ui.loading}
       nav={
         <RestaurantNav

@@ -11,6 +11,7 @@ import {
   sizeLabel,
 } from "../../src/features/owner/dish/dish-words";
 import { CHOICE_LISTS_HEADING_ID } from "../../src/features/owner/choices/useChoiceListRows";
+import { dashboardPath } from "../../src/features/owner/paths";
 import type { Control, Mark } from "./checks";
 import { listRows } from "./owner-lists";
 
@@ -27,10 +28,11 @@ const editing = en.owner.editing;
 const link = (name: string): Control => ({ role: "link", name });
 const button = (name: string): Control => ({ role: "button", name });
 
-// Every owner page starts with the site's name as a link home. A page inside
-// a restaurant has its nav, and a menu's or a section's page also has a
-// breadcrumb whose first link is Menus, found by the same name.
-const site = link(en.site.name);
+// Every owner page starts with the site's name as a link to the dashboard, a
+// signed-in owner's home (Q-142). A page inside a restaurant has its nav,
+// and a menu's or a section's page also has a breadcrumb whose first link is
+// Menus, found by the same name.
+const site: Control = { ...link(en.site.name), href: dashboardPath };
 const nav = [link(strings.nav.details), link(strings.nav.menus)];
 
 // The Select's arrow on the restaurant forms, and the breadcrumb's slashes.

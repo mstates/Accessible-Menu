@@ -22,7 +22,7 @@ export default async function NewRestaurantPage() {
   return (
     <PageFrame
       siteName={en.site.name}
-      homeHref="/"
+      homeHref={dashboardPath}
       loadingLabel={en.ui.loading}
     >
       <h1 className="text-3xl font-bold">{strings.new.heading}</h1>

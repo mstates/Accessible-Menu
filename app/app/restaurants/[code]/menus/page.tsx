@@ -40,7 +40,7 @@ export default async function RestaurantMenusPage({ params }: Props) {
   return (
     <PageFrame
       siteName={en.site.name}
-      homeHref="/"
+      homeHref={dashboardPath}
       loadingLabel={en.ui.loading}
       nav={
         <RestaurantNav

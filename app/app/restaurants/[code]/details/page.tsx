@@ -54,7 +54,7 @@ export default async function RestaurantDetailsPage({
   return (
     <PageFrame
       siteName={en.site.name}
-      homeHref="/"
+      homeHref={dashboardPath}
       loadingLabel={en.ui.loading}
       nav={
         <RestaurantNav

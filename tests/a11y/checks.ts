@@ -460,8 +460,9 @@ export async function expectRootAt(page: Page, px: number) {
 }
 
 // A link or button a page is expected to show, by its role and its whole
-// accessible name.
-export type Control = { role: "link" | "button"; name: string };
+// accessible name, and for a link whose destination is the point, where it
+// goes (Q-142).
+export type Control = { role: "link" | "button"; name: string; href?: string };
 
 // A drawn mark a page is expected to show, found by a selector: what it is,
 // for the message, and where it is.
@@ -478,6 +479,7 @@ export async function expectControlsShown(
   expected: readonly Control[] = [],
 ) {
   const missing: string[] = [];
+  const misdirected: string[] = [];
   for (const control of expected) {
     const matches = page.getByRole(control.role, {
       name: control.name,
@@ -486,6 +488,14 @@ export async function expectControlsShown(
     const count = await matches.count();
     if (count === 0) missing.push(`${control.role} "${control.name}"`);
     for (let index = 0; index < count; index += 1) {
+      if (control.href !== undefined) {
+        const href = await matches.nth(index).getAttribute("href");
+        if (href !== control.href) {
+          misdirected.push(
+            `${control.role} "${control.name}" goes to ${href}, not ${control.href}`,
+          );
+        }
+      }
       await matches
         .nth(index)
         .evaluate(
@@ -560,6 +570,7 @@ export async function expectControlsShown(
   });
   const all = [
     ...missing.map((control) => `${control} is not on the page`),
+    ...misdirected,
     ...problems,
   ];
   expect(all, all.join("\n")).toEqual([]);

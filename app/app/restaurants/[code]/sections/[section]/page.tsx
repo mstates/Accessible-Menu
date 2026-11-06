@@ -11,6 +11,7 @@ import { findOwnerSection } from "@/core/supabase/sections";
 import { DishList } from "@/features/owner/DishList";
 import { loadRestaurant } from "@/features/owner/load-restaurant";
 import {
+  dashboardPath,
   restaurantMenuPath,
   restaurantMenusPath,
 } from "@/features/owner/paths";
@@ -83,7 +84,7 @@ export default async function RestaurantSectionPage({ params }: Props) {
   return (
     <PageFrame
       siteName={en.site.name}
-      homeHref="/"
+      homeHref={dashboardPath}
       loadingLabel={en.ui.loading}
       nav={
         <RestaurantNav

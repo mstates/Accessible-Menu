@@ -4,6 +4,7 @@ import { fill } from "@/copy/fill";
 import { Button } from "@/ui/Button";
 import { PageFrame } from "@/ui/PageFrame";
 import { ResultMessage } from "@/ui/ResultMessage";
+import { dashboardPath } from "./paths";
 
 // A result that arrived with the page, such as the return from Checkout, and
 // the key of the render that carries it (D-110).
@@ -29,7 +30,7 @@ export function DashboardShell({
   return (
     <PageFrame
       siteName={copy.site.name}
-      homeHref="/"
+      homeHref={dashboardPath}
       loadingLabel={copy.ui.loading}
     >
       <h1 className="text-3xl font-bold">{copy.owner.heading}</h1>

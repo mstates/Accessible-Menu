@@ -9,6 +9,9 @@ import { PageLink } from "./PageLink";
 
 type Props = {
   siteName: string;
+  // Where the site's name links. A signed-in owner's home is the dashboard,
+  // so every owner page passes it; the sign-in page and the public pages
+  // pass the home page (Q-142).
   homeHref: string;
   // A page's own navigation, placed between the header and main so the skip
   // link passes it (D-104).

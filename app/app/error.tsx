@@ -48,7 +48,7 @@ export default function OwnerError() {
   return (
     <PageFrame
       siteName={en.site.name}
-      homeHref="/"
+      homeHref={dashboardPath}
       loadingLabel={en.ui.loading}
     >
       <title ref={titleElement}>{title}</title>
