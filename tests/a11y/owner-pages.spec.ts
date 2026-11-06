@@ -152,15 +152,16 @@ function messagesNaming(page: Page, id: string) {
 const reactAriaAssertiveLog =
   'div[data-live-announcer] > [role="log"][aria-live="assertive"]';
 
-// A message the Button renamed when it unmounted (D-207, Q-135): named by
-// the words the Save button's name had while pending, its text, a comma and
-// a space, then the pending label, and naming no element by id.
-const saveWords = `${strings.details.submit}, ${en.ui.pending}`;
-
-function renamedMessages(page: Page) {
-  return page.locator(
-    `[data-live-announcer] [aria-label=${JSON.stringify(saveWords)}]:not([aria-labelledby])`,
-  );
+// Nothing in React Aria's logs is renamed (D-210, superseding D-207): a
+// message naming the Button is taken out with it, never given words of its
+// own. React Aria sets no aria-label on its logs or on a message that names
+// an element, so any aria-label inside a log would be ours. Next's route
+// announcer carries the mark too (D-201), but holds no log.
+async function expectNothingRenamed(page: Page) {
+  await expect(
+    page.locator('[data-live-announcer] [role="log"] [aria-label]'),
+    "nothing in React Aria's log is renamed",
+  ).toHaveCount(0);
 }
 
 async function expectNoNamelessMessages(page: Page) {
@@ -852,10 +853,11 @@ test(
       "focus moves to the error heading",
     ).toBeFocused();
     await expect(
-      renamedMessages(page),
-      "the message keeps the gone button's words",
-    ).toHaveCount(1);
+      messagesNaming(page, id),
+      "the message went with the button",
+    ).toHaveCount(0);
     await expectNoNamelessMessages(page);
+    await expectNothingRenamed(page);
     expect(writes.attempted, "one save was sent").toHaveLength(1);
     expect(
       writes.attempted,
@@ -864,16 +866,16 @@ test(
   },
 );
 
-// D-109 and D-207 pin React Aria's announcer markup, which the Button relies
+// D-109 and D-210 pin React Aria's announcer markup, which the Button relies
 // on. While the save is held, React Aria's pending message must name the
 // Save button by its id, once the save has run a second (D-209); once the
-// error page replaces the form, the Button has renamed that message with
-// the words the button's name had, and the node is still there. If React
-// Aria ever announces another way, the first expectation fails on the
-// upgrade; nothing here can pass because a selector found nothing. Tagged
-// so WebKit runs it at the phone size too, the iPhone's engine.
+// error page replaces the form, the Button has taken that message out, and
+// nothing is renamed. If React Aria ever announces another way, the first
+// expectation fails on the upgrade; nothing here can pass because a
+// selector found nothing. Tagged so WebKit runs it at the phone size too,
+// the iPhone's engine.
 test(
-  "a save the server cannot take lands on the focused error page, and its pending message is renamed with the button's words",
+  "a save the server cannot take lands on the focused error page, and its pending message goes with the button",
   { tag: "@pending-message" },
   async ({ page }) => {
     const writes = expectWrites(page, { hold: true });
@@ -889,9 +891,10 @@ test(
       "focus moves to the error heading",
     ).toBeFocused();
     await expect(
-      renamedMessages(page),
-      "the message keeps the gone button's words",
-    ).toHaveCount(1);
+      messagesNaming(page, id),
+      "the message went with the button",
+    ).toHaveCount(0);
+    await expectNothingRenamed(page);
     expect(
       writes.answered.length,
       "the save was sent and answered in the browser",
@@ -921,15 +924,14 @@ test(
 // The late path. React Aria holds back its first message on a page for
 // 100 ms after the announce call; a form gone inside that hold leaves the
 // message to be added after its button, and the Button watches for it and
-// renames it too, with the words read while the button was still on the
-// page. On Playwright's stopped clock, so the late path is taken every
-// time: the clock runs to the second (D-209), where pending shows and React
-// Aria's announce call runs, then stands while the answer is let go and the
-// error page replaces the form, then runs out the hold. The recorder proves
-// React Aria announced the Save button after it was gone, so this cannot
-// pass on an empty log.
+// takes it out too (D-109, D-210). On Playwright's stopped clock, so the
+// late path is taken every time: the clock runs to the second (D-209),
+// where pending shows and React Aria's announce call runs, then stands
+// while the answer is let go and the error page replaces the form, then
+// runs out the hold. The recorder proves React Aria announced the Save
+// button after it was gone, so this cannot pass on an empty log.
 test(
-  "answered at once, a late pending message is renamed as well",
+  "answered at once, a late pending message is taken out as well",
   { tag: "@pending-message" },
   async ({ page }) => {
     await page.clock.install();
@@ -964,10 +966,11 @@ test(
       "React Aria announced the Save button once, after it was gone",
     ).toEqual([false]);
     await expect(
-      renamedMessages(page),
-      "the message keeps the gone button's words",
-    ).toHaveCount(1);
+      messagesNaming(page, id),
+      "the late message was taken out",
+    ).toHaveCount(0);
     await expectNoNamelessMessages(page);
+    await expectNothingRenamed(page);
     await expectNoMissingIds(page);
     await expectNoAxeViolations(page);
     expect(

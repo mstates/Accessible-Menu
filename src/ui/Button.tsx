@@ -19,19 +19,24 @@ type Props = Omit<ButtonProps, "isPending"> & PendingProps;
 // (D-106, DELAY_MS in NavigationStatus.tsx); the two are one rule (D-209).
 // Under about a second a wait does not break the flow, and most saves land
 // inside it, so nothing is shown or said for them and the result's focus is
-// the only thing read.
+// the only thing read. Heard on iOS and on the Mac (Q-140): the hold keeps a
+// quick save silent until its result.
 const PENDING_DELAY_MS = 1000;
 
 // React Aria announces pending through its live announcer, by reference: it
 // appends <div role="img" aria-labelledby={button id}> to an assertive log
 // inside [data-live-announcer], removes it after seven seconds, and holds
 // back the first message on a page for 100 ms while that log attaches
-// (D-109). D-109 read the log's additions-only rule as meaning a node could
-// be taken away without unsaying its message; that was heard wrong on the
-// iPhone, where "Save details, in progress" was cut off (Q-135). So nothing
-// here takes a node away while it may be read: a message that outlives its
-// button is renamed instead, and React Aria removes it at seven seconds as
-// it does for a button that stays (D-207).
+// (D-109). A button that unmounts inside those seven seconds leaves a
+// message naming nothing. What three platforms heard (Q-140, D-210): with
+// VoiceOver on iOS that orphan is a stop, a jump to the top lands on
+// "image", and the message is cut when its button goes whatever is done to
+// the node, so taking the node away costs nothing audible and takes the
+// stop away; with VoiceOver on macOS, in Chromium and in WebKit, the orphan
+// is never a stop and a message added after its button is gone says
+// nothing. So the node is taken away. Renaming it instead (D-207) lost
+// "Saved." on iOS, where the kept message won over the result's focus, and
+// read a stale "in progress" after "Saved." on the Mac.
 const MESSAGE_LIFETIME_MS = 7000;
 const LATE_MESSAGE_WINDOW_MS = 1000;
 
@@ -45,17 +50,14 @@ const BASE_CLASS =
 const CALLER_DISABLED_CLASS =
   "opacity-60 forced-colors:border-[color:GrayText] forced-colors:text-[color:GrayText]";
 
-// Names each message that points at the button by the words the button's
-// name had, and drops the pointer, so the message keeps its words once the
-// button is gone. The node stays where React Aria put it.
-function renameMessagesNaming(id: string, words: string): void {
+// Takes each message that names the button out of React Aria's logs
+// (D-109, D-210).
+function dropMessagesNaming(id: string): void {
   for (const node of document.querySelectorAll(
     "[data-live-announcer] [aria-labelledby]",
   )) {
     const ids = node.getAttribute("aria-labelledby")?.split(/\s+/) ?? [];
-    if (!ids.includes(id)) continue;
-    node.setAttribute("aria-label", words);
-    node.removeAttribute("aria-labelledby");
+    if (ids.includes(id)) node.remove();
   }
 }
 
@@ -91,14 +93,11 @@ function renameMessagesNaming(id: string, words: string): void {
 //
 // A button that unmounts while its pending message is still in React Aria's
 // log (a save remounting the form, the error page replacing it) would leave
-// an image named by nothing. So the button carries a known id, and on
-// unmount within seven seconds of a change in the pending state React Aria
-// was handed, it renames the messages naming that id with the words its
-// name had while pending: its text, a comma and a space, then the pending
-// label ("Save details, in progress"), or the pending label alone when it
-// has no text. The words are read in a layout effect's cleanup, which React
-// runs before it takes the button's node off the page. A one-second watch
-// renames the late first message React Aria may still add the same way.
+// an image named by nothing, a stop on iOS. So the button carries a known
+// id, and on unmount within seven seconds of a change in the pending state
+// React Aria was handed, it takes the messages naming that id out of the
+// log, then watches for one second for the late first message React Aria
+// may still add and takes that out too. Nothing is renamed (D-210).
 export function Button({ children, pendingLabel, id, ...props }: Props) {
   const fallbackId = useId();
   const buttonId = id ?? fallbackId;
@@ -123,23 +122,17 @@ export function Button({ children, pendingLabel, id, ...props }: Props) {
     shownChangedAt.current = Date.now();
   }, [shown]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const changedAt = shownChangedAt;
     return () => {
       const at = changedAt.current;
       if (at === null || Date.now() - at > MESSAGE_LIFETIME_MS) return;
-      const text = (document.getElementById(buttonId)?.textContent ?? "")
-        .replace(/\s+/g, " ")
-        .trim();
-      const words = [text, pendingLabel].filter(Boolean).join(", ");
-      renameMessagesNaming(buttonId, words);
-      const late = new MutationObserver(() =>
-        renameMessagesNaming(buttonId, words),
-      );
+      dropMessagesNaming(buttonId);
+      const late = new MutationObserver(() => dropMessagesNaming(buttonId));
       late.observe(document.body, { childList: true, subtree: true });
       window.setTimeout(() => late.disconnect(), LATE_MESSAGE_WINDOW_MS);
     };
-  }, [buttonId, pendingLabel]);
+  }, [buttonId]);
 
   const disabledByCaller =
     props["aria-disabled"] === true || props["aria-disabled"] === "true";
