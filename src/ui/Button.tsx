@@ -18,9 +18,9 @@ type Props = Omit<ButtonProps, "isPending"> & PendingProps;
 // One second, the rule a pending link follows before it says Loading
 // (D-106, DELAY_MS in NavigationStatus.tsx); the two are one rule (D-209).
 // Under about a second a wait does not break the flow, and most saves land
-// inside it, so nothing is shown or said for them and the result's focus is
-// the only thing read. Heard on iOS and on the Mac (Q-140): the hold keeps a
-// quick save silent until its result.
+// inside it, so nothing is shown or said for them and only the result is
+// heard. Heard on iOS and on the Mac (Q-140): the hold keeps a quick save
+// silent until its result.
 const PENDING_DELAY_MS = 1000;
 
 // React Aria announces pending through its live announcer, by reference: it
@@ -81,9 +81,9 @@ function dropMessagesNaming(id: string): void {
 // Aria does while pending. React Aria is handed isPending only after a
 // second of it, so the spinner, the dim, data-pending, and React Aria's
 // assertive announcement arrive together, and a save that lands inside the
-// second says nothing but its result, read on focus. The second is timed in
-// a layout effect, from the commit that holds the press, and cleared at
-// once when pending ends or the button unmounts.
+// second says nothing but its result. The second is timed in a layout
+// effect, from the commit that holds the press, and cleared at once when
+// pending ends or the button unmounts.
 //
 // A button that cannot act right now but must keep focus, a Move up on the
 // first row, takes aria-disabled instead of isDisabled: it stays in the tab
@@ -92,12 +92,13 @@ function dropMessagesNaming(id: string): void {
 // disabled color in forced colors, where opacity alone is not a signal.
 //
 // A button that unmounts while its pending message is still in React Aria's
-// log (a save remounting the form, the error page replacing it) would leave
-// an image named by nothing, a stop on iOS. So the button carries a known
-// id, and on unmount within seven seconds of a change in the pending state
-// React Aria was handed, it takes the messages naming that id out of the
-// log, then watches for one second for the late first message React Aria
-// may still add and takes that out too. Nothing is renamed (D-210).
+// log (the error page replacing the form) would leave an image named by
+// nothing, a stop on iOS. So the button carries a known id, and on unmount
+// within seven seconds of a change in the pending state React Aria was
+// handed, it takes the messages naming that id out of the log, then watches
+// for one second for the late first message React Aria may still add and
+// takes that out too. Nothing is renamed (D-210). A Details save that lands
+// takes the whole document with it (D-211).
 export function Button({ children, pendingLabel, id, ...props }: Props) {
   const fallbackId = useId();
   const buttonId = id ?? fallbackId;

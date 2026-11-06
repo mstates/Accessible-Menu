@@ -6,6 +6,7 @@ import { fieldId, restaurantDetailsPath } from "../../src/features/owner/paths";
 import { expectNoAxeViolations, expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
+import { savedBanner } from "../a11y/saved-banner";
 import { chromeName, expectNamedByOneLabel } from "./chrome-name";
 
 // The address finder on the details form (D-83, D-87, D-200) against the
@@ -186,7 +187,8 @@ test("typing in the finder lists the stand-in's matches under the field and says
   await page
     .getByRole("button", { name: restaurants.details.submit, exact: true })
     .click();
-  await page.waitForURL(/saved=/);
+  // The save landed: Details loaded again, with its banner (D-211).
+  await expect(savedBanner(page)).toHaveCount(1, { timeout: 10_000 });
   const patch = (await writes())
     .filter((each) => each.startsWith("PATCH restaurants "))
     .at(-1);

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
@@ -10,13 +11,18 @@ import { loadRestaurant } from "@/features/owner/load-restaurant";
 import { dashboardPath } from "@/features/owner/paths";
 import { RestaurantForm } from "@/features/owner/RestaurantForm";
 import { RestaurantNav } from "@/features/owner/RestaurantNav";
+import { SavedBanner } from "@/features/owner/SavedBanner";
+import {
+  DETAILS_HEADING_ID,
+  readSavedNotice,
+  SAVED_NOTICE,
+} from "@/features/owner/saved-notice";
 import { PageFrame } from "@/ui/PageFrame";
 import { PageLink } from "@/ui/PageLink";
-import { ResultMessage } from "@/ui/ResultMessage";
 
 type Props = {
   params: Promise<{ code: string }>;
-  searchParams: Promise<{ created?: string; saved?: string }>;
+  searchParams: Promise<{ created?: string }>;
 };
 
 const strings = en.owner.restaurants;
@@ -45,11 +51,16 @@ export default async function RestaurantDetailsPage({
   searchParams,
 }: Props) {
   const { code } = await params;
-  const { created, saved } = await searchParams;
+  const { created } = await searchParams;
   const { email, restaurant } = await loadRestaurant(code);
   if (!email) redirect("/app/sign-in");
   if (!restaurant) notFound();
   const action = updateRestaurant.bind(null, restaurant.code);
+  // A save that landed left its cookie for this load (D-211); the banner
+  // clears it once it shows.
+  const saved = readSavedNotice(
+    (await cookies()).get(SAVED_NOTICE.name)?.value,
+  );
 
   return (
     <PageFrame
@@ -65,19 +76,26 @@ export default async function RestaurantDetailsPage({
         />
       }
     >
-      <h1 className="text-3xl font-bold">{strings.details.heading}</h1>
+      {/* Focusable by code alone, for the banner's dismiss button. */}
+      <h1 id={DETAILS_HEADING_ID} tabIndex={-1} className="text-3xl font-bold">
+        {strings.details.heading}
+      </h1>
+      {/* The success banner at the top of the body content, under the
+          heading (D-211, Primer): read with the page that the save loads,
+          never focused. */}
+      {saved ? (
+        <SavedBanner
+          code={restaurant.code}
+          title={en.ui.banner.success}
+          dismissLabel={en.ui.banner.dismiss}
+          message={strings.details.saved}
+          className="mt-4"
+        />
+      ) : null}
       {created ? (
         <p className="mt-4 rounded bg-background-raised p-4">
           {strings.details.created}
         </p>
-      ) : null}
-      {saved ? (
-        <ResultMessage
-          key={saved}
-          fromUrl={saved}
-          message={strings.details.saved}
-          className="mt-4"
-        />
       ) : null}
       <p className="mt-4">
         <span className="font-semibold">{strings.menuLink}</span>{" "}
@@ -97,11 +115,10 @@ export default async function RestaurantDetailsPage({
       </p>
       <p className="mt-6 text-foreground-muted">{strings.details.lead}</p>
       <div className="mt-6">
-        {/* React Aria fields keep the values they mounted with, so a save
-            remounts the form from the saved row and the owner sees each
-            value as it was understood: 17:30 comes back as 5:30 pm (D-105). */}
+        {/* A save that lands loads this page again (D-211), so the fields
+            mount from the saved row and the owner sees each value as it was
+            understood: 17:30 comes back as 5:30 pm (D-105). */}
         <RestaurantForm
-          key={saved ?? "details"}
           copy={en}
           action={action}
           defaultValues={restaurant}

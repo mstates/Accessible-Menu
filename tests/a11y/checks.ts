@@ -838,6 +838,10 @@ export type PageCheckOptions = {
   // extension (D-194), for a page whose path is known only when the test
   // runs, or whose tree the clock chooses; a string path names its own.
   snapshot?: string | (() => string);
+  // Run before each load of the page, for a state the page reads from the
+  // browser rather than the address: Details after a save, from the cookie
+  // the save leaves and the banner clears once shown (D-211).
+  prepare?: (page: Page) => Promise<void>;
 };
 
 // Registers the checks for one path. Call it inside a describe. A path that
@@ -856,6 +860,8 @@ export function pageChecks(
   const at = () => (typeof target === "string" ? target : target());
   const controls = (page: Page) =>
     options.controls ? options.controls(page) : Promise.resolve([]);
+  const prepare = (page: Page) =>
+    options.prepare ? options.prepare(page) : Promise.resolve();
   const { snapshot } = options;
   if (snapshot === undefined && typeof target !== "string") {
     throw new Error(
@@ -881,7 +887,10 @@ export function pageChecks(
       await steps([
         [
           "the title is in the served head and is the document title from first paint",
-          () => expectTitleInServedHead(page, path),
+          async () => {
+            await prepare(page);
+            await expectTitleInServedHead(page, path);
+          },
         ],
         ["axe reports zero violations", () => expectNoAxeViolations(page)],
         [
@@ -941,6 +950,7 @@ export function pageChecks(
               (url) => url.pathname === pathname,
               (route) => route.fallback(),
             );
+            await prepare(page);
             const response = await open(page, path);
             const html = await response.text();
             const headEnd = html.indexOf("</head>");
@@ -969,6 +979,7 @@ export function pageChecks(
       browserName !== "chromium",
       "Chrome's own names come through the DevTools Protocol, which only Chromium has",
     );
+    await prepare(page);
     await open(page, at());
     await page.waitForLoadState("networkidle");
     await expectChromeNamesAgree(page);
@@ -978,6 +989,7 @@ export function pageChecks(
     "in forced colors, every edge and drawn mark is in a system color and focus shows an outline",
     { tag: "@forced" },
     async ({ page }) => {
+      await prepare(page);
       await open(page, at());
       await page.waitForLoadState("networkidle");
       await steps([

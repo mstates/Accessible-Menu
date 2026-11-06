@@ -12,7 +12,7 @@ import { useEffect, useRef } from "react";
 // the skip link: no text, no role, no visible outline, no scroll, so nothing
 // is spoken over the route announcer and the next Tab is the skip link, as
 // after a full page load. Changes to only the query or the hash do not
-// change the pathname, so ?saved and in-page section links keep their own
+// change the pathname, so ?checkout and in-page section links keep their own
 // focus. Pages that place focus on purpose do so on state or query changes,
 // never on a path change, so this never takes focus from them.
 export function FocusReset() {

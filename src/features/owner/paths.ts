@@ -1,7 +1,10 @@
 // Owner screens name the restaurant in the path by its code (D-89). These are
 // owner paths, not menu URLs; the menu URL builder lives in src/domain.
 
-export type DetailsNotice = { created: true } | { saved: number };
+// The created outcome arrives in the address (D-110). A save's result does
+// not: it travels in a cookie for the page the save loads (D-211,
+// saved-notice.ts).
+export type DetailsNotice = { created: true };
 
 export const dashboardPath = "/app";
 
@@ -14,10 +17,7 @@ export function restaurantDetailsPath(
   notice?: DetailsNotice,
 ): string {
   const base = `/app/restaurants/${code}/details`;
-  if (!notice) return base;
-  return "created" in notice
-    ? `${base}?created=1`
-    : `${base}?saved=${notice.saved}`;
+  return notice ? `${base}?created=1` : base;
 }
 
 export function restaurantMenusPath(code: string): string {

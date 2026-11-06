@@ -48,10 +48,11 @@ export const pages = [
 
 // The owner pages, scanned signed in as the test owner with the one
 // restaurant it holds (D-100). Owner paths come from the owner feature. The
-// created outcome, a save's result message, and the return from Checkout are
-// reached by URL, so the gate never sends a write to see them (D-108). The
-// menus page shows the four menus the test restaurant was given by its
-// data file. A menu's own page, a section's own page, and a dish's own page
+// created outcome and the return from Checkout are reached by URL, and
+// Details after a save by the cookie the save leaves, which
+// owner-pages.spec.ts sets before each load (D-211), so the gate never
+// sends a write to see them (D-108). The menus page shows the four menus
+// the test restaurant was given by its data file. A menu's own page, a section's own page, and a dish's own page
 // are named by an id, which only the setup learns, so those pages get the
 // same checks from owner-sections.spec.ts, owner-dishes.spec.ts, and
 // owner-dish.spec.ts.
@@ -62,7 +63,6 @@ export function ownerPages(code: string) {
     restaurantNewPath(),
     restaurantDetailsPath(code),
     restaurantDetailsPath(code, { created: true }),
-    restaurantDetailsPath(code, { saved: 1 }),
     restaurantMenusPath(code),
   ];
 }

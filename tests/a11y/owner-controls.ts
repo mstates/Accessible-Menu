@@ -48,6 +48,18 @@ export const breadcrumbMarks: readonly Mark[] = [
     selector: `nav[aria-label="${en.ui.breadcrumb}"] span[aria-hidden="true"]`,
   },
 ];
+// The success banner's two drawn marks (D-211): its icon, beside its words,
+// and the cross in its dismiss button.
+export const bannerMarks: readonly Mark[] = [
+  {
+    what: "the banner's success icon",
+    selector: 'main section[aria-labelledby] > svg[aria-hidden="true"]',
+  },
+  {
+    what: "the cross in the banner's dismiss button",
+    selector: 'main section[aria-labelledby] button svg[aria-hidden="true"]',
+  },
+];
 // The dot of the chosen radio on the dish page (D-139).
 export const radioMarks: readonly Mark[] = [
   {
@@ -137,6 +149,12 @@ export async function detailsControls(): Promise<Control[]> {
     link(strings.backToDashboard),
     button(strings.details.submit),
   ];
+}
+
+// Details after a save (D-211): the same, and the success banner's dismiss
+// button.
+export async function savedDetailsControls(): Promise<Control[]> {
+  return [...(await detailsControls()), button(en.ui.banner.dismiss)];
 }
 
 export async function menusControls(page: Page): Promise<Control[]> {

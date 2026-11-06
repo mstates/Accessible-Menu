@@ -2,13 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// One focused result message (D-104): the "Saved." after a save and the
-// sign-in outcomes. It takes focus when it mounts, and moving focus is what
-// announces it: no live role, and a focus-visible outline shows a keyboard
-// user where focus landed. The caller keys it per result, so the same
-// message twice mounts twice and is read twice.
+// One focused result message (D-104): the sign-in outcomes and the return
+// from Checkout (D-110). A Details save ends in a page load with a success
+// Banner instead (D-211). It takes focus when it mounts, and moving focus is
+// what announces it: no live role, and a focus-visible outline shows a
+// keyboard user where focus landed. The caller keys it per result, so the
+// same message twice mounts twice and is read twice.
 //
-// A result carried in the URL (?saved=...) passes that value as fromUrl.
+// A result carried in the URL (?checkout=..., ?error=...) passes that value
+// as fromUrl.
 // Next can restore an earlier render from its router cache on Back, message
 // and all, even after the URL was rewritten, so each handled value is
 // recorded in sessionStorage and a value already handled renders nothing and

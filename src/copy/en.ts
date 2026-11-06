@@ -31,6 +31,12 @@ export const en = {
     loading: "Loading",
     // The name of the nav that shows where a page sits (D-128).
     breadcrumb: "Breadcrumb",
+    // A Banner's type, its landmark's name and its heading, and its dismiss
+    // button (D-211, Primer's Banner).
+    banner: {
+      success: "Success",
+      dismiss: "Dismiss this message",
+    },
   },
   home: {
     heading: "Accessible Menu",
@@ -118,7 +124,9 @@ export const en = {
         lead: "Details save when you press Save and show on the menu page right away.",
         submit: "Save details",
         created: "Your restaurant is set up. Its menu link is above.",
-        saved: "Saved.",
+        // The success banner's words after Save details, in the button's
+        // own terms (D-211, Primer's content rules).
+        saved: "Details saved.",
       },
       fields: {
         name: "Restaurant name",

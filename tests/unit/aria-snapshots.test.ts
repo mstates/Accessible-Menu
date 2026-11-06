@@ -37,7 +37,7 @@ const pages = [
   "owner-app-checkout-success",
   "owner-app-restaurants-code-details",
   "owner-app-restaurants-code-details-created-1",
-  "owner-app-restaurants-code-details-saved-1",
+  "owner-app-restaurants-code-details-saved",
   "owner-app-restaurants-code-menus",
   "owner-app-restaurants-new",
   "owner-choices-dish",

@@ -43,7 +43,8 @@ import {
   RANGE_INDEXES,
   timeFieldLabel,
 } from "./form-data";
-import { fieldId } from "./paths";
+import { fieldId, restaurantDetailsPath } from "./paths";
+import { savedNoticeCookie } from "./saved-notice";
 
 type Action = (
   previous: RestaurantFormState,
@@ -129,6 +130,21 @@ export function RestaurantForm({
     if (state.status === "invalid" || state.status === "error") {
       summaryRef.current?.focus();
     }
+  }, [state]);
+
+  // A Details save that lands (D-211, Q-141) loads Details again as a new
+  // document, which the browser and every screen reader treat as a fresh
+  // page, read from the top, its fields mounted from the saved row. The
+  // notice goes first, in a cookie for that load (saved-notice.ts). replace,
+  // not reload: a reload restores the scroll position, and the owner, who
+  // pressed Save at the bottom, comes back to the top; and the same page
+  // adds nothing to the history. The button stays held until the new page
+  // arrives, so a second press sends nothing.
+  const leaving = state.status === "saved";
+  useEffect(() => {
+    if (state.status !== "saved") return;
+    document.cookie = savedNoticeCookie(state.code);
+    window.location.replace(restaurantDetailsPath(state.code));
   }, [state]);
 
   // The browser's zone picks the default on the create form when it is one
@@ -343,7 +359,7 @@ export function RestaurantForm({
         <div>
           <Button
             type="submit"
-            isPending={pending}
+            isPending={pending || leaving}
             pendingLabel={copy.ui.pending}
           >
             {submitLabel}

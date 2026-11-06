@@ -92,7 +92,9 @@ export async function signOut(): Promise<void> {
 export type RestaurantFormState =
   | { status: "idle" }
   | { status: "invalid"; errors: Record<string, string> }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string }
+  // A Details save that landed: the form loads the page again (D-211).
+  | { status: "saved"; code: string };
 
 const restaurantCopy = en.owner.restaurants;
 const schema = restaurantInputSchema(restaurantCopy.errors);
@@ -160,7 +162,10 @@ export async function updateRestaurant(
     return { status: "error", message: writeErrorMessage(result.error) };
   }
   // Details save live (D-82): the diner pages read them on their next
-  // request.
+  // request. The form then loads Details again as a new document, with the
+  // success banner (D-211, Q-141). Nothing redirects here: a redirect from
+  // an action is a client navigation, which the browser and a screen reader
+  // do not treat as a new page.
   expireRestaurant(code);
-  redirect(restaurantDetailsPath(code, { saved: Date.now() }));
+  return { status: "saved", code };
 }

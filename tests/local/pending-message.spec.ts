@@ -2,17 +2,20 @@ import { expect, test, type Page } from "@playwright/test";
 import { en } from "../../src/copy";
 import { restaurantDetailsPath } from "../../src/features/owner/paths";
 import { ownerEnv } from "../a11y/owner-env";
+import { savedBanner } from "../a11y/saved-banner";
 
 // A Details save that lands, held past the second (D-209, D-210, Q-140).
 // React Aria announces the pending Save button by reference, a role="img"
-// node in its assertive log naming the button's id (D-109). The save
-// remounts the form, so the button goes while that node has up to seven
-// seconds left; the Button takes it out, renames nothing, and leaves
-// nothing nameless. The gate cannot land a save (D-108), so the path a real
-// save takes, through the ?saved= redirect to the focused "Saved." (D-104,
-// D-118), is checked here; the gate's three @pending-message tests pin the
-// same endings on the error page. The save's POST is held in the browser
-// until React Aria's message is there, which is past the second.
+// node in its assertive log naming the button's id (D-109). Since D-211 a
+// save that lands loads Details again as a new document (Q-141), so the
+// whole page goes, the message with it, and the new page starts with
+// nothing of React Aria's: no node names the button, none is nameless or
+// renamed, and its logs are empty. The gate cannot land a save (D-108), so
+// the path a real save takes is checked here; the gate's three
+// @pending-message tests pin the Button's own endings on the error page,
+// where the button goes and the document stays. The save's POST is held in
+// the browser until React Aria's message is there, which is past the
+// second.
 
 const { code } = ownerEnv();
 const strings = en.owner.restaurants.details;
@@ -48,7 +51,7 @@ const dangling = (page: Page) =>
       ).length,
   );
 
-test("a save held past the second announces while the Save button is there, and once it lands no node names the button, none is nameless or renamed, and React Aria's logs are empty", async ({
+test("a save held past the second announces while the Save button is there, and lands on a new page with the banner, where no node names the button, none is nameless or renamed, and React Aria's logs are empty (D-210, D-211)", async ({
   page,
 }) => {
   await page.addInitScript(recordMessages);
@@ -85,11 +88,29 @@ test("a save held past the second announces while the Save button is there, and 
     "React Aria announced the Save button while it was there",
   ).toHaveCount(1, { timeout: 3_000 });
 
+  const messages = () =>
+    page.evaluate(
+      () => (window as unknown as { __messages: string[] }).__messages,
+    );
+  expect(
+    await messages(),
+    "React Aria's one message named the Save button",
+  ).toEqual([id]);
+  const before = await page.evaluate(() => performance.timeOrigin);
+
   release();
   await expect(
-    page.locator(":focus"),
-    '"Saved." takes focus once the save lands',
-  ).toHaveText(strings.saved, { timeout: 10_000 });
+    savedBanner(page),
+    "the save lands on a new page, with the banner",
+  ).toHaveCount(1, { timeout: 10_000 });
+  expect(
+    await page.evaluate(() => performance.timeOrigin),
+    "a new document",
+  ).toBeGreaterThan(before);
+  expect(
+    await page.evaluate(() => document.activeElement === document.body),
+    "nothing of ours moved focus",
+  ).toBe(true);
   await expect(naming, "no node names the gone Save button").toHaveCount(0);
   expect(await dangling(page), "no node names a gone id").toBe(0);
   await expect(
@@ -100,11 +121,6 @@ test("a save held past the second announces while the Save button is there, and 
     page.locator('[data-live-announcer] [role="log"] > *'),
     "React Aria's logs are empty",
   ).toHaveCount(0);
-  expect(
-    await page.evaluate(
-      () => (window as unknown as { __messages: string[] }).__messages,
-    ),
-    "React Aria's one message named the Save button",
-  ).toEqual([id]);
+  expect(await messages(), "the new page announced nothing").toEqual([]);
   expect(posts, "one save was sent").toBe(1);
 });

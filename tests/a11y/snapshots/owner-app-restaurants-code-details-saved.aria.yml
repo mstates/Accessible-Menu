@@ -11,7 +11,10 @@
       - link "Menus"
 - main:
   - heading "Details" [level=1]
-  - paragraph: Saved.
+  - region "Success":
+    - heading "Success" [level=2]
+    - paragraph: Details saved.
+    - button "Dismiss this message"
   - paragraph: /Menu link \S+/
   - paragraph:
     - link "Back to the dashboard"
