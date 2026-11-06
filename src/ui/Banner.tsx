@@ -40,13 +40,17 @@ import { Button as AriaButton } from "react-aria-components";
 // lost to the body.
 //
 // The button comes first in the reading order and last on screen, as
-// GitHub's flash does (D-215): its close button is first in its markup and
-// its message next, so from the focused button the next item a screen
-// reader reaches is the words. On screen the icon and the words keep the
-// left and the button the right, by CSS order on the flex items. That is
-// sound here because the button is the banner's one control: its place
-// among the page's Tab stops is the same in either order, so focus order
-// is unaffected, and the heading, the button's name, and the words mean the
+// GitHub's flash has its close button first in its markup (D-215). The
+// heading comes next, then the words (D-216): on a flash the served
+// autofocus puts focus on the button, so a screen reader reads on from
+// there through the type and then the words, and the heading is met on the
+// way to the words rather than left behind the focus, where it was reached
+// only by going back. On screen the icon and the words keep the left and
+// the button the right, by CSS order on the flex items; the heading is
+// visually hidden and takes no place in the row. That is sound here
+// because the button is the banner's one control: its place among the
+// page's Tab stops is the same in either order, so focus order is
+// unaffected, and the button's name, the heading, and the words mean the
 // same read in either order. No reading-flow, which would make the reading
 // follow the screen.
 //
@@ -104,9 +108,6 @@ export function Banner({
       aria-labelledby={titleId}
       className={`flex flex-wrap items-start gap-3 rounded border-2 border-border bg-background-raised p-4 ${className ?? ""}`}
     >
-      <h2 id={titleId} className="sr-only">
-        {title}
-      </h2>
       {/* First to read, last on screen (D-215). */}
       {dismiss ? (
         <AriaButton
@@ -138,6 +139,10 @@ export function Banner({
           </svg>
         </AriaButton>
       ) : null}
+      {/* Next to read, on the way to the words (D-216). */}
+      <h2 id={titleId} className="sr-only">
+        {title}
+      </h2>
       <svg
         aria-hidden="true"
         viewBox="0 0 24 24"

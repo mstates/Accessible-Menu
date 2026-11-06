@@ -11,8 +11,8 @@
       - link "Menus"
 - main:
   - region "Success":
-    - heading "Success" [level=2]
     - button "Dismiss this message"
+    - heading "Success" [level=2]
     - alert: Details saved.
   - heading "Details" [level=1]
   - paragraph: /Menu link \S+/

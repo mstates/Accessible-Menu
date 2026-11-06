@@ -24,8 +24,8 @@ import { savedBanner } from "../a11y/saved-banner";
 // focus (D-136), and "Saved." after a rename with Enter (D-118, D-140). Each
 // was proven able to go red against a one-line undo before it was trusted.
 // A fourth, Details' save as a page load with its banner (D-211, D-214,
-// D-215), carries its own negative control (HEAR_CONTROL=1), to be run red
-// once by hand before it is trusted.
+// D-215, D-216), carries its own negative control (HEAR_CONTROL=1), to be
+// run red once by hand before it is trusted.
 // D-202's fourth, a Select opened after an in-page move (Q-127, D-201), was
 // heard here with D-201's mark on and off and never read the title in either
 // engine, so it cannot go red on the Mac and is not a reading; what it heard
@@ -463,10 +463,11 @@ test('reading 3 on Menus: a rename with Enter says "Saved.", and the field is no
 // dismiss button carries autofocus in the served HTML and takes focus as
 // the page loads, and its words sit in an alert with aria-atomic. So
 // "Details saved." is said over the load, once: across every phrase in the
-// window after Enter, the words are in exactly one. Then one VO-Right from
-// the focused button reaches the words, since the banner reads its dismiss
-// button before them (D-215). The save changes nothing, so the stand-in
-// stays as it was, and the banner clears its own cookie.
+// window after Enter, the words are in exactly one. Then VO-Right from the
+// focused button reaches the banner's heading, and once more the words,
+// since the banner reads its dismiss button, its heading, then its words
+// (D-215, D-216). The save changes nothing, so the stand-in stays as it
+// was, and the banner clears its own cookie.
 //
 // Its negative control, run by hand: HEAR_CONTROL=1 adds a second alert
 // holding the words to the page the save loads, once that page has loaded;
@@ -493,7 +494,7 @@ function strayAlert(words: string) {
   });
 }
 
-test("reading 4 on Details: Save details loads the page again, focus lands on the banner's dismiss button, \"Details saved.\" is said once in the load's window, and VO-Right from the button reaches the words (D-211, D-214, D-215)", async ({
+test("reading 4 on Details: Save details loads the page again, focus lands on the banner's dismiss button, \"Details saved.\" is said once in the load's window, and VO-Right from the button reaches the heading, then the words (D-211, D-214, D-215, D-216)", async ({
   page,
   voiceOver,
   hear,
@@ -545,11 +546,11 @@ test("reading 4 on Details: Save details loads the page again, focus lands on th
     `"${words}" is said once in the load's window`,
   ).toHaveLength(1);
 
-  // The banner reads its dismiss button before its words (D-215), so the
-  // next item from the focused button is "Details saved.". Judged by the
-  // item under VoiceOver's cursor, not by the last phrase: the alert's own
-  // phrase holds the same words, so a move that went nowhere would pass on
-  // the phrase.
+  // The banner reads its dismiss button first (D-215), then its heading,
+  // then its words (D-216), so from the focused button the next item is the
+  // heading and the one after it "Details saved.". Judged by the item under
+  // VoiceOver's cursor, not by the last phrase: the alert's own phrase holds
+  // the same words, so a move that went nowhere would pass on the phrase.
   const onButton = await voiceOver.itemText();
   hear.note("VoiceOver's item before VO-Right", onButton);
   expect(
@@ -557,13 +558,22 @@ test("reading 4 on Details: Save details loads the page again, focus lands on th
     "VoiceOver's cursor is on the focused dismiss button",
   ).toBe(true);
   await voiceOver.perform(commands(voiceOver).moveToNext);
-  const next = await voiceOver.itemText();
+  const onHeading = await voiceOver.itemText();
   hear.note(
     "VO-Right from the dismiss button",
-    `${clean(await voiceOver.lastSpokenPhrase())} / item: ${next}`,
+    `${clean(await voiceOver.lastSpokenPhrase())} / item: ${onHeading}`,
   );
   expect(
-    has(next, words),
-    `the next item from the dismiss button is "${words}"`,
+    has(onHeading, en.ui.banner.success),
+    `the next item from the dismiss button is the "${en.ui.banner.success}" heading`,
   ).toBe(true);
+  await voiceOver.perform(commands(voiceOver).moveToNext);
+  const onWords = await voiceOver.itemText();
+  hear.note(
+    "VO-Right from the heading",
+    `${clean(await voiceOver.lastSpokenPhrase())} / item: ${onWords}`,
+  );
+  expect(has(onWords, words), `the item after the heading is "${words}"`).toBe(
+    true,
+  );
 });

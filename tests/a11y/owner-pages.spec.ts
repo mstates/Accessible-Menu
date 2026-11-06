@@ -529,19 +529,20 @@ test("the icons box sits under Allergens with its hint, follows the restaurant's
 // (D-215). D-214 refines it to GitHub's flash: the dismiss button carries
 // autofocus in the served HTML, so the browser focuses it as the page
 // loads, before React hydrates, and the words sit in one alert with
-// aria-atomic. Inside the banner the heading comes first, then the dismiss
-// button, then the words, so from the focused button the next item is the
-// words; on screen the button stays on the right of them, by CSS order
-// (D-215). Its icon sits beside the words and is hidden from assistive
-// technology; its dismiss button is named and at least 24 by 24, and sends
-// focus to the heading, by Enter and by pointer, through React Aria's
-// press on the button our render function draws. The cookie is
-// cleared as the banner shows, so a reload and Back show no banner, no
-// alert, and nothing focused. Alerts are counted inside main, since Next's
+// aria-atomic. Inside the banner the dismiss button comes first (D-215),
+// then the heading, then the words, so from the focused button the next
+// item is the heading and the one after it the words (D-216); on screen
+// the button stays on the right of them, by CSS order (D-215). Its icon
+// sits beside the words and is hidden from assistive technology; its
+// dismiss button is named and at least 24 by 24, and sends focus to the
+// heading, by Enter and by pointer, through React Aria's press on the
+// button our render function draws. The cookie is cleared as the banner
+// shows, so a reload and Back show no banner, no alert, and nothing
+// focused. Alerts are counted inside main, since Next's
 // route announcer is an alert of its own under the body. The checks wait
 // for Details' own heading before counting banners, so a page still on its
 // way cannot pass for one without a banner.
-test("after a save, Details arrives with the success banner first in main, above its heading, reading its heading, its dismiss button, then its words in one atomic alert, the button on the right of the words on screen and focused by the served autofocus; dismiss by Enter or pointer sends focus to the heading, and a reload or Back shows no banner, no alert, and nothing focused (D-211, D-214, D-215)", async ({
+test("after a save, Details arrives with the success banner first in main, above its heading, reading its dismiss button, its heading, then its words in one atomic alert, the button on the right of the words on screen and focused by the served autofocus; dismiss by Enter or pointer sends focus to the heading, and a reload or Back shows no banner, no alert, and nothing focused (D-211, D-214, D-215, D-216)", async ({
   page,
 }) => {
   const heading = page.locator("main h1");
@@ -635,8 +636,8 @@ test("after a save, Details arrives with the success banner first in main, above
   );
   expect(
     shape.order,
-    "the banner reads its heading, its dismiss button, then its words, the icon beside them",
-  ).toEqual(["h2", "button", "svg", "alert"]);
+    "the banner reads its dismiss button, its heading, then its words, the icon beside them",
+  ).toEqual(["button", "h2", "svg", "alert"]);
   expect(
     shape.buttonRight,
     "on screen the dismiss button sits on the right of the words, on their row",

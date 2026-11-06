@@ -10,15 +10,15 @@ import { savedBanner } from "../a11y/saved-banner";
 // navigation; the address carries nothing; the success banner is there and
 // its dismiss button is the active element, focused by the served autofocus
 // as the page loads (D-214); the banner is main's first element child,
-// above the heading, and reads its heading, its dismiss button, then its
-// words (D-215); and a refresh shows no banner. The gate pins the banner's
-// arrival from the cookie (tests/a11y/owner-pages.spec.ts).
+// above the heading (D-215), and reads its dismiss button, its heading,
+// then its words (D-216); and a refresh shows no banner. The gate pins
+// the banner's arrival from the cookie (tests/a11y/owner-pages.spec.ts).
 
 const { code } = ownerEnv();
 const details = restaurantDetailsPath(code);
 const strings = en.owner.restaurants.details;
 
-test("Save details that lands loads Details as a new document at the top, with the success banner first in main above the heading, reading its heading, its dismiss button, then its words, the dismiss button the active element, and nothing in the address, and a refresh shows no banner (D-211, D-214, D-215)", async ({
+test("Save details that lands loads Details as a new document at the top, with the success banner first in main above the heading, reading its dismiss button, its heading, then its words, the dismiss button the active element, and nothing in the address, and a refresh shows no banner (D-211, D-214, D-215, D-216)", async ({
   page,
 }) => {
   const documents: string[] = [];
@@ -94,8 +94,8 @@ test("Save details that lands loads Details as a new document at the top, with t
   );
   expect(
     place.order,
-    "the banner reads its heading, its dismiss button, then its words",
-  ).toEqual(["h2", "button", "svg", "alert"]);
+    "the banner reads its dismiss button, its heading, then its words",
+  ).toEqual(["button", "h2", "svg", "alert"]);
   expect(documents, "the first load, then the save's load of Details").toEqual([
     details,
     details,
