@@ -76,23 +76,23 @@ export default async function RestaurantDetailsPage({
         />
       }
     >
-      {/* Focusable by code alone, for the banner's dismiss button. */}
-      <h1 id={DETAILS_HEADING_ID} tabIndex={-1} className="text-3xl font-bold">
-        {strings.details.heading}
-      </h1>
-      {/* The success banner at the top of the body content, under the
-          heading (D-211, Primer), as GitHub's flash on the load the save
-          brings (D-214): its words an alert, its dismiss button focused by
-          the served autofocus. */}
+      {/* The success banner at the top of the body content, first in main
+          and above the heading (D-211, D-215, Primer), as GitHub's flash on
+          the load the save brings (D-214): its words an alert, its dismiss
+          button focused by the served autofocus. */}
       {saved ? (
         <SavedBanner
           code={restaurant.code}
           title={en.ui.banner.success}
           dismissLabel={en.ui.banner.dismiss}
           message={strings.details.saved}
-          className="mt-4"
+          className="mb-6"
         />
       ) : null}
+      {/* Focusable by code alone, for the banner's dismiss button. */}
+      <h1 id={DETAILS_HEADING_ID} tabIndex={-1} className="text-3xl font-bold">
+        {strings.details.heading}
+      </h1>
       {created ? (
         <p className="mt-4 rounded bg-background-raised p-4">
           {strings.details.created}

@@ -524,20 +524,24 @@ test("the icons box sits under Allergens with its hint, follows the restaurant's
 });
 
 // D-211, Q-141: a Details save that lands loads the page again, and the
-// success banner arrives with it at the top of the body content, under the
-// heading, the container's full width. D-214 refines it to GitHub's flash:
-// the dismiss button carries autofocus in the served HTML, so the browser
-// focuses it as the page loads, before React hydrates, and the words sit in
-// one alert with aria-atomic. Its icon sits beside the words and is hidden
-// from assistive technology; its dismiss button is named and at least 24 by
-// 24, and sends focus to the heading, by Enter and by pointer, through
-// React Aria's press on the button our render function draws. The cookie is
+// success banner arrives with it at the top of the body content, the
+// container's full width: main's first element child, above the heading
+// (D-215). D-214 refines it to GitHub's flash: the dismiss button carries
+// autofocus in the served HTML, so the browser focuses it as the page
+// loads, before React hydrates, and the words sit in one alert with
+// aria-atomic. Inside the banner the heading comes first, then the dismiss
+// button, then the words, so from the focused button the next item is the
+// words; on screen the button stays on the right of them, by CSS order
+// (D-215). Its icon sits beside the words and is hidden from assistive
+// technology; its dismiss button is named and at least 24 by 24, and sends
+// focus to the heading, by Enter and by pointer, through React Aria's
+// press on the button our render function draws. The cookie is
 // cleared as the banner shows, so a reload and Back show no banner, no
 // alert, and nothing focused. Alerts are counted inside main, since Next's
 // route announcer is an alert of its own under the body. The checks wait
 // for Details' own heading before counting banners, so a page still on its
 // way cannot pass for one without a banner.
-test("after a save, Details arrives with the success banner under its heading, its dismiss button focused by the served autofocus and its words in one atomic alert; dismiss by Enter or pointer sends focus to the heading, and a reload or Back shows no banner, no alert, and nothing focused (D-211, D-214)", async ({
+test("after a save, Details arrives with the success banner first in main, above its heading, reading its heading, its dismiss button, then its words in one atomic alert, the button on the right of the words on screen and focused by the served autofocus; dismiss by Enter or pointer sends focus to the heading, and a reload or Back shows no banner, no alert, and nothing focused (D-211, D-214, D-215)", async ({
   page,
 }) => {
   const heading = page.locator("main h1");
@@ -589,14 +593,29 @@ test("after a save, Details arrives with the success banner under its heading, i
     const h1 = main?.querySelector("h1");
     const icon = section.querySelector(":scope > svg");
     const words = section.querySelector(':scope > [role="alert"]');
+    const button = section.querySelector(":scope > button");
     const padding = main ? getComputedStyle(main) : null;
     const inner = main
       ? main.clientWidth -
         parseFloat(padding?.paddingLeft ?? "0") -
         parseFloat(padding?.paddingRight ?? "0")
       : 0;
+    const wordsBox = words?.getBoundingClientRect();
+    const buttonBox = button?.getBoundingClientRect();
     return {
-      underHeading: h1?.nextElementSibling === section,
+      firstInMain: main?.firstElementChild === section,
+      aboveHeading: h1 !== null && section.nextElementSibling === h1,
+      order: [...section.children].map((child) =>
+        child.getAttribute("role") === "alert"
+          ? "alert"
+          : child.tagName.toLowerCase(),
+      ),
+      buttonRight:
+        wordsBox !== undefined &&
+        buttonBox !== undefined &&
+        buttonBox.left >= wordsBox.right &&
+        buttonBox.top < wordsBox.bottom &&
+        buttonBox.bottom > wordsBox.top,
       fullWidth: Math.abs(section.getBoundingClientRect().width - inner) < 1,
       iconHidden: icon?.getAttribute("aria-hidden") === "true",
       iconShown: (icon?.getBoundingClientRect().width ?? 0) > 0,
@@ -608,9 +627,20 @@ test("after a save, Details arrives with the success banner under its heading, i
           0,
     };
   });
-  expect(shape.underHeading, "the banner comes right after the heading").toBe(
+  expect(shape.firstInMain, "the banner is main's first element child").toBe(
     true,
   );
+  expect(shape.aboveHeading, "the heading comes right after the banner").toBe(
+    true,
+  );
+  expect(
+    shape.order,
+    "the banner reads its heading, its dismiss button, then its words, the icon beside them",
+  ).toEqual(["h2", "button", "svg", "alert"]);
+  expect(
+    shape.buttonRight,
+    "on screen the dismiss button sits on the right of the words, on their row",
+  ).toBe(true);
   expect(shape.fullWidth, "the banner fills the container's width").toBe(true);
   expect(shape.iconHidden, "the icon is hidden from assistive tech").toBe(true);
   expect(shape.iconShown, "the icon shows").toBe(true);

@@ -5,11 +5,12 @@ import { Button as AriaButton } from "react-aria-components";
 
 // A Banner, built to Primer's Banner and its accessibility page (D-211):
 // feedback about a whole page, placed by the caller at the top of the body
-// content, the container's full width. A section landmark named by its
-// type, through an h2 that says the type and is visually hidden, since the
-// words are short (Primer: the title may be hidden when the body is short
-// and easily scanned). The type's icon sits beside the words and is hidden
-// from assistive technology: the heading says the type, so the icon and its
+// content, first in main and above the page's heading (D-215), the
+// container's full width. A section landmark named by its type, through an
+// h2 that says the type and is visually hidden, since the words are short
+// (Primer: the title may be hidden when the body is short and easily
+// scanned). The type's icon sits beside the words and is hidden from
+// assistive technology: the heading says the type, so the icon and its
 // color are never the only sign of it.
 //
 // By default no live region and no focus on arrival. A banner that comes
@@ -36,14 +37,26 @@ import { Button as AriaButton } from "react-aria-components";
 // The dismiss button, when there is one, is named by the caller's words, is
 // 44 pixels square (Primer asks 24 or more), and on press moves focus to
 // the element the caller names before the banner goes, so focus is never
-// lost to the body. Monochrome like every token: the raised background with
-// the border token around it, which forced colors keep; the icon and the
-// cross are stroked in currentColor, so they follow the text in both
-// schemes and in forced colors. The words keep at least 8rem: where the row
-// is narrower than the icon, the words, and the button together, at 320
-// pixels with the largest text, they wrap onto a line of their own and the
-// button after them, in the order they are read, so nothing scrolls
-// sideways.
+// lost to the body.
+//
+// The button comes first in the reading order and last on screen, as
+// GitHub's flash does (D-215): its close button is first in its markup and
+// its message next, so from the focused button the next item a screen
+// reader reaches is the words. On screen the icon and the words keep the
+// left and the button the right, by CSS order on the flex items. That is
+// sound here because the button is the banner's one control: its place
+// among the page's Tab stops is the same in either order, so focus order
+// is unaffected, and the heading, the button's name, and the words mean the
+// same read in either order. No reading-flow, which would make the reading
+// follow the screen.
+//
+// Monochrome like every token: the raised background with the border token
+// around it, which forced colors keep; the icon and the cross are stroked
+// in currentColor, so they follow the text in both schemes and in forced
+// colors. The words keep at least 8rem: where the row is narrower than the
+// icon, the words, and the button together, at 320 pixels with the largest
+// text, they wrap onto a line of their own and the button after them on
+// screen, so nothing scrolls sideways.
 
 type Kind = "success";
 
@@ -94,6 +107,37 @@ export function Banner({
       <h2 id={titleId} className="sr-only">
         {title}
       </h2>
+      {/* First to read, last on screen (D-215). */}
+      {dismiss ? (
+        <AriaButton
+          aria-label={dismiss.label}
+          onPress={() => {
+            document.getElementById(dismiss.focusId)?.focus();
+            setShown(false);
+          }}
+          render={
+            flash
+              ? ({ ref: buttonRef, ...buttonProps }) => (
+                  // eslint-disable-next-line jsx-a11y/no-autofocus -- D-214: the served autofocus is the flash's point
+                  <button ref={buttonRef} {...buttonProps} autoFocus />
+                )
+              : undefined
+          }
+          className="order-last -m-2 ms-auto inline-flex size-11 shrink-0 items-center justify-center rounded border-2 border-transparent data-[hovered]:bg-background data-[pressed]:bg-background"
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            className="size-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+          >
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
+        </AriaButton>
+      ) : null}
       <svg
         aria-hidden="true"
         viewBox="0 0 24 24"
@@ -113,36 +157,6 @@ export function Banner({
       ) : (
         <p className={wordsClass}>{children}</p>
       )}
-      {dismiss ? (
-        <AriaButton
-          aria-label={dismiss.label}
-          onPress={() => {
-            document.getElementById(dismiss.focusId)?.focus();
-            setShown(false);
-          }}
-          render={
-            flash
-              ? ({ ref: buttonRef, ...buttonProps }) => (
-                  // eslint-disable-next-line jsx-a11y/no-autofocus -- D-214: the served autofocus is the flash's point
-                  <button ref={buttonRef} {...buttonProps} autoFocus />
-                )
-              : undefined
-          }
-          className="-m-2 ms-auto inline-flex size-11 shrink-0 items-center justify-center rounded border-2 border-transparent data-[hovered]:bg-background data-[pressed]:bg-background"
-        >
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 24 24"
-            className="size-5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-          >
-            <path d="M6 6l12 12M18 6 6 18" />
-          </svg>
-        </AriaButton>
-      ) : null}
     </section>
   );
 }

@@ -9,14 +9,16 @@ import { savedBanner } from "../a11y/saved-banner";
 // real load of Details, a new document read from the top, never a client
 // navigation; the address carries nothing; the success banner is there and
 // its dismiss button is the active element, focused by the served autofocus
-// as the page loads (D-214); and a refresh shows no banner. The gate pins
-// the banner's arrival from the cookie (tests/a11y/owner-pages.spec.ts).
+// as the page loads (D-214); the banner is main's first element child,
+// above the heading, and reads its heading, its dismiss button, then its
+// words (D-215); and a refresh shows no banner. The gate pins the banner's
+// arrival from the cookie (tests/a11y/owner-pages.spec.ts).
 
 const { code } = ownerEnv();
 const details = restaurantDetailsPath(code);
 const strings = en.owner.restaurants.details;
 
-test("Save details that lands loads Details as a new document at the top, with the success banner, its dismiss button the active element, and nothing in the address, and a refresh shows no banner (D-211, D-214)", async ({
+test("Save details that lands loads Details as a new document at the top, with the success banner first in main above the heading, reading its heading, its dismiss button, then its words, the dismiss button the active element, and nothing in the address, and a refresh shows no banner (D-211, D-214, D-215)", async ({
   page,
 }) => {
   const documents: string[] = [];
@@ -72,6 +74,28 @@ test("Save details that lands loads Details as a new document at the top, with t
     banner.getByRole("button", { name: en.ui.banner.dismiss, exact: true }),
     "after the real load the dismiss button is the active element",
   ).toBeFocused();
+  const place = await banner.evaluate((section) => {
+    const main = section.closest("main");
+    return {
+      firstInMain: main?.firstElementChild === section,
+      aboveHeading: section.nextElementSibling?.tagName === "H1",
+      order: [...section.children].map((child) =>
+        child.getAttribute("role") === "alert"
+          ? "alert"
+          : child.tagName.toLowerCase(),
+      ),
+    };
+  });
+  expect(place.firstInMain, "the banner is main's first element child").toBe(
+    true,
+  );
+  expect(place.aboveHeading, "the heading comes right after the banner").toBe(
+    true,
+  );
+  expect(
+    place.order,
+    "the banner reads its heading, its dismiss button, then its words",
+  ).toEqual(["h2", "button", "svg", "alert"]);
   expect(documents, "the first load, then the save's load of Details").toEqual([
     details,
     details,

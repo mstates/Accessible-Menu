@@ -10,11 +10,11 @@
     - listitem:
       - link "Menus"
 - main:
-  - heading "Details" [level=1]
   - region "Success":
     - heading "Success" [level=2]
-    - alert: Details saved.
     - button "Dismiss this message"
+    - alert: Details saved.
+  - heading "Details" [level=1]
   - paragraph: /Menu link \S+/
   - paragraph:
     - link "Back to the dashboard"
