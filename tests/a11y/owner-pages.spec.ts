@@ -31,6 +31,7 @@ import {
 import { expectLabelShape } from "./label-shape";
 import {
   bannerMarks,
+  checkoutDashboardControls,
   dashboardControls,
   detailsControls,
   formMarks,
@@ -41,7 +42,7 @@ import {
 import { ownerEnv, ownerFixture } from "./owner-env";
 import { stopClock } from "./owner-lists";
 import { ownerPages, restaurantName } from "./pages";
-import { savedBanner, setSavedNotice } from "./saved-banner";
+import { expectFlashArrival, flashBanner, setNotice } from "./saved-banner";
 import { expectWrites, guardWrites } from "./write-guard";
 
 // Owner screens, signed in as the test owner (D-100), with the session from
@@ -84,7 +85,7 @@ for (const path of ownerPages(code)) {
   });
 }
 
-// Details as a save that lands leaves it (D-211): the success banner under
+// Details as a save that lands leaves it (D-211): the success banner above
 // the heading. The gate never lands a save (D-108), so the cookie the save
 // leaves is set before each load. The same checks as Details, with the
 // banner's dismiss button among the controls and its two marks in forced
@@ -95,7 +96,23 @@ test.describe(`${details} after a save`, () => {
     controls: savedDetailsControls,
     marks: [...formMarks, ...bannerMarks],
     snapshot: "app-restaurants-code-details-saved",
-    prepare: (page) => setSavedNotice(page, code),
+    prepare: (page) => setNotice(page, "details-saved", details),
+  });
+});
+
+// The dashboard as Stripe's return leaves it (D-219): the success flash
+// above the heading, from the cookie the return route sets, which the gate
+// sets itself since it never reaches Stripe (D-108). The same checks as
+// the dashboard, with the flash's dismiss button among the controls and
+// its two marks in forced colors; its snapshot replaces the
+// ?checkout=success arrival's.
+test.describe(`${dashboardPath} after checkout`, () => {
+  pageChecks(dashboardPath, {
+    ...checksFor(dashboardPath),
+    controls: checkoutDashboardControls,
+    marks: bannerMarks,
+    snapshot: "app-checkout-success",
+    prepare: (page) => setNotice(page, "checkout-success", dashboardPath),
   });
 });
 
@@ -541,60 +558,23 @@ test("the icons box sits under Allergens with its hint, follows the restaurant's
 // focused. Alerts are counted inside main, since Next's
 // route announcer is an alert of its own under the body. The checks wait
 // for Details' own heading before counting banners, so a page still on its
-// way cannot pass for one without a banner.
+// way cannot pass for one without a banner. The arrival's checks are the
+// flash's, shared with the dashboard's and the sign-in page's (D-219,
+// saved-banner.ts); the primitive's shape on screen is pinned here once.
 test(
   "after a save, Details arrives with the success banner first in main, above its heading, reading its dismiss button, its heading, then its words in one atomic alert, the button on the right of the words on screen and focused by the served autofocus; dismiss by Enter or pointer sends focus to the heading, and a reload or Back shows no banner, no alert, and nothing focused (D-211, D-214, D-215, D-216)",
   { tag: "@saved-banner" },
   async ({ page }) => {
     const heading = page.locator("main h1");
     const alerts = page.locator("main").getByRole("alert");
-    await setSavedNotice(page, code);
+    await setNotice(page, "details-saved", details);
     const response = await open(page, details);
-    const served = await response.text();
-    await page.waitForLoadState("networkidle");
-    expect(new URL(page.url()).search, "nothing in the address").toBe("");
-    const banner = savedBanner(page);
-    await expect(banner).toHaveCount(1);
-    const dismiss = banner.getByRole("button", {
-      name: en.ui.banner.dismiss,
-      exact: true,
+    const { banner, dismiss } = await expectFlashArrival(page, response, {
+      kind: "success",
+      words: strings.details.saved,
     });
-    const servedDismiss = [...served.matchAll(/<button\b[^>]*>/g)]
-      .map(([tag]) => tag)
-      .filter((tag) => tag.includes(`aria-label="${en.ui.banner.dismiss}"`));
-    expect(
-      servedDismiss,
-      "the served HTML holds one dismiss button",
-    ).toHaveLength(1);
-    expect(
-      servedDismiss[0],
-      "the served dismiss button carries autofocus, so the browser focuses it as the page loads",
-    ).toMatch(/\sautofocus(=""|\s|>)/);
-    await expect(
-      dismiss,
-      "the dismiss button has focus on arrival",
-    ).toBeFocused();
-    await expectLandedOutline(page);
-    const alert = banner.getByRole("alert");
-    await expect(alert, "the words are in one alert").toHaveCount(1);
-    await expect(alert).toHaveAttribute("aria-atomic", "true");
-    await expect(alert).toHaveText(strings.details.saved);
-    await expect(alerts, "the banner's is the one alert in main").toHaveCount(
-      1,
-    );
-    await expect(
-      banner.getByRole("heading", {
-        level: 2,
-        name: en.ui.banner.success,
-        exact: true,
-      }),
-    ).toHaveCount(1);
-    await expect(
-      banner.getByText(strings.details.saved, { exact: true }),
-    ).toBeVisible();
     const shape = await banner.evaluate((section) => {
       const main = section.closest("main");
-      const h1 = main?.querySelector("h1");
       const icon = section.querySelector(":scope > svg");
       const words = section.querySelector(':scope > [role="alert"]');
       const button = section.querySelector(":scope > button");
@@ -607,13 +587,6 @@ test(
       const wordsBox = words?.getBoundingClientRect();
       const buttonBox = button?.getBoundingClientRect();
       return {
-        firstInMain: main?.firstElementChild === section,
-        aboveHeading: h1 !== null && section.nextElementSibling === h1,
-        order: [...section.children].map((child) =>
-          child.getAttribute("role") === "alert"
-            ? "alert"
-            : child.tagName.toLowerCase(),
-        ),
         buttonRight:
           wordsBox !== undefined &&
           buttonBox !== undefined &&
@@ -631,16 +604,6 @@ test(
             0,
       };
     });
-    expect(shape.firstInMain, "the banner is main's first element child").toBe(
-      true,
-    );
-    expect(shape.aboveHeading, "the heading comes right after the banner").toBe(
-      true,
-    );
-    expect(
-      shape.order,
-      "the banner reads its dismiss button, its heading, then its words, the icon beside them",
-    ).toEqual(["button", "h2", "svg", "alert"]);
     expect(
       shape.buttonRight,
       "on screen the dismiss button sits on the right of the words, on their row",
@@ -684,7 +647,7 @@ test(
 
     // By pointer: React Aria's press reaches the button our render function
     // draws, and focus still goes to the heading.
-    await setSavedNotice(page, code);
+    await setNotice(page, "details-saved", details);
     await open(page, details);
     await page.waitForLoadState("networkidle");
     await expect(banner).toHaveCount(1);
@@ -695,7 +658,7 @@ test(
     );
     await expect(heading, "focus moves to the heading").toBeFocused();
 
-    await setSavedNotice(page, code);
+    await setNotice(page, "details-saved", details);
     await open(page, details);
     await page.waitForLoadState("networkidle");
     await expect(banner).toHaveCount(1);
@@ -1206,42 +1169,66 @@ for (const forced of [false, true]) {
   );
 }
 
-// D-110: a result that arrives with the page takes focus once. The query
-// value repeats, so each arrival is keyed by its render: a reload, with the
-// query stripped, and Back, replaying the same render, read nothing, and a
-// second arrival is read again.
+// D-219: the dashboard's three results, the return from Checkout (success
+// and cancel) and a restaurant the trial could not find, arrive as the
+// flash Details' save has (D-211, D-214 to D-216): the cookie their sender
+// leaves, which the gate sets itself since it never reaches Stripe or
+// presses the trial button (D-108). Each kind's word names the region and
+// its heading: Success, Note for the cancel, Error for the missing
+// restaurant. The cookie is cleared as the flash shows, so a reload and
+// Back show no banner, no alert, and nothing focused.
 const checkoutNotices = [
-  ["success", en.owner.billing.checkoutSuccess],
-  ["cancel", en.owner.billing.checkoutCancel],
-  ["missing", en.owner.billing.restaurantMissing],
+  ["checkout-success", "success", en.owner.billing.checkoutSuccess],
+  ["checkout-cancel", "info", en.owner.billing.checkoutCancel],
+  ["checkout-missing", "critical", en.owner.billing.restaurantMissing],
 ] as const;
 
-test("a checkout result takes focus on arrival, once for each arrival", async ({
-  page,
-}) => {
-  for (const [value, text] of checkoutNotices) {
-    const path = `${dashboardPath}?checkout=${value}`;
-    const message = page.getByText(text, { exact: true });
-    await open(page, path);
-    await expect(message).toBeFocused();
-    await expectLandedOutline(page);
-    await page.reload();
-    await expect(message).toHaveCount(0);
-    await open(page, path);
-    await expect(message, "a second arrival is read again").toBeFocused();
-  }
-});
+test(
+  "after Checkout or a missing restaurant, the dashboard arrives with the result's flash first in main, above its heading, its dismiss button focused by the served autofocus and its words in one atomic alert, under the kind's word; dismiss sends focus to the heading, and a reload or Back shows no banner, no alert, and nothing focused (D-219)",
+  { tag: "@saved-banner" },
+  async ({ page }) => {
+    const heading = page.locator("main h1");
+    const alerts = page.locator("main").getByRole("alert");
+    for (const [key, kind, words] of checkoutNotices) {
+      await setNotice(page, key, dashboardPath);
+      const response = await open(page, dashboardPath);
+      await expectFlashArrival(page, response, { kind, words });
+    }
 
-test("a checkout result is not read again on Back", async ({ page }) => {
-  const message = page.getByText(en.owner.billing.checkoutSuccess, {
-    exact: true,
-  });
-  await open(page, `${dashboardPath}?checkout=success`);
-  await expect(message).toBeFocused();
-  await page.locator(`main a[href="${restaurantNewPath()}"]`).click();
-  await page.waitForURL(`**${restaurantNewPath()}`);
-  await page.goBack();
-  await page.waitForURL((url) => url.pathname === dashboardPath);
-  await expect(message).toHaveCount(0);
-  await expectFocusResetThenSkipLink(page);
-});
+    const banner = flashBanner(page, "critical");
+    const dismiss = banner.getByRole("button", {
+      name: en.ui.banner.dismiss,
+      exact: true,
+    });
+    await tabTo(page, dismiss);
+    await page.keyboard.press("Enter");
+    await expect(banner, "dismissed, the banner goes").toHaveCount(0);
+    await expect(alerts, "dismissed, no alert is left").toHaveCount(0);
+    await expect(heading, "focus moves to the heading").toBeFocused();
+    await expectLandedOutline(page);
+
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    await expect(heading).toHaveText(en.owner.heading);
+    await expect(banner, "a reload shows no banner").toHaveCount(0);
+    await expect(alerts, "a reload shows no alert").toHaveCount(0);
+    expect(
+      await page.evaluate(() => document.activeElement === document.body),
+      "after a reload nothing is focused",
+    ).toBe(true);
+
+    await setNotice(page, "checkout-success", dashboardPath);
+    await open(page, dashboardPath);
+    await page.waitForLoadState("networkidle");
+    const success = flashBanner(page, "success");
+    await expect(success).toHaveCount(1);
+    await page.locator(`main a[href="${restaurantNewPath()}"]`).click();
+    await page.waitForURL(`**${restaurantNewPath()}`);
+    await page.goBack();
+    await page.waitForURL((url) => url.pathname === dashboardPath);
+    await expect(heading).toHaveText(en.owner.heading);
+    await expect(success, "Back shows no banner").toHaveCount(0);
+    await expect(alerts, "Back shows no alert").toHaveCount(0);
+    await expectFocusResetThenSkipLink(page);
+  },
+);

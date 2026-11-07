@@ -1,17 +1,21 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
 import { menuOrigin } from "@/core/config";
+import { DASHBOARD_NOTICES, readNotice } from "@/core/notice";
 import { listOwnerMenuPublishStates } from "@/core/supabase/menus";
 import { listOwnerRestaurants } from "@/core/supabase/restaurants";
 import { createSupabaseServerClient } from "@/core/supabase/server";
-import { startTrial } from "@/features/billing/actions";
 import { RestaurantBilling } from "@/features/billing/RestaurantBilling";
 import { signOut } from "@/features/owner/actions";
-import { arrivalKey } from "@/features/owner/arrival";
 import { DashboardShell } from "@/features/owner/DashboardShell";
-import { restaurantNewPath } from "@/features/owner/paths";
+import {
+  dashboardPath,
+  restaurantNewPath,
+  signInPath,
+} from "@/features/owner/paths";
 import { publishSummary } from "@/features/owner/publishing-words";
 import { RestaurantCard } from "@/features/owner/RestaurantCard";
 import { PageLink } from "@/ui/PageLink";
@@ -20,28 +24,19 @@ export const metadata: Metadata = {
   title: pageTitle(en, en.owner.title),
 };
 
-type Props = { searchParams: Promise<{ checkout?: string }> };
-
-const notices: Record<string, string> = {
-  success: en.owner.billing.checkoutSuccess,
-  cancel: en.owner.billing.checkoutCancel,
-  missing: en.owner.billing.restaurantMissing,
-};
-
 // The dashboard lists every restaurant the user belongs to (D-89), each
 // with what its menus say about Publish (D-82). Features never import each
 // other, so the page composes the owner card and the billing line itself.
-export default async function OwnerPage({ searchParams }: Props) {
+export default async function OwnerPage() {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase.auth.getClaims();
   const email = data?.claims.email;
-  if (!email) redirect("/app/sign-in");
-  const { checkout } = await searchParams;
-  const message = checkout ? notices[checkout] : undefined;
-  const notice =
-    checkout && message
-      ? { message, key: arrivalKey("checkout", checkout) }
-      : null;
+  if (!email) redirect(signInPath);
+  // A result that arrived with this load, from the cookie its sender left
+  // (D-219): the return from Checkout, or a restaurant the trial could not
+  // find. Read from the header, not cookies(), since a notice for another
+  // page can ride beside it (src/core/notice.ts).
+  const notice = readNotice((await headers()).get("cookie"), DASHBOARD_NOTICES);
 
   // Row level security limits this to the owner's restaurants, and the
   // publish states to each restaurant's menus.
@@ -81,7 +76,7 @@ export default async function OwnerPage({ searchParams }: Props) {
                 status: restaurant.status,
                 hasStripeCustomer: restaurant.hasStripeCustomer,
               }}
-              startTrial={startTrial}
+              path={dashboardPath}
             />
           </RestaurantCard>
         ))

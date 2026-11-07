@@ -106,9 +106,12 @@ const sizes = Object.keys(schemes) as Size[];
 // What a project runs, by tag. The two phone sizes in Chromium run every
 // test, as the gate did before (D-100); every other project runs the
 // arrival pass and what is named for it. The forced-colors pass runs only
-// in its own projects.
+// in its own projects. The flash tests (D-214, D-219) also run in WebKit
+// at phone size, the iPhone's engine, and in Firefox at desktop, where
+// NVDA with Firefox meets these screens on Windows.
 const arrival = /@arrival/;
 const forced = /@forced/;
+const flash = /@saved-banner/;
 
 function project(
   name: string,
@@ -151,15 +154,25 @@ function forcedProjects(name: string, extra: Partial<Project>): Project[] {
 const ownerFiles = /owner(\.setup|\.teardown|-[\w-]+\.spec)\.ts$/;
 const ownerSpecs = /owner-[\w-]+\.spec\.ts$/;
 
+// The public pages: every test at the two phone sizes, the arrival pass at
+// the rest, and the sign-in flash (D-219) in Firefox at desktop as well.
+function publicGrep(engine: Engine, size: Size): RegExp[] | undefined {
+  if (size === "320" || size === "phone") return undefined;
+  return engine === "firefox" && size === "desktop"
+    ? [arrival, flash]
+    : [arrival];
+}
+
 const engines: Engine[] = ["chromium", "webkit", "firefox"];
 const publicProjects: Project[] = [
   ...engines.flatMap((engine) =>
-    sizes.map((size) =>
-      project(engine, engine, size, {
+    sizes.map((size) => {
+      const grep = publicGrep(engine, size);
+      return project(engine, engine, size, {
         testIgnore: ownerFiles,
-        ...(size === "320" || size === "phone" ? {} : { grep: [arrival] }),
-      }),
-    ),
+        ...(grep ? { grep } : {}),
+      });
+    }),
   ),
   ...forcedProjects("chromium", { testIgnore: ownerFiles }),
 ];
@@ -174,18 +187,13 @@ const owner = { testMatch: ownerSpecs, dependencies: ["owner-setup"] };
 // Owner screens: Chromium in full at the two phone sizes and the arrival
 // pass at the rest; WebKit's arrival pass at every size, its dialog tests at
 // the two phone sizes, and at the phone size, the iPhone's engine, the walk
-// of arrivals by link, the pending message (D-210), and the saved banner
-// after a save (D-214); Firefox's arrival pass and the saved banner at
-// desktop, where NVDA with Firefox meets these screens on Windows.
+// of arrivals by link, the pending message (D-210), and the flashes after a
+// save and after Checkout (D-214, D-219); Firefox's arrival pass and the
+// flashes at desktop, where NVDA with Firefox meets these screens on
+// Windows.
 const webkitOwner: Record<Size, RegExp[]> = {
   "320": [arrival, /@dialog/],
-  phone: [
-    arrival,
-    /@dialog/,
-    /@link-arrival/,
-    /@pending-message/,
-    /@saved-banner/,
-  ],
+  phone: [arrival, /@dialog/, /@link-arrival/, /@pending-message/, flash],
   tablet: [arrival],
   "tablet-landscape": [arrival],
   desktop: [arrival],
@@ -215,7 +223,7 @@ const ownerProjects: Project[] = [
   ),
   project("owner-firefox", "firefox", "desktop", {
     ...owner,
-    grep: [arrival, /@saved-banner/],
+    grep: [arrival, flash],
     use: ownerUse,
   }),
 ];

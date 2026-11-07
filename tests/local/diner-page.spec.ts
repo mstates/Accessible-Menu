@@ -17,7 +17,7 @@ import {
 import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
-import { savedBanner } from "../a11y/saved-banner";
+import { flashBanner } from "../a11y/saved-banner";
 
 // The diner page with the writes landing for real against the stand-in
 // (the diner page task): a price change live through Publish; a special's
@@ -299,7 +299,9 @@ test("a details save is live on the diner page", async ({ page }) => {
     .getByRole("button", { name: restaurants.details.submit, exact: true })
     .click();
   // The save landed: Details loaded again, with its banner (D-211).
-  await expect(savedBanner(page)).toHaveCount(1, { timeout: 10_000 });
+  await expect(flashBanner(page, "success")).toHaveCount(1, {
+    timeout: 10_000,
+  });
   await expect
     .poll(async () => (await served(page, bare)).html)
     .toContain('href="https://standin.example"');
@@ -316,7 +318,9 @@ test("a details save is live on the diner page", async ({ page }) => {
     .getByRole("button", { name: restaurants.details.submit, exact: true })
     .click();
   // The save landed: Details loaded again, with its banner (D-211).
-  await expect(savedBanner(page)).toHaveCount(1, { timeout: 10_000 });
+  await expect(flashBanner(page, "success")).toHaveCount(1, {
+    timeout: 10_000,
+  });
   await expect
     .poll(async () => (await served(page, bare)).html)
     .not.toContain("standin.example");
@@ -444,7 +448,9 @@ async function setIcons(page: Page, on: boolean): Promise<void> {
     .getByRole("button", { name: restaurants.details.submit, exact: true })
     .click();
   // The save landed: Details loaded again, with its banner (D-211).
-  await expect(savedBanner(page)).toHaveCount(1, { timeout: 10_000 });
+  await expect(flashBanner(page, "success")).toHaveCount(1, {
+    timeout: 10_000,
+  });
 }
 
 const ICON_IDS = [

@@ -48,11 +48,11 @@ export const breadcrumbMarks: readonly Mark[] = [
     selector: `nav[aria-label="${en.ui.breadcrumb}"] span[aria-hidden="true"]`,
   },
 ];
-// The success banner's two drawn marks (D-211): its icon, beside its words,
-// and the cross in its dismiss button.
+// A flash's two drawn marks (D-211, D-219): its kind's icon, beside its
+// words, and the cross in its dismiss button.
 export const bannerMarks: readonly Mark[] = [
   {
-    what: "the banner's success icon",
+    what: "the banner's icon",
     selector: 'main section[aria-labelledby] > svg[aria-hidden="true"]',
   },
   {
@@ -78,9 +78,11 @@ export const checkboxMarks: readonly Mark[] = [
   },
 ];
 
+// The restaurant cards' headings, each named by its code (RestaurantCard),
+// never the flash's, which is a section with an h2 of its own (D-219).
 async function headings(page: Page): Promise<string[]> {
   return page
-    .locator("main section h2")
+    .locator('main section h2[id^="restaurant-"]')
     .evaluateAll((all) => all.map((h2) => (h2.textContent ?? "").trim()));
 }
 
@@ -126,6 +128,14 @@ export async function dashboardControls(page: Page): Promise<Control[]> {
     link(`${strings.editMenus} ${fill(strings.editMenusFor, { restaurant })}`),
   ]);
   return [site, link(strings.add), ...restaurants, button(en.owner.signOut)];
+}
+
+// The dashboard after Checkout (D-219): the same, and the flash's dismiss
+// button.
+export async function checkoutDashboardControls(
+  page: Page,
+): Promise<Control[]> {
+  return [...(await dashboardControls(page)), button(en.ui.banner.dismiss)];
 }
 
 export async function newControls(): Promise<Control[]> {

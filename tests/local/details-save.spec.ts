@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { en } from "../../src/copy";
 import { restaurantDetailsPath } from "../../src/features/owner/paths";
 import { ownerEnv } from "../a11y/owner-env";
-import { savedBanner } from "../a11y/saved-banner";
+import { flashBanner } from "../a11y/saved-banner";
 
 // Save details that lands, on the stand-in (D-211, Q-141). The gate cannot
 // land a save (D-108), so the save itself is checked here: it ends in a
@@ -36,7 +36,7 @@ test("Save details that lands loads Details as a new document at the top, with t
 
   await page.goto(details);
   await page.waitForLoadState("networkidle");
-  const banner = savedBanner(page);
+  const banner = flashBanner(page, "success");
   await expect(banner).toHaveCount(0);
   const before = await page.evaluate(() => performance.timeOrigin);
   const save = page.getByRole("button", { name: strings.submit, exact: true });

@@ -1,22 +1,22 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
 import { menuOrigin } from "@/core/config";
+import { DETAILS_NOTICES, readNotice } from "@/core/notice";
 import { placesConfigured } from "@/core/places";
 import { menuUrl } from "@/domain/menu-url";
 import { updateRestaurant } from "@/features/owner/actions";
 import { loadRestaurant } from "@/features/owner/load-restaurant";
-import { dashboardPath } from "@/features/owner/paths";
+import { NoticeBanner } from "@/features/owner/NoticeBanner";
+import {
+  dashboardPath,
+  restaurantDetailsPath,
+  signInPath,
+} from "@/features/owner/paths";
 import { RestaurantForm } from "@/features/owner/RestaurantForm";
 import { RestaurantNav } from "@/features/owner/RestaurantNav";
-import { SavedBanner } from "@/features/owner/SavedBanner";
-import {
-  DETAILS_HEADING_ID,
-  readSavedNotice,
-  SAVED_NOTICE,
-} from "@/features/owner/saved-notice";
 import { PageFrame } from "@/ui/PageFrame";
 import { PageLink } from "@/ui/PageLink";
 
@@ -26,6 +26,9 @@ type Props = {
 };
 
 const strings = en.owner.restaurants;
+
+// The Details heading, where focus goes when the flash is dismissed.
+const DETAILS_HEADING_ID = "details-heading";
 
 // The outcome of a redirect lands in the title, which a full load and Next's
 // route announcer both read on arrival.
@@ -53,14 +56,13 @@ export default async function RestaurantDetailsPage({
   const { code } = await params;
   const { created } = await searchParams;
   const { email, restaurant } = await loadRestaurant(code);
-  if (!email) redirect("/app/sign-in");
+  if (!email) redirect(signInPath);
   if (!restaurant) notFound();
   const action = updateRestaurant.bind(null, restaurant.code);
-  // A save that landed left its cookie for this load (D-211); the banner
-  // clears it once it shows.
-  const saved = readSavedNotice(
-    (await cookies()).get(SAVED_NOTICE.name)?.value,
-  );
+  // A save that landed left its cookie for this load (D-211, D-219); the
+  // banner clears it once it shows. Read from the header, not cookies(),
+  // since a notice for another page can ride beside it (src/core/notice.ts).
+  const notice = readNotice((await headers()).get("cookie"), DETAILS_NOTICES);
 
   return (
     <PageFrame
@@ -80,12 +82,12 @@ export default async function RestaurantDetailsPage({
           and above the heading (D-211, D-215, Primer), as GitHub's flash on
           the load the save brings (D-214): its words an alert, its dismiss
           button focused by the served autofocus. */}
-      {saved ? (
-        <SavedBanner
-          code={restaurant.code}
-          title={en.ui.banner.success}
-          dismissLabel={en.ui.banner.dismiss}
-          message={strings.details.saved}
+      {notice ? (
+        <NoticeBanner
+          copy={en}
+          notice={notice}
+          path={restaurantDetailsPath(restaurant.code)}
+          headingId={DETAILS_HEADING_ID}
           className="mb-6"
         />
       ) : null}

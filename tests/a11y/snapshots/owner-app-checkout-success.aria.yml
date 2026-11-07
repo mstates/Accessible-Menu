@@ -3,9 +3,12 @@
   - link "Accessible Menu"
   - status
 - main:
+  - region "Success":
+    - button "Dismiss this message"
+    - heading "Success" [level=2]
+    - alert: Thanks. Your free trial has started.
   - heading "Owner dashboard" [level=1]
   - paragraph: /Signed in as \S+/
-  - paragraph: Thanks. Your free trial has started.
   - paragraph:
     - link "Add a restaurant"
   - region "CI Diner (test restaurant, not real)":

@@ -61,11 +61,16 @@ import { Button as AriaButton } from "react-aria-components";
 // icon, the words, and the button together, at 320 pixels with the largest
 // text, they wrap onto a line of their own and the button after them on
 // screen, so nothing scrolls sideways.
+//
+// Three of Primer's kinds (D-219): success, info, and critical, each with
+// its own icon, Primer's marks drawn in strokes. The kind's word, which the
+// caller hands over as the title from the copy, says the type; the icon
+// and its color are never the only sign of it.
 
-type Kind = "success";
+export type BannerKind = "success" | "info" | "critical";
 
 type Props = {
-  kind: Kind;
+  kind: BannerKind;
   // The type's name, which names the landmark and is its heading.
   title: string;
   children: ReactNode;
@@ -80,12 +85,28 @@ type Props = {
 
 const wordsClass = "min-w-0 grow basis-32";
 
-const icons: Record<Kind, ReactNode> = {
+const icons: Record<BannerKind, ReactNode> = {
   // A check in a circle, Primer's success mark.
   success: (
     <>
       <circle cx="12" cy="12" r="9" />
       <path d="m8 12.5 2.75 2.75L16.5 9.5" />
+    </>
+  ),
+  // An i in a circle, Primer's info mark.
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8h.01" />
+      <path d="M12 11.5v5" />
+    </>
+  ),
+  // An exclamation mark in an octagon, Primer's stop mark for critical.
+  critical: (
+    <>
+      <path d="M8.3 3h7.4L21 8.3v7.4L15.7 21H8.3L3 15.7V8.3z" />
+      <path d="M12 7.5v5.5" />
+      <path d="M12 16.5h.01" />
     </>
   ),
 };

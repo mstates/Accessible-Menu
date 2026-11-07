@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { en } from "../../src/copy";
 import { restaurantDetailsPath } from "../../src/features/owner/paths";
 import { ownerEnv } from "../a11y/owner-env";
-import { savedBanner, setSavedNotice } from "../a11y/saved-banner";
+import { flashBanner, setNotice } from "../a11y/saved-banner";
 
 // The success banner and the back-forward cache (D-211, Michael at the
 // plan's approval). A page restored from that cache comes back as it was
@@ -59,11 +59,11 @@ test("a Details page restored from the back-forward cache after a full load else
     w.__restored = [];
     addEventListener("pageshow", (event) => w.__restored.push(event.persisted));
   });
-  await setSavedNotice(page, code);
+  await setNotice(page, "details-saved", details);
 
   await page.goto(details);
   await page.waitForLoadState("networkidle");
-  const banner = savedBanner(page);
+  const banner = flashBanner(page, "success");
   await expect(banner).toHaveCount(1);
 
   // A full load elsewhere, as a typed address is, then Back from the page

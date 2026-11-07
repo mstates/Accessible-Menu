@@ -3,9 +3,12 @@
   - link "Accessible Menu"
   - status
 - main:
+  - region "Error":
+    - button "Dismiss this message"
+    - heading "Error" [level=2]
+    - alert: That sign-in link did not work. It may have expired. Ask for a new one below.
   - heading "Sign in" [level=1]
   - paragraph: Sign in with an emailed link or with Google. No password to remember.
-  - paragraph: That sign-in link did not work. It may have expired. Ask for a new one below.
   - text: Email address
   - textbox "Email address"
   - button "Email me a sign-in link"

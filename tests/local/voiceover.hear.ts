@@ -15,7 +15,7 @@ import {
 } from "../../src/features/owner/paths";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
 import { listRows } from "../a11y/owner-lists";
-import { savedBanner } from "../a11y/saved-banner";
+import { flashBanner } from "../a11y/saved-banner";
 
 // VoiceOver on macOS, driven through Guidepup against the stand-in (D-194
 // (b), D-202). Run by npm run hear on this Mac, never in CI; the projects
@@ -553,7 +553,7 @@ test('reading 4 on Details: Save details loads the page again with focus on the 
     enter(voiceOver),
     6_000,
   );
-  const banner = savedBanner(page);
+  const banner = flashBanner(page, "success");
   await expect(banner, "the new page has the banner").toHaveCount(1);
   await expect(
     banner.getByRole("button", { name: dismiss, exact: true }),

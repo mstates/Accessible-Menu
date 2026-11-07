@@ -29,8 +29,10 @@ export function checkoutSessionParams(
     },
     client_reference_id: restaurantId,
     metadata: { restaurant_id: restaurantId },
-    success_url: `${origin}/app?checkout=success`,
-    cancel_url: `${origin}/app?checkout=cancel`,
+    // Stripe sends the owner back to the return route, which carries the
+    // result into the dashboard's flash (D-219, app/app/checkout/route.ts).
+    success_url: `${origin}/app/checkout?result=success`,
+    cancel_url: `${origin}/app/checkout?result=cancel`,
     ...(customerId ? { customer: customerId } : { customer_email: ownerEmail }),
   };
 }

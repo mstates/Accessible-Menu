@@ -1,73 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
-// One focused result message (D-104): the sign-in outcomes and the return
-// from Checkout (D-110). A Details save ends in a page load with a success
-// Banner instead (D-211). It takes focus when it mounts, and moving focus is
-// what announces it: no live role, and a focus-visible outline shows a
-// keyboard user where focus landed. The caller keys it per result, so the
-// same message twice mounts twice and is read twice.
-//
-// A result carried in the URL (?checkout=..., ?error=...) passes that value
-// as fromUrl.
-// Next can restore an earlier render from its router cache on Back, message
-// and all, even after the URL was rewritten, so each handled value is
-// recorded in sessionStorage and a value already handled renders nothing and
-// moves no focus. The query is stripped with replaceState for the reload
-// case. The decision is made once at mount, so the message stays visible
-// until the next navigation whatever re-renders happen.
+// One focused result message (D-104): the sign-in outcomes shown in place,
+// sent and failed. It takes focus when it mounts, and moving focus is what
+// announces it: no live role, and a focus-visible outline shows a keyboard
+// user where focus landed. The caller keys it per attempt, so the same
+// message twice mounts twice and is read twice. A result a page load brings
+// is not this: it is the flash, carried by the notice cookie (D-211, D-219,
+// NoticeBanner in features/owner).
 
-const STORAGE_KEY = "result-messages";
-const KEEP = 20;
+type Props = { message: string; className?: string };
 
-function handledValues(): string[] {
-  try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed)
-      ? parsed.filter((value): value is string => typeof value === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function recordHandled(value: string): void {
-  try {
-    const next = [...handledValues().filter((v) => v !== value), value].slice(
-      -KEEP,
-    );
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    // Storage unavailable: the message still shows and is read this once.
-  }
-}
-
-type Props = { message: string; fromUrl?: string; className?: string };
-
-export function ResultMessage({ message, fromUrl, className }: Props) {
+export function ResultMessage({ message, className }: Props) {
   const ref = useRef<HTMLParagraphElement>(null);
-  const [fresh] = useState(
-    () =>
-      fromUrl === undefined ||
-      typeof window === "undefined" ||
-      !handledValues().includes(fromUrl),
-  );
 
   useEffect(() => {
-    if (!fresh) return;
     ref.current?.focus();
-    if (fromUrl === undefined) return;
-    recordHandled(fromUrl);
-    window.history.replaceState(
-      window.history.state,
-      "",
-      window.location.pathname,
-    );
-  }, [fresh, fromUrl]);
+  }, []);
 
-  if (!fresh) return null;
   return (
     <p
       ref={ref}

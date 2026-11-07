@@ -2,11 +2,15 @@
 // owner paths, not menu URLs; the menu URL builder lives in src/domain.
 
 // The created outcome arrives in the address (D-110). A save's result does
-// not: it travels in a cookie for the page the save loads (D-211,
-// saved-notice.ts).
+// not, nor does any other result a page load brings: it travels in a cookie
+// for the page the load is for (D-211, D-219, src/core/notice.ts).
 export type DetailsNotice = { created: true };
 
 export const dashboardPath = "/app";
+
+// Where an owner signs in, and where a sign-in that failed before the page
+// loaded lands (D-219).
+export const signInPath = "/app/sign-in";
 
 export function restaurantNewPath(): string {
   return "/app/restaurants/new";

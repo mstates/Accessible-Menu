@@ -10,6 +10,7 @@ import {
   restaurantDetailsPath,
   restaurantMenusPath,
   restaurantNewPath,
+  signInPath,
 } from "../../src/features/owner/paths";
 
 // The restaurant whose diner pages the gate reads: CI Diner (D-126) on the
@@ -33,33 +34,33 @@ export const soupShows = () =>
 export const dinnerSnapshot = () => (soupShows() ? "m-code" : "m-code-night");
 
 // Every page the accessibility gate scans signed out. A 404 fails the run;
-// nothing skips. Add a page here in the same task that builds it.
+// nothing skips. Add a page here in the same task that builds it. The
+// sign-in page after a failed link is reached by the cookie the failure
+// leaves, which diner-pages.spec.ts sets before each load (D-219), so it
+// has its own describe there.
 export const pages = [
   "/",
   menuPath(menuCode),
   statementPath(menuCode),
   feedbackPath(menuCode),
   "/app",
-  "/app/sign-in",
-  // An expired sign-in link, arriving with the page (D-110).
-  "/app/sign-in?error=link",
+  signInPath,
   "/app/restaurants/new",
 ] as const;
 
 // The owner pages, scanned signed in as the test owner with the one
 // restaurant it holds (D-100). Owner paths come from the owner feature. The
-// created outcome and the return from Checkout are reached by URL, and
-// Details after a save by the cookie the save leaves, which
-// owner-pages.spec.ts sets before each load (D-211), so the gate never
-// sends a write to see them (D-108). The menus page shows the four menus
-// the test restaurant was given by its data file. A menu's own page, a section's own page, and a dish's own page
-// are named by an id, which only the setup learns, so those pages get the
-// same checks from owner-sections.spec.ts, owner-dishes.spec.ts, and
-// owner-dish.spec.ts.
+// created outcome is reached by URL; Details after a save and the dashboard
+// after Checkout by the cookie the result leaves, which owner-pages.spec.ts
+// sets before each load (D-211, D-219), so the gate never sends a write to
+// see them (D-108). The menus page shows the four menus the test
+// restaurant was given by its data file. A menu's own page, a section's
+// own page, and a dish's own page are named by an id, which only the setup
+// learns, so those pages get the same checks from owner-sections.spec.ts,
+// owner-dishes.spec.ts, and owner-dish.spec.ts.
 export function ownerPages(code: string) {
   return [
     dashboardPath,
-    `${dashboardPath}?checkout=success`,
     restaurantNewPath(),
     restaurantDetailsPath(code),
     restaurantDetailsPath(code, { created: true }),

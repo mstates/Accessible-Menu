@@ -13,7 +13,7 @@ import { createSupabaseServerClient } from "@/core/supabase/server";
 import { isMenuCode, normalizeMenuCode } from "@/domain/menu-url";
 import { restaurantInputSchema } from "@/domain/restaurant";
 import { fieldErrors, readRestaurantForm } from "./form-data";
-import { restaurantDetailsPath } from "./paths";
+import { restaurantDetailsPath, signInPath } from "./paths";
 
 // Sign-in outcomes. An address problem belongs to the email field; every
 // other outcome, sent or failed, is one message after the button. The
@@ -68,23 +68,31 @@ export async function requestMagicLink(
   return { status: "sent", message: en.owner.signIn.sent, attempt };
 }
 
+// Google sign-in's one failure before leaving: Supabase gave an error or no
+// URL. The form loads the sign-in page again with it (D-219); a sign-in
+// that starts leaves through the redirect below.
+export type GoogleSignInState = { status: "idle" } | { status: "failed" };
+
 // Starts Google sign-in. Supabase sends the owner to Google and back to
 // /auth/callback with a code, the same exchange the magic link uses (Spec 4.1).
-export async function signInWithGoogle(): Promise<void> {
+export async function signInWithGoogle(): Promise<GoogleSignInState> {
   const origin = await requestOrigin();
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: { redirectTo: `${origin}/auth/callback?next=/app` },
   });
-  if (error || !data.url) redirect("/app/sign-in?error=google");
+  // Nothing redirects here for the failure: a redirect from an action is a
+  // client navigation, where the flash cannot sit (D-214). The form loads
+  // the sign-in page again with the result (D-219).
+  if (error || !data.url) return { status: "failed" };
   redirect(data.url);
 }
 
 export async function signOut(): Promise<void> {
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();
-  redirect("/app/sign-in");
+  redirect(signInPath);
 }
 
 // Restaurant creation and details (D-85 to D-89, D-95).
@@ -113,7 +121,7 @@ function writeErrorMessage(error: RestaurantWriteError): string {
 async function ownerClient() {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase.auth.getClaims();
-  if (!data?.claims.email) redirect("/app/sign-in");
+  if (!data?.claims.email) redirect(signInPath);
   return supabase;
 }
 

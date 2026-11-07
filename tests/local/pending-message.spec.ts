@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { en } from "../../src/copy";
 import { restaurantDetailsPath } from "../../src/features/owner/paths";
 import { ownerEnv } from "../a11y/owner-env";
-import { savedBanner } from "../a11y/saved-banner";
+import { flashBanner } from "../a11y/saved-banner";
 
 // A Details save that lands, held past the second (D-209, D-210, Q-140).
 // React Aria announces the pending Save button by reference, a role="img"
@@ -100,7 +100,7 @@ test("a save held past the second announces while the Save button is there, and 
 
   release();
   await expect(
-    savedBanner(page),
+    flashBanner(page, "success"),
     "the save lands on a new page, with the banner",
   ).toHaveCount(1, { timeout: 10_000 });
   expect(
@@ -108,7 +108,7 @@ test("a save held past the second announces while the Save button is there, and 
     "a new document",
   ).toBeGreaterThan(before);
   await expect(
-    savedBanner(page).getByRole("button", {
+    flashBanner(page, "success").getByRole("button", {
       name: en.ui.banner.dismiss,
       exact: true,
     }),

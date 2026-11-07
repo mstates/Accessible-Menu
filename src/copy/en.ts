@@ -31,10 +31,13 @@ export const en = {
     loading: "Loading",
     // The name of the nav that shows where a page sits (D-128).
     breadcrumb: "Breadcrumb",
-    // A Banner's type, its landmark's name and its heading, and its dismiss
-    // button (D-211, Primer's Banner).
+    // A Banner's kind, its landmark's name and its heading, and its dismiss
+    // button (D-211, D-219, Primer's Banner): success for a result that
+    // landed, info for one that changed nothing, critical for a failure.
     banner: {
       success: "Success",
+      info: "Note",
+      critical: "Error",
       dismiss: "Dismiss this message",
     },
   },
