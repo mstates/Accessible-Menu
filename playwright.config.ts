@@ -173,13 +173,19 @@ const owner = { testMatch: ownerSpecs, dependencies: ["owner-setup"] };
 
 // Owner screens: Chromium in full at the two phone sizes and the arrival
 // pass at the rest; WebKit's arrival pass at every size, its dialog tests at
-// the two phone sizes, and the walk of arrivals by link and the pending
-// message's rename (D-207) at the phone size, the iPhone's engine;
-// Firefox's arrival pass at desktop, where NVDA with Firefox meets these
-// screens on Windows.
+// the two phone sizes, and at the phone size, the iPhone's engine, the walk
+// of arrivals by link, the pending message (D-210), and the saved banner
+// after a save (D-214); Firefox's arrival pass and the saved banner at
+// desktop, where NVDA with Firefox meets these screens on Windows.
 const webkitOwner: Record<Size, RegExp[]> = {
   "320": [arrival, /@dialog/],
-  phone: [arrival, /@dialog/, /@link-arrival/, /@pending-message/],
+  phone: [
+    arrival,
+    /@dialog/,
+    /@link-arrival/,
+    /@pending-message/,
+    /@saved-banner/,
+  ],
   tablet: [arrival],
   "tablet-landscape": [arrival],
   desktop: [arrival],
@@ -209,7 +215,7 @@ const ownerProjects: Project[] = [
   ),
   project("owner-firefox", "firefox", "desktop", {
     ...owner,
-    grep: [arrival],
+    grep: [arrival, /@saved-banner/],
     use: ownerUse,
   }),
 ];

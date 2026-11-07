@@ -24,8 +24,10 @@ import { savedBanner } from "../a11y/saved-banner";
 // focus (D-136), and "Saved." after a rename with Enter (D-118, D-140). Each
 // was proven able to go red against a one-line undo before it was trusted.
 // A fourth, Details' save as a page load with its banner (D-211, D-214,
-// D-215, D-216), carries its own negative control (HEAR_CONTROL=1), to be
-// run red once by hand before it is trusted.
+// D-216), is read as the Mac reads it (D-217): an alert served in the HTML
+// is not said at the load, so the words come two VO-Right steps on. It
+// carries its own negative control (HEAR_CONTROL=1), run by hand, which
+// must turn it red at its count, its log written apart from the run's.
 // D-202's fourth, a Select opened after an in-page move (Q-127, D-201), was
 // heard here with D-201's mark on and off and never read the title in either
 // engine, so it cannot go red on the Mac and is not a reading; what it heard
@@ -56,8 +58,9 @@ import { savedBanner } from "../a11y/saved-banner";
 // nothing between, so "once" is held as "in one phrase, never in two".
 //
 // Each test writes what VoiceOver said to tests/local/hear-logs, one file
-// per test and project, with the macOS version, the browser, and the commit
-// at the top; the chat reads them there.
+// per test and project, a control run's named with .control before the
+// project, so it never overwrites the run it controls; the macOS version,
+// the browser, and the commit at the top; the chat reads them there.
 
 const { code } = ownerEnv();
 const exec = promisify(execFile);
@@ -245,6 +248,7 @@ const test = voiceOverTest.extend<{ hear: Hear }>({
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
+    const control = process.env.HEAR_CONTROL === "1" ? ".control" : "";
     const folder = join(testInfo.project.testDir, "hear-logs");
     mkdirSync(folder, { recursive: true });
     const text = [
@@ -268,7 +272,10 @@ const test = voiceOverTest.extend<{ hear: Hear }>({
       ...own.map((line) => `  ${line}`),
       "",
     ].join("\n");
-    writeFileSync(join(folder, `${slug}.${testInfo.project.name}.txt`), text);
+    writeFileSync(
+      join(folder, `${slug}${control}.${testInfo.project.name}.txt`),
+      text,
+    );
   },
 });
 
@@ -279,6 +286,12 @@ const enter = (voiceOver: VoiceOverPlaywright) => () =>
   voiceOver.press("Enter", { capture: false });
 const escape = (voiceOver: VoiceOverPlaywright) => () =>
   voiceOver.press("Escape", { capture: false });
+// VO-Right, uncaptured: the phrase it brings is read by listen(), whose poll
+// starts from VoiceOver's own last phrase. Guidepup's capture starts from its
+// own last entry, which after a listen() window is a phrase VoiceOver said
+// long before, so a stale phrase still on screen would pass for the move's.
+const next = (voiceOver: VoiceOverPlaywright) => () =>
+  voiceOver.perform(commands(voiceOver).moveToNext, { capture: false });
 
 async function arrive(
   page: Page,
@@ -459,22 +472,26 @@ test('reading 3 on Menus: a rename with Enter says "Saved.", and the field is no
 });
 
 // Four: Save details that lands loads Details again as a new document
-// (D-211, Q-141), and the banner works as GitHub's flash (D-214): its
-// dismiss button carries autofocus in the served HTML and takes focus as
-// the page loads, and its words sit in an alert with aria-atomic. So
-// "Details saved." is said over the load, once: across every phrase in the
-// window after Enter, the words are in exactly one. Then VO-Right from the
-// focused button reaches the banner's heading, and once more the words,
-// since the banner reads its dismiss button, its heading, then its words
-// (D-215, D-216). The save changes nothing, so the stand-in stays as it
-// was, and the banner clears its own cookie.
+// (D-211, Q-141), with the banner as GitHub's flash (D-214): its dismiss
+// button carries autofocus in the served HTML and takes focus as the page
+// loads, and its words sit in an alert with aria-atomic. On the Mac an
+// alert served in the HTML is not said at the load, ours or GitHub's,
+// unless VoiceOver's automatic page read is on, which Guidepup's
+// preferences leave off (D-217, Q-145). So in the window after Enter one
+// phrase holds the dismiss button's name with "Success", the region it
+// starts, and no phrase holds "Details saved.". Then VO-Right from the
+// button reads the banner's heading, and once more its words, since the
+// banner reads its dismiss button, its heading, then its words (D-216).
+// Each move is judged by the new phrase VoiceOver speaks for it, polled
+// from VoiceOver's last phrase before the key, never by VoiceOver's item:
+// after the load the item still named the old page's Save details (Q-145).
+// The save changes nothing, so the stand-in stays as it was, and the banner
+// clears its own cookie.
 //
 // Its negative control, run by hand: HEAR_CONTROL=1 adds a second alert
-// holding the words to the page the save loads, once that page has loaded;
-// the reading must go red at its count, heard twice. Polling cannot tell
-// the same phrase said twice with nothing between from one phrase, so if
-// the control's words follow ours with nothing said between, the control
-// stays green; that is a finding about the control, to read in the log.
+// holding the words to the page the save loads, once that page has loaded,
+// and VoiceOver says that one (Q-145); the reading must go red at its
+// count, the words in one phrase where none is expected.
 const strayAlertArm = "hear-control";
 
 // Runs in the page as an init script, so it names the key itself: the same
@@ -494,18 +511,19 @@ function strayAlert(words: string) {
   });
 }
 
-test("reading 4 on Details: Save details loads the page again, focus lands on the banner's dismiss button, \"Details saved.\" is said once in the load's window, and VO-Right from the button reaches the heading, then the words (D-211, D-214, D-215, D-216)", async ({
+test('reading 4 on Details: Save details loads the page again with focus on the banner\'s dismiss button, VoiceOver says the button and "Success" at the load and "Details saved." in no phrase, then VO-Right says the "Success" heading and VO-Right again the words (D-211, D-214, D-216, D-217)', async ({
   page,
   voiceOver,
   hear,
 }) => {
   const strings = en.owner.restaurants;
   const words = strings.details.saved;
+  const { dismiss, success } = en.ui.banner;
   const control = process.env.HEAR_CONTROL === "1";
   if (control) await page.addInitScript(strayAlert, words);
   hear.note(
     "expected",
-    `${words} once in the load's window, focus on ${en.ui.banner.dismiss}${control ? " (control: a second alert with the words, which must go red at twice)" : ""}`,
+    `focus on ${dismiss}, its phrase with ${success}, and ${words} in no phrase of the load's window; then VO-Right: the ${success} heading, then ${words}${control ? " (control: a late alert with the words, which must go red at one)" : ""}`,
   );
 
   await arrive(page, restaurantDetailsPath(code), voiceOver);
@@ -538,42 +556,47 @@ test("reading 4 on Details: Save details loads the page again, focus lands on th
   const banner = savedBanner(page);
   await expect(banner, "the new page has the banner").toHaveCount(1);
   await expect(
-    banner.getByRole("button", { name: en.ui.banner.dismiss, exact: true }),
+    banner.getByRole("button", { name: dismiss, exact: true }),
     "the dismiss button has focus",
   ).toBeFocused();
   expect(
-    heard.filter((phrase) => has(phrase, words)),
-    `"${words}" is said once in the load's window`,
+    heard.filter((phrase) => has(phrase, dismiss) && has(phrase, success)),
+    `one phrase holds "${dismiss}" with "${success}"`,
   ).toHaveLength(1);
+  expect(
+    heard.filter((phrase) => has(phrase, words)),
+    `"${words}" is in no phrase of the load's window`,
+  ).toEqual([]);
 
-  // The banner reads its dismiss button first (D-215), then its heading,
-  // then its words (D-216), so from the focused button the next item is the
-  // heading and the one after it "Details saved.". Judged by the item under
-  // VoiceOver's cursor, not by the last phrase: the alert's own phrase holds
-  // the same words, so a move that went nowhere would pass on the phrase.
-  const onButton = await voiceOver.itemText();
-  hear.note("VoiceOver's item before VO-Right", onButton);
-  expect(
-    has(onButton, en.ui.banner.dismiss),
-    "VoiceOver's cursor is on the focused dismiss button",
-  ).toBe(true);
-  await voiceOver.perform(commands(voiceOver).moveToNext);
-  const onHeading = await voiceOver.itemText();
-  hear.note(
-    "VO-Right from the dismiss button",
-    `${clean(await voiceOver.lastSpokenPhrase())} / item: ${onHeading}`,
+  // The banner reads its dismiss button, its heading, then its words
+  // (D-216), so from the focused button VO-Right says the heading and the
+  // next VO-Right "Details saved.". Each move is the first phrase that
+  // differs from VoiceOver's last phrase before its key; none means the
+  // move said nothing new.
+  const toHeading = await hear.listen(
+    "VO-Right from the dismiss button, then 2 seconds",
+    next(voiceOver),
+    2_000,
+  );
+  const headingPhrase = toHeading[0] ?? "";
+  expect(headingPhrase, "VO-Right from the button says something new").not.toBe(
+    "",
   );
   expect(
-    has(onHeading, en.ui.banner.success),
-    `the next item from the dismiss button is the "${en.ui.banner.success}" heading`,
+    has(headingPhrase, success) && has(headingPhrase, "heading"),
+    `VO-Right from the button says the "${success}" heading`,
   ).toBe(true);
-  await voiceOver.perform(commands(voiceOver).moveToNext);
-  const onWords = await voiceOver.itemText();
-  hear.note(
-    "VO-Right from the heading",
-    `${clean(await voiceOver.lastSpokenPhrase())} / item: ${onWords}`,
+  const toWords = await hear.listen(
+    "VO-Right from the heading, then 2 seconds",
+    next(voiceOver),
+    2_000,
   );
-  expect(has(onWords, words), `the item after the heading is "${words}"`).toBe(
-    true,
+  const wordsPhrase = toWords[0] ?? "";
+  expect(wordsPhrase, "VO-Right from the heading says something new").not.toBe(
+    "",
   );
+  expect(
+    has(wordsPhrase, words),
+    `VO-Right from the heading says "${words}"`,
+  ).toBe(true);
 });

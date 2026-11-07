@@ -542,163 +542,173 @@ test("the icons box sits under Allergens with its hint, follows the restaurant's
 // route announcer is an alert of its own under the body. The checks wait
 // for Details' own heading before counting banners, so a page still on its
 // way cannot pass for one without a banner.
-test("after a save, Details arrives with the success banner first in main, above its heading, reading its dismiss button, its heading, then its words in one atomic alert, the button on the right of the words on screen and focused by the served autofocus; dismiss by Enter or pointer sends focus to the heading, and a reload or Back shows no banner, no alert, and nothing focused (D-211, D-214, D-215, D-216)", async ({
-  page,
-}) => {
-  const heading = page.locator("main h1");
-  const alerts = page.locator("main").getByRole("alert");
-  await setSavedNotice(page, code);
-  const response = await open(page, details);
-  const served = await response.text();
-  await page.waitForLoadState("networkidle");
-  expect(new URL(page.url()).search, "nothing in the address").toBe("");
-  const banner = savedBanner(page);
-  await expect(banner).toHaveCount(1);
-  const dismiss = banner.getByRole("button", {
-    name: en.ui.banner.dismiss,
-    exact: true,
-  });
-  const servedDismiss = [...served.matchAll(/<button\b[^>]*>/g)]
-    .map(([tag]) => tag)
-    .filter((tag) => tag.includes(`aria-label="${en.ui.banner.dismiss}"`));
-  expect(
-    servedDismiss,
-    "the served HTML holds one dismiss button",
-  ).toHaveLength(1);
-  expect(
-    servedDismiss[0],
-    "the served dismiss button carries autofocus, so the browser focuses it as the page loads",
-  ).toMatch(/\sautofocus(=""|\s|>)/);
-  await expect(
-    dismiss,
-    "the dismiss button has focus on arrival",
-  ).toBeFocused();
-  await expectLandedOutline(page);
-  const alert = banner.getByRole("alert");
-  await expect(alert, "the words are in one alert").toHaveCount(1);
-  await expect(alert).toHaveAttribute("aria-atomic", "true");
-  await expect(alert).toHaveText(strings.details.saved);
-  await expect(alerts, "the banner's is the one alert in main").toHaveCount(1);
-  await expect(
-    banner.getByRole("heading", {
-      level: 2,
-      name: en.ui.banner.success,
+test(
+  "after a save, Details arrives with the success banner first in main, above its heading, reading its dismiss button, its heading, then its words in one atomic alert, the button on the right of the words on screen and focused by the served autofocus; dismiss by Enter or pointer sends focus to the heading, and a reload or Back shows no banner, no alert, and nothing focused (D-211, D-214, D-215, D-216)",
+  { tag: "@saved-banner" },
+  async ({ page }) => {
+    const heading = page.locator("main h1");
+    const alerts = page.locator("main").getByRole("alert");
+    await setSavedNotice(page, code);
+    const response = await open(page, details);
+    const served = await response.text();
+    await page.waitForLoadState("networkidle");
+    expect(new URL(page.url()).search, "nothing in the address").toBe("");
+    const banner = savedBanner(page);
+    await expect(banner).toHaveCount(1);
+    const dismiss = banner.getByRole("button", {
+      name: en.ui.banner.dismiss,
       exact: true,
-    }),
-  ).toHaveCount(1);
-  await expect(
-    banner.getByText(strings.details.saved, { exact: true }),
-  ).toBeVisible();
-  const shape = await banner.evaluate((section) => {
-    const main = section.closest("main");
-    const h1 = main?.querySelector("h1");
-    const icon = section.querySelector(":scope > svg");
-    const words = section.querySelector(':scope > [role="alert"]');
-    const button = section.querySelector(":scope > button");
-    const padding = main ? getComputedStyle(main) : null;
-    const inner = main
-      ? main.clientWidth -
-        parseFloat(padding?.paddingLeft ?? "0") -
-        parseFloat(padding?.paddingRight ?? "0")
-      : 0;
-    const wordsBox = words?.getBoundingClientRect();
-    const buttonBox = button?.getBoundingClientRect();
-    return {
-      firstInMain: main?.firstElementChild === section,
-      aboveHeading: h1 !== null && section.nextElementSibling === h1,
-      order: [...section.children].map((child) =>
-        child.getAttribute("role") === "alert"
-          ? "alert"
-          : child.tagName.toLowerCase(),
-      ),
-      buttonRight:
-        wordsBox !== undefined &&
-        buttonBox !== undefined &&
-        buttonBox.left >= wordsBox.right &&
-        buttonBox.top < wordsBox.bottom &&
-        buttonBox.bottom > wordsBox.top,
-      fullWidth: Math.abs(section.getBoundingClientRect().width - inner) < 1,
-      iconHidden: icon?.getAttribute("aria-hidden") === "true",
-      iconShown: (icon?.getBoundingClientRect().width ?? 0) > 0,
-      iconBeforeWords:
-        icon !== null &&
-        words !== null &&
-        (icon.compareDocumentPosition(words) &
-          Node.DOCUMENT_POSITION_FOLLOWING) !==
-          0,
-    };
-  });
-  expect(shape.firstInMain, "the banner is main's first element child").toBe(
-    true,
-  );
-  expect(shape.aboveHeading, "the heading comes right after the banner").toBe(
-    true,
-  );
-  expect(
-    shape.order,
-    "the banner reads its dismiss button, its heading, then its words, the icon beside them",
-  ).toEqual(["button", "h2", "svg", "alert"]);
-  expect(
-    shape.buttonRight,
-    "on screen the dismiss button sits on the right of the words, on their row",
-  ).toBe(true);
-  expect(shape.fullWidth, "the banner fills the container's width").toBe(true);
-  expect(shape.iconHidden, "the icon is hidden from assistive tech").toBe(true);
-  expect(shape.iconShown, "the icon shows").toBe(true);
-  expect(shape.iconBeforeWords, "the icon sits before the words").toBe(true);
-  const box = await dismiss.boundingBox();
-  expect(
-    box?.width ?? 0,
-    "the dismiss button is 24 wide or more",
-  ).toBeGreaterThanOrEqual(24);
-  expect(
-    box?.height ?? 0,
-    "the dismiss button is 24 high or more",
-  ).toBeGreaterThanOrEqual(24);
-  await expectNoMissingIds(page);
-  await expectNoAxeViolations(page, { review: true });
+    });
+    const servedDismiss = [...served.matchAll(/<button\b[^>]*>/g)]
+      .map(([tag]) => tag)
+      .filter((tag) => tag.includes(`aria-label="${en.ui.banner.dismiss}"`));
+    expect(
+      servedDismiss,
+      "the served HTML holds one dismiss button",
+    ).toHaveLength(1);
+    expect(
+      servedDismiss[0],
+      "the served dismiss button carries autofocus, so the browser focuses it as the page loads",
+    ).toMatch(/\sautofocus(=""|\s|>)/);
+    await expect(
+      dismiss,
+      "the dismiss button has focus on arrival",
+    ).toBeFocused();
+    await expectLandedOutline(page);
+    const alert = banner.getByRole("alert");
+    await expect(alert, "the words are in one alert").toHaveCount(1);
+    await expect(alert).toHaveAttribute("aria-atomic", "true");
+    await expect(alert).toHaveText(strings.details.saved);
+    await expect(alerts, "the banner's is the one alert in main").toHaveCount(
+      1,
+    );
+    await expect(
+      banner.getByRole("heading", {
+        level: 2,
+        name: en.ui.banner.success,
+        exact: true,
+      }),
+    ).toHaveCount(1);
+    await expect(
+      banner.getByText(strings.details.saved, { exact: true }),
+    ).toBeVisible();
+    const shape = await banner.evaluate((section) => {
+      const main = section.closest("main");
+      const h1 = main?.querySelector("h1");
+      const icon = section.querySelector(":scope > svg");
+      const words = section.querySelector(':scope > [role="alert"]');
+      const button = section.querySelector(":scope > button");
+      const padding = main ? getComputedStyle(main) : null;
+      const inner = main
+        ? main.clientWidth -
+          parseFloat(padding?.paddingLeft ?? "0") -
+          parseFloat(padding?.paddingRight ?? "0")
+        : 0;
+      const wordsBox = words?.getBoundingClientRect();
+      const buttonBox = button?.getBoundingClientRect();
+      return {
+        firstInMain: main?.firstElementChild === section,
+        aboveHeading: h1 !== null && section.nextElementSibling === h1,
+        order: [...section.children].map((child) =>
+          child.getAttribute("role") === "alert"
+            ? "alert"
+            : child.tagName.toLowerCase(),
+        ),
+        buttonRight:
+          wordsBox !== undefined &&
+          buttonBox !== undefined &&
+          buttonBox.left >= wordsBox.right &&
+          buttonBox.top < wordsBox.bottom &&
+          buttonBox.bottom > wordsBox.top,
+        fullWidth: Math.abs(section.getBoundingClientRect().width - inner) < 1,
+        iconHidden: icon?.getAttribute("aria-hidden") === "true",
+        iconShown: (icon?.getBoundingClientRect().width ?? 0) > 0,
+        iconBeforeWords:
+          icon !== null &&
+          words !== null &&
+          (icon.compareDocumentPosition(words) &
+            Node.DOCUMENT_POSITION_FOLLOWING) !==
+            0,
+      };
+    });
+    expect(shape.firstInMain, "the banner is main's first element child").toBe(
+      true,
+    );
+    expect(shape.aboveHeading, "the heading comes right after the banner").toBe(
+      true,
+    );
+    expect(
+      shape.order,
+      "the banner reads its dismiss button, its heading, then its words, the icon beside them",
+    ).toEqual(["button", "h2", "svg", "alert"]);
+    expect(
+      shape.buttonRight,
+      "on screen the dismiss button sits on the right of the words, on their row",
+    ).toBe(true);
+    expect(shape.fullWidth, "the banner fills the container's width").toBe(
+      true,
+    );
+    expect(shape.iconHidden, "the icon is hidden from assistive tech").toBe(
+      true,
+    );
+    expect(shape.iconShown, "the icon shows").toBe(true);
+    expect(shape.iconBeforeWords, "the icon sits before the words").toBe(true);
+    const box = await dismiss.boundingBox();
+    expect(
+      box?.width ?? 0,
+      "the dismiss button is 24 wide or more",
+    ).toBeGreaterThanOrEqual(24);
+    expect(
+      box?.height ?? 0,
+      "the dismiss button is 24 high or more",
+    ).toBeGreaterThanOrEqual(24);
+    await expectNoMissingIds(page);
+    await expectNoAxeViolations(page, { review: true });
 
-  await tabTo(page, dismiss);
-  await page.keyboard.press("Enter");
-  await expect(banner, "dismissed, the banner goes").toHaveCount(0);
-  await expect(alerts, "dismissed, no alert is left").toHaveCount(0);
-  await expect(heading, "focus moves to the heading").toBeFocused();
-  await expectLandedOutline(page);
+    await tabTo(page, dismiss);
+    await page.keyboard.press("Enter");
+    await expect(banner, "dismissed, the banner goes").toHaveCount(0);
+    await expect(alerts, "dismissed, no alert is left").toHaveCount(0);
+    await expect(heading, "focus moves to the heading").toBeFocused();
+    await expectLandedOutline(page);
 
-  await page.reload();
-  await page.waitForLoadState("networkidle");
-  await expect(heading).toHaveText(strings.details.heading);
-  await expect(banner, "a reload shows no banner").toHaveCount(0);
-  await expect(alerts, "a reload shows no alert").toHaveCount(0);
-  expect(
-    await page.evaluate(() => document.activeElement === document.body),
-    "after a reload nothing is focused",
-  ).toBe(true);
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    await expect(heading).toHaveText(strings.details.heading);
+    await expect(banner, "a reload shows no banner").toHaveCount(0);
+    await expect(alerts, "a reload shows no alert").toHaveCount(0);
+    expect(
+      await page.evaluate(() => document.activeElement === document.body),
+      "after a reload nothing is focused",
+    ).toBe(true);
 
-  // By pointer: React Aria's press reaches the button our render function
-  // draws, and focus still goes to the heading.
-  await setSavedNotice(page, code);
-  await open(page, details);
-  await page.waitForLoadState("networkidle");
-  await expect(banner).toHaveCount(1);
-  await expect(dismiss).toBeFocused();
-  await dismiss.click();
-  await expect(banner, "dismissed by pointer, the banner goes").toHaveCount(0);
-  await expect(heading, "focus moves to the heading").toBeFocused();
+    // By pointer: React Aria's press reaches the button our render function
+    // draws, and focus still goes to the heading.
+    await setSavedNotice(page, code);
+    await open(page, details);
+    await page.waitForLoadState("networkidle");
+    await expect(banner).toHaveCount(1);
+    await expect(dismiss).toBeFocused();
+    await dismiss.click();
+    await expect(banner, "dismissed by pointer, the banner goes").toHaveCount(
+      0,
+    );
+    await expect(heading, "focus moves to the heading").toBeFocused();
 
-  await setSavedNotice(page, code);
-  await open(page, details);
-  await page.waitForLoadState("networkidle");
-  await expect(banner).toHaveCount(1);
-  await page.locator(`main a[href="${dashboardPath}"]`).click();
-  await page.waitForURL(`**${dashboardPath}`);
-  await page.goBack();
-  await page.waitForURL(`**${details}`);
-  await expect(heading).toHaveText(strings.details.heading);
-  await expect(banner, "Back shows no banner").toHaveCount(0);
-  await expect(alerts, "Back shows no alert").toHaveCount(0);
-  await expectFocusResetThenSkipLink(page);
-});
+    await setSavedNotice(page, code);
+    await open(page, details);
+    await page.waitForLoadState("networkidle");
+    await expect(banner).toHaveCount(1);
+    await page.locator(`main a[href="${dashboardPath}"]`).click();
+    await page.waitForURL(`**${dashboardPath}`);
+    await page.goBack();
+    await page.waitForURL(`**${details}`);
+    await expect(heading).toHaveText(strings.details.heading);
+    await expect(banner, "Back shows no banner").toHaveCount(0);
+    await expect(alerts, "Back shows no alert").toHaveCount(0);
+    await expectFocusResetThenSkipLink(page);
+  },
+);
 
 // Records every title the document has, from its first byte, so a test can
 // read back each one a navigation passed through. Runs in the page as an
