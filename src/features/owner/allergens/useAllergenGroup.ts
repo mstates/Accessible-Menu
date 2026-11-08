@@ -34,12 +34,9 @@ import {
   type TextWords,
 } from "../editing/list-words";
 import type { TextState } from "../editing/texts";
-import type { UndoOutcome } from "../editing/undo";
 import type { Editing } from "../editing/useEditing";
 import {
-  allergenNotUndone,
   allergensNotSavedSentence,
-  allergenUndoneSentence,
   appliedSentence,
   blankRemovedSentence,
   checkNotSavedSentence,
@@ -50,19 +47,16 @@ import {
   otherRemovedSentence,
   otherWords,
   type AllergenStrings,
-  type ApplyProblem,
   type SameNamedPlace,
   type StampState,
 } from "./allergen-words";
-import type { GroupChange, UndoLists } from "./group-undo";
-import type { AllergenTarget, GroupProblem, GroupState } from "./target";
+import type { AllergenTarget, GroupState } from "./target";
 
 // The allergen group (D-148, D-166): the state and the handlers behind the
 // nine boxes, the other-allergen rows, the check, and the same-named offer
-// (D-129). It composes the page's one editing state and one Undo stack,
-// handed in by the page, so the page keeps one queue, one status, and one
-// Undo whatever it holds. What it writes to is its target: a dish, or an
-// option of a choice list.
+// (D-129). It composes the page's one editing state, handed in by the
+// page, so the page keeps one queue and one status whatever it holds. What
+// it writes to is its target: a dish, or an option of a choice list.
 //
 // Every write that changes or checks a list carries the lists the page
 // showed, and an option's carries the option's name too, and lands only if
@@ -78,12 +72,10 @@ import type { AllergenTarget, GroupProblem, GroupState } from "./target";
 // A tick, a check, and a remove show at once and go back by themselves if
 // the save fails. A change that clears a check says so after "Saved.".
 
-type Props<Entry> = {
+type Props = {
   strings: AllergenStrings;
   editingStrings: EditingStrings;
   editing: Editing;
-  // Puts an entry on the page's Undo stack.
-  record: (entry: Entry) => void;
   // The subject's words, for problems said with its name.
   words: TextWords;
   // The page's sentence for a subject that is no longer here.
@@ -96,7 +88,7 @@ type Props<Entry> = {
   // truth.
   state: OwnerAllergens;
   stateWords?: string | null;
-  target: AllergenTarget<Entry>;
+  target: AllergenTarget;
 };
 
 // The last lists, check, and words the server confirmed: every save ends
@@ -124,24 +116,11 @@ type View = {
   cleared: boolean;
 };
 
-export type Reversed =
-  | { ok: true; sentence: string | null }
-  | { ok: false; outcome: Exclude<UndoOutcome, "applied">; sentence: string };
-
-// Why one of the group's writes did not land: the server's reasons, a list
-// that moved under the page, or a call the browser never got an answer to.
-type WriteProblem =
-  GroupProblem | { kind: "unreachable" } | { kind: "out-of-date" };
-
 function isMajor(id: string): id is UsMajorAllergen {
   return (US_MAJOR_ALLERGENS as readonly string[]).includes(id);
 }
 
-function plain(lists: AllergenLists): UndoLists {
-  return { allergens: [...lists.allergens], others: [...lists.others] };
-}
-
-function listsOf(value: OwnerAllergens): UndoLists {
+function listsOf(value: OwnerAllergens): AllergenLists {
   return { allergens: [...value.allergens], others: [...value.otherAllergens] };
 }
 
@@ -179,11 +158,10 @@ function firstRows(server: string[]): Rows {
   };
 }
 
-export function useAllergenGroup<Entry>({
+export function useAllergenGroup({
   strings: copy,
   editingStrings,
   editing,
-  record,
   words,
   gone,
   announce,
@@ -191,7 +169,7 @@ export function useAllergenGroup<Entry>({
   state,
   stateWords = null,
   target,
-}: Props<Entry>) {
+}: Props) {
   const { ids, subject } = target;
   const allergenKey = ids.keys.allergen;
   const otherKey = ids.keys.other;
@@ -278,11 +256,10 @@ export function useAllergenGroup<Entry>({
   // said, after the "Saved." the field's landing said. The check's own
   // write is no such change: a deliberate uncheck says "Saved." alone, and
   // the stamp reads as a reload shows it (Q-66).
-  function landed(next: GroupState, before: Confirmed, own = false): UndoLists {
-    const lists = listsOf(next);
+  function landed(next: GroupState, before: Confirmed, own = false) {
     confirmed.current = {
       words: next.words === undefined ? confirmed.current.words : next.words,
-      lists,
+      lists: listsOf(next),
       check: next.check,
     };
     if (next.check || own) setCleared(false);
@@ -290,7 +267,6 @@ export function useAllergenGroup<Entry>({
       setCleared(true);
       announce(copy.clearedNow);
     }
-    return lists;
   }
 
   // A write found the target holding other lists, or other words, than the
@@ -324,7 +300,7 @@ export function useAllergenGroup<Entry>({
         const result = await editing.call(() =>
           target.writes.allergens(
             after.allergens.filter(isMajor),
-            plain(before.lists),
+            before.lists,
             before.words,
           ),
         );
@@ -348,21 +324,7 @@ export function useAllergenGroup<Entry>({
           return;
         }
         editing.landedField(key, null);
-        const lists = landed(result.value, before);
-        record(
-          target.entries.make(
-            {
-              kind: "allergen",
-              id: subject.id,
-              name: subject.name,
-              allergen: id,
-              on,
-              before: plain(before.lists),
-              after: lists,
-            },
-            before.words,
-          ),
-        );
+        landed(result.value, before);
       });
     });
   }
@@ -379,7 +341,7 @@ export function useAllergenGroup<Entry>({
           return;
         }
         const result = await editing.call(() =>
-          target.writes.check(on, plain(before.lists), before.words),
+          target.writes.check(on, before.lists, before.words),
         );
         editing.answered(key);
         if (!result.ok) {
@@ -402,18 +364,6 @@ export function useAllergenGroup<Entry>({
         }
         editing.landedField(key, null);
         landed(result.value, before, true);
-        record(
-          target.entries.make(
-            {
-              kind: "check",
-              id: subject.id,
-              name: subject.name,
-              on,
-              lists: plain(before.lists),
-            },
-            before.words,
-          ),
-        );
       });
     });
   }
@@ -490,7 +440,7 @@ export function useAllergenGroup<Entry>({
         const before = confirmed.current;
         const others = withRow(before.lists.others, row, value);
         const result = await editing.call(() =>
-          target.writes.others(others, plain(before.lists), before.words),
+          target.writes.others(others, before.lists, before.words),
         );
         editing.answered(key);
         if (!result.ok) {
@@ -512,19 +462,7 @@ export function useAllergenGroup<Entry>({
             each.key === row.key ? { ...each, saved: value } : each,
           ),
         }));
-        const lists = landed(result.value, before);
-        record(
-          target.entries.make(
-            {
-              kind: "others",
-              id: subject.id,
-              name: subject.name,
-              before: plain(before.lists),
-              after: lists,
-            },
-            before.words,
-          ),
-        );
+        landed(result.value, before);
       });
     });
   }
@@ -549,7 +487,8 @@ export function useAllergenGroup<Entry>({
     announce(otherAddedSentence(copy, position));
   }
 
-  // A named row goes at once, with Undo; a blank one is only taken off the
+  // A named row goes at once, on the press: it is a part of the form, and
+  // is typed again in a moment (D-221). A blank one is only taken off the
   // page. Focus goes to the next row's field, or to Add another allergen
   // when none is left; a remove that fails puts it back on the button.
   function removeOther(rowKey: number) {
@@ -585,7 +524,7 @@ export function useAllergenGroup<Entry>({
         const before = confirmed.current;
         const others = withoutRow(before.lists.others, row);
         const result = await editing.call(() =>
-          target.writes.others(others, plain(before.lists), before.words),
+          target.writes.others(others, before.lists, before.words),
         );
         if (!result.ok) {
           focusNextRef.current = { id: ids.otherButton(row.key), force: true };
@@ -603,19 +542,7 @@ export function useAllergenGroup<Entry>({
         }
         editing.dropField(key);
         editing.landed();
-        const lists = landed(result.value, before);
-        record(
-          target.entries.make(
-            {
-              kind: "others",
-              id: subject.id,
-              name: subject.name,
-              before: plain(before.lists),
-              after: lists,
-            },
-            before.words,
-          ),
-        );
+        landed(result.value, before);
       });
     });
   }
@@ -632,7 +559,7 @@ export function useAllergenGroup<Entry>({
       await editing.run(async () => {
         const before = confirmed.current;
         const result = await editing.call(() =>
-          offer.apply(place, plain(before.lists)),
+          offer.apply(place, before.lists),
         );
         if (!result.ok) {
           editing.failChange(
@@ -655,141 +582,8 @@ export function useAllergenGroup<Entry>({
         };
         editing.landed();
         announce(appliedSentence(copy, place));
-        record(
-          target.entries.make(
-            {
-              kind: "apply",
-              target: place.kind,
-              id: place.id,
-              dish: place.name,
-              section: place.section,
-              menu: place.menu,
-              before: { ...plain(place.lists), reviewed: place.reviewed },
-              after: listsOf(result.value),
-              at: result.value.check?.at ?? "",
-            },
-            before.words,
-          ),
-        );
       });
     });
-  }
-
-  // What the apply's Undo got back, as the group's problems.
-  function fromApply(problem: ApplyProblem): WriteProblem {
-    switch (problem.kind) {
-      case "target-changed":
-        return { kind: "lists-changed" };
-      case "target-gone":
-      case "source-changed":
-      case "source-unchecked":
-        return { kind: "gone" };
-      default:
-        return problem;
-    }
-  }
-
-  function notReversed(change: GroupChange, problem: WriteProblem): Reversed {
-    return {
-      ok: false,
-      ...allergenNotUndone(copy, editingStrings, words, change, problem),
-    };
-  }
-
-  // The inverse of one of the group's changes. A list is put back only
-  // while the target still holds the lists the change left, and the words
-  // the entry carried; a check is put back only on the lists it covered.
-  // The sentence says when the change cleared a check that stood.
-  async function reverse(entry: Entry): Promise<Reversed> {
-    const read = target.entries.read(entry);
-    if (!read) {
-      return { ok: false, outcome: "stale", sentence: editingStrings.stale };
-    }
-    const { change, words: carried } = read;
-    const before = confirmed.current;
-    switch (change.kind) {
-      case "allergen": {
-        const result = await editing.call(() =>
-          target.writes.allergens(
-            change.before.allergens.filter(isMajor),
-            change.after,
-            carried,
-          ),
-        );
-        if (!result.ok) return notReversed(change, result.problem);
-        const clearedCheck =
-          before.check !== null && result.value.check === null;
-        landedQuiet(result.value, before);
-        return {
-          ok: true,
-          sentence: allergenUndoneSentence(
-            copy,
-            change,
-            clearedCheck,
-            subject.noun,
-          ),
-        };
-      }
-      case "others": {
-        const result = await editing.call(() =>
-          target.writes.others(change.before.others, change.after, carried),
-        );
-        if (!result.ok) return notReversed(change, result.problem);
-        const clearedCheck =
-          before.check !== null && result.value.check === null;
-        landedQuiet(result.value, before);
-        return {
-          ok: true,
-          sentence: allergenUndoneSentence(
-            copy,
-            change,
-            clearedCheck,
-            subject.noun,
-          ),
-        };
-      }
-      case "check": {
-        const result = await editing.call(() =>
-          target.writes.check(!change.on, change.lists, carried),
-        );
-        if (!result.ok) return notReversed(change, result.problem);
-        landedQuiet(result.value, before, true);
-        return {
-          ok: true,
-          sentence: allergenUndoneSentence(copy, change, false, subject.noun),
-        };
-      }
-      case "apply": {
-        const offer = target.sameNamed;
-        if (!offer) {
-          return {
-            ok: false,
-            outcome: "stale",
-            sentence: editingStrings.stale,
-          };
-        }
-        const result = await editing.call(() => offer.undoApply(change));
-        if (!result.ok) return notReversed(change, fromApply(result.problem));
-        return {
-          ok: true,
-          sentence: allergenUndoneSentence(copy, change, false, subject.noun),
-        };
-      }
-    }
-  }
-
-  // After an Undo: the lists and the check as the server now holds them,
-  // with the Undo's own sentence carrying what there is to say. An Undo of
-  // the check is the check's own write, so the stamp reads as a reload
-  // shows it (Q-66).
-  function landedQuiet(next: GroupState, before: Confirmed, own = false) {
-    confirmed.current = {
-      words: next.words === undefined ? confirmed.current.words : next.words,
-      lists: listsOf(next),
-      check: next.check,
-    };
-    if (next.check || own) setCleared(false);
-    else if (before.check) setCleared(true);
   }
 
   // The page hands the group a state the server confirmed outside the
@@ -891,7 +685,6 @@ export function useAllergenGroup<Entry>({
     },
     lists,
     sameNamed: { places: shown.reviewed ? places : [], apply },
-    reverse,
     tryAgain,
     confirm,
     // The state the next write carries, for a handler that runs after a
@@ -902,6 +695,5 @@ export function useAllergenGroup<Entry>({
 
 export type AllergenGroupState = ReturnType<typeof useAllergenGroup>;
 
-// What the component draws: everything but the page's own Undo, whose
-// entries are the page's type.
-export type AllergenGroupView = Omit<AllergenGroupState, "reverse">;
+// What the component draws: the group's whole state.
+export type AllergenGroupView = AllergenGroupState;

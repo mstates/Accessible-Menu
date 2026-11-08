@@ -36,7 +36,7 @@ import { expectWrites, guardWrites } from "./write-guard";
 // it expects a write; the guard answers it inside the browser as an action
 // the server does not know, which is how the failed state is reached. Real
 // saves and the "Saved." they say (D-118), an add or a delete that lands,
-// Undo with something to undo, a taken name, a section that really moves,
+// a taken name, a section that really moves,
 // and a choice list that lands are covered by the unit tests, by the
 // boundary scripts, by the local checks, and by hand. The data file gives
 // the section with dishes one choice list with one option, and the empty
@@ -85,11 +85,11 @@ listRowChecks({
   h1: () => ownerFixture().withDishes.name,
   // The name field and Move up, Move down, and Delete; the section's note,
   // the one choice list's three buttons, its add field and Add choice list,
-  // the dishes' add field, Add, Undo, and the move's Select and button. The
+  // the dishes' add field, Add, and the move's Select and button. The
   // links to the dish's page and to the list's page are not fields or
   // buttons.
   rowControls: 4,
-  pageControls: 11,
+  pageControls: 10,
   // Each row's link to its dish's own page (D-128).
   rowLink: {
     label: strings.editDish,
@@ -109,6 +109,17 @@ listRowChecks({
     restaurantSectionPath(code, "not-a-section"),
     restaurantSectionPath(code, "00000000-0000-4000-8000-000000000000"),
   ],
+  // Every delete asks first (D-221). A dish holds nothing a delete counts,
+  // so no row asks with a count, and the question is the dish's name alone.
+  deletes: {
+    empty: () => {
+      const { market } = ownerFixture().dishes;
+      return {
+        name: market.name,
+        question: fill(strings.deleteAskEmpty, { dish: market.name }),
+      };
+    },
+  },
 });
 
 function rows(page: Page) {
@@ -259,7 +270,7 @@ test("a section's page is named for its section, its title names its menu, the b
 // D-135, D-166, and WCAG 3.3.2: the sentence that says how the page saves
 // comes right after the h1, before the first field it governs; then the
 // section's note, then the choice lists under their heading with their
-// lead, the one row, and the add form, then the status and Undo, then the
+// lead, the one row, and the add form, then the status, then the
 // dishes' own lead right above the dishes.
 test("the section's note comes first, after the sentence that says how it saves, with its hint, then the choice lists, then the status, then the dishes", async ({
   page,
@@ -440,8 +451,8 @@ test("a section's choice list reads as a row with its link and buttons named by 
   ).toHaveCount(1);
 });
 
-// D-119, D-166: a list with options asks first. The question names the
-// list and its options and is the dialog's name; focus goes to Keep; Keep
+// D-119, D-166, D-221: every delete asks first, and a list with options
+// names them. The question is the dialog's name; focus goes to Keep; Keep
 // sends nothing.
 test(
   "Delete on a choice list with options asks first, with focus on Keep, and Keep sends nothing",
@@ -491,7 +502,7 @@ test(
 
 // The delete confirmed, as far as the gate may take it: the write is held,
 // the row is gone with the sentence said, and it comes back when the guard
-// answers (D-119).
+// answers (D-119, D-221).
 test(
   "a choice list delete confirmed by Tab then Enter closes the dialog first, moves focus to the add field, says so, and comes back when the server cannot take it",
   { tag: "@dialog" },

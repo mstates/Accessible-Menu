@@ -281,8 +281,8 @@ export const en = {
         failed: "We could not save that. Try again in a minute.",
       },
     },
-    // The editing model every menu screen shares (D-111): one saved status,
-    // one Undo, and the reasons a save can fail whatever the field.
+    // The editing model every menu screen shares (D-111): one saved status
+    // and the reasons a save can fail whatever the field.
     editing: {
       saved: "All changes saved",
       saving: "Saving",
@@ -295,14 +295,10 @@ export const en = {
       // under it, until it lands (D-125).
       notSavedYet: "Not saved yet.",
       // The one button on an added row that failed: it was never saved, so
-      // it is removed, not deleted, and nothing is left to undo.
+      // it is removed, not deleted.
       removeUnsaved: "Remove",
       tryAgain: "Try again",
       reload: "Reload",
-      undo: "Undo",
-      nothingToUndo: "Nothing to undo.",
-      notUndone: "That was not undone.",
-      stale: "That change can no longer be undone.",
       problems: {
         unreachable:
           "We could not reach the server. What you typed is still here. Try again.",
@@ -332,9 +328,9 @@ export const en = {
         one: "{count} menu",
         other: "{count} menus",
       },
-      // A delete that takes sections with it asks first, and names what goes
-      // (D-119): its sections, and their dishes when they hold any. The
-      // question is the dialog's name.
+      // Every delete asks first (D-221), and names what goes when the menu
+      // holds any (D-119): its sections, and their dishes when they hold
+      // any. The question is the dialog's name.
       sectionCount: {
         one: "{count} section",
         other: "{count} sections",
@@ -345,13 +341,14 @@ export const en = {
       },
       deleteAsk: "Delete {menu}, with its {sections}?",
       deleteAskBoth: "Delete {menu}, with its {sections} and {dishes}?",
+      deleteAskEmpty: "Delete {menu}?",
       keep: "Keep",
       added: "{menu} added. {count}.",
       movedUp: "{menu} moved up. {position} of {total}.",
       movedDown: "{menu} moved down. {position} of {total}.",
       alreadyFirst: "{menu} is already first.",
       alreadyLast: "{menu} is already last.",
-      deleted: "{menu} deleted. Undo is available.",
+      deleted: "{menu} deleted.",
       removed: "{menu} removed.",
       notSaved: {
         name: "Name of {menu} was not saved.",
@@ -369,30 +366,10 @@ export const en = {
         // told about.
         grew: "It has sections or dishes this page did not show. Press Delete again.",
       },
-      undo: {
-        renamed: "Undo: renamed {from} to {to}",
-        added: "Undo: added {menu}",
-        deleted: "Undo: deleted {menu}",
-        moved: "Undo: moved {menu}",
-        renamedBack: "Undone. The name is {from} again.",
-        removed: "Undone. {menu} is removed.",
-        restored: "Undone. {menu} is back, {position} of {total}.",
-        movedBack: "Undone. {menu} is back at {position} of {total}.",
-        textChanged: "The name was changed again since, so nothing was undone.",
-        restoreBlocked:
-          "{menu} cannot come back while another menu is called {menu}.",
-        renameBlocked:
-          "The name {from} is taken by another menu, so this was not undone.",
-        // Undo never deletes content: an added menu that now holds sections
-        // stays, and its Delete button is the way to remove it.
-        addGrew:
-          "{menu} has sections now, so it stays. To delete it, use its Delete button.",
-      },
       // Under the delete question when the menu is published (D-82,
-      // migration 12): a deleted published menu is off at once, and Undo
-      // brings it back as it was published.
+      // migration 12): a deleted published menu is off at once.
       deletePublished:
-        "It is published. Deleting it takes it away from diners at once, and Undo brings it back.",
+        "It is published. Deleting it takes it away from diners at once.",
     },
     // Publish and Unpublish for one menu (D-82, migration 12), at the top of
     // the menu's own page, and the dashboard's summary of a restaurant's
@@ -472,20 +449,21 @@ export const en = {
         one: "{count} section",
         other: "{count} sections",
       },
-      // A delete that takes dishes with it asks first, and names what goes
-      // (D-119). The question is the dialog's name.
+      // Every delete asks first (D-221), and names what goes when the
+      // section holds any (D-119). The question is the dialog's name.
       dishCount: {
         one: "{count} dish",
         other: "{count} dishes",
       },
       deleteAsk: "Delete {section}, with its {dishes}?",
+      deleteAskEmpty: "Delete {section}?",
       keep: "Keep",
       added: "{section} added. {count}.",
       movedUp: "{section} moved up. {position} of {total}.",
       movedDown: "{section} moved down. {position} of {total}.",
       alreadyFirst: "{section} is already first.",
       alreadyLast: "{section} is already last.",
-      deleted: "{section} deleted. Undo is available.",
+      deleted: "{section} deleted.",
       removed: "{section} removed.",
       notSaved: {
         name: "Name of {section} was not saved.",
@@ -504,27 +482,6 @@ export const en = {
         listChanged: "The list of sections changed. Reload the page.",
         // The database found more dishes than the owner was told about.
         grew: "It has dishes this page did not show. Press Delete again.",
-      },
-      undo: {
-        renamed: "Undo: renamed {from} to {to}",
-        added: "Undo: added {section}",
-        deleted: "Undo: deleted {section}",
-        moved: "Undo: moved {section}",
-        note: "Undo: changed the note for {section}",
-        renamedBack: "Undone. The name is {from} again.",
-        removed: "Undone. {section} is removed.",
-        restored: "Undone. {section} is back, {position} of {total}.",
-        movedBack: "Undone. {section} is back at {position} of {total}.",
-        noteBack: "Undone. The note for {section} is as it was.",
-        textChanged: "That was changed again since, so nothing was undone.",
-        restoreBlocked:
-          "{section} cannot come back while another section is called {section}.",
-        renameBlocked:
-          "The name {from} is taken by another section, so this was not undone.",
-        // Undo never deletes content: an added section that now holds dishes
-        // stays, and its Delete button is the way to remove it.
-        addGrew:
-          "{section} has dishes now, so it stays. To delete it, use its Delete button.",
       },
     },
     // A section's own page: its dishes (D-128). The page is named for its
@@ -549,12 +506,17 @@ export const en = {
         one: "{count} dish",
         other: "{count} dishes",
       },
+      // Every delete asks first (D-221). A dish holds nothing a delete
+      // counts, so the question is its name alone, and it is the dialog's
+      // name.
+      keep: "Keep",
+      deleteAskEmpty: "Delete {dish}?",
       added: "{dish} added. {count}.",
       movedUp: "{dish} moved up. {position} of {total}.",
       movedDown: "{dish} moved down. {position} of {total}.",
       alreadyFirst: "{dish} is already first.",
       alreadyLast: "{dish} is already last.",
-      deleted: "{dish} deleted. Undo is available.",
+      deleted: "{dish} deleted.",
       removed: "{dish} removed.",
       notSaved: {
         name: "Name of {dish} was not saved.",
@@ -569,21 +531,6 @@ export const en = {
         gone: "That dish is no longer here. Reload the page.",
         parentGone: "This section is no longer here. Go back to Menus.",
         listChanged: "The list of dishes changed. Reload the page.",
-      },
-      undo: {
-        renamed: "Undo: renamed {from} to {to}",
-        added: "Undo: added {dish}",
-        deleted: "Undo: deleted {dish}",
-        moved: "Undo: moved {dish}",
-        renamedBack: "Undone. The name is {from} again.",
-        removed: "Undone. {dish} is removed.",
-        restored: "Undone. {dish} is back, {position} of {total}.",
-        movedBack: "Undone. {dish} is back at {position} of {total}.",
-        textChanged: "The name was changed again since, so nothing was undone.",
-        restoreBlocked:
-          "{dish} cannot come back while another dish is called {dish}.",
-        renameBlocked:
-          "The name {from} is taken by another dish, so this was not undone.",
       },
       // The section's own text, at the top of its page (D-120, D-135). The
       // page is the section, so the label does not name it. The lead comes
@@ -609,13 +556,6 @@ export const en = {
         errors: {
           nameTaken: "{menu} already has a section called {section}.",
           menuGone: "That menu is no longer here. Reload the page.",
-        },
-        undo: {
-          moved: "Undo: moved {section} to {menu}",
-          movedBack:
-            "Undone. {section} is back in {menu}, {position} of {total}.",
-          blocked:
-            "{section} cannot go back while {menu} has another section called {section}.",
         },
       },
     },
@@ -668,7 +608,7 @@ export const en = {
           one: "{count} size",
           other: "{count} sizes",
         },
-        sizeRemoved: "{size} removed. Undo is available.",
+        sizeRemoved: "{size} removed.",
         // Suggested after the restaurant's own size names (D-139).
         suggestions: [
           "Small",
@@ -710,35 +650,6 @@ export const en = {
         parentGone: "This dish is no longer here. Go back to Menus.",
         listChanged: "The sizes changed. Reload the page.",
       },
-      undo: {
-        description: "Undo: changed the description of {dish}",
-        descriptionBack: "Undone. The description of {dish} is as it was.",
-        note: "Undo: changed the note for {dish}",
-        noteBack: "Undone. The note for {dish} is as it was.",
-        price: "Undo: changed the price of {dish}",
-        priceBack: "Undone. The price of {dish} is as it was.",
-        calories: "Undo: changed the calories of {dish}",
-        caloriesBack: "Undone. The calories of {dish} are as they were.",
-        priceKind: "Undo: changed how {dish} is priced",
-        priceKindBack: "Undone. {dish} is priced as before: {kind}.",
-        sizeAdded: "Undo: added {size}",
-        sizeRemoved: "Undone. {size} is removed.",
-        sizeDeleted: "Undo: removed {size}",
-        sizeRestored: "Undone. {size} is back.",
-        sizeName: "Undo: changed the name of {size}",
-        sizeNameBack: "Undone. The name of {size} is as it was.",
-        sizePrice: "Undo: changed the price for {size}",
-        sizePriceBack: "Undone. The price for {size} is as it was.",
-        sizeCalories: "Undo: changed the calories for {size}",
-        sizeCaloriesBack: "Undone. The calories for {size} are as they were.",
-        textChanged: "That was changed again since, so nothing was undone.",
-        restoreBlocked:
-          "{size} cannot come back while another size is called {size}.",
-        // Undo never deletes content: an added size that holds a name or a
-        // price now stays, and its Remove button is the way to remove it.
-        addGrew:
-          "{size} has a name or a price now, so it stays. To remove it, use its Remove button.",
-      },
       // The link to the next dish in the section, so typing a section is one
       // pass (D-128), and what the last dish says instead.
       next: {
@@ -761,13 +672,6 @@ export const en = {
           nameTaken: "{section} already has a dish called {dish}.",
           sectionGone: "That section is no longer here. Reload the page.",
         },
-        undo: {
-          moved: "Undo: moved {dish} to {section}",
-          movedBack:
-            "Undone. {dish} is back in {section}, {position} of {total}.",
-          blocked:
-            "{dish} cannot go back while {section} has another dish called {dish}.",
-        },
       },
       // The dish's dietary tags (task 5, D-66): three boxes with a hint
       // each, and the sentence diners read under them from
@@ -785,14 +689,6 @@ export const en = {
         notSaved: "The dietary tags of {dish} were not saved.",
         tagsMoved:
           "The dietary tags changed since this page showed them, so nothing was saved. Look at the tags as they are now.",
-        undo: {
-          ticked: "Undo: ticked {tag} for {dish}",
-          unticked: "Undo: unticked {tag} for {dish}",
-          tickedBack: "Undone. {tag} is unticked again.",
-          untickedBack: "Undone. {tag} is ticked again.",
-          tagsChanged:
-            "The dietary tags were changed again since, so nothing was undone.",
-        },
       },
       // Availability (task 5, D-160): three radios like Price's, a hint on
       // the two that change what diners see, and the group's line saying
@@ -812,16 +708,6 @@ export const en = {
         endsOn: "Available again on its own on {date}, at {time}.",
         endsMidnight: "Available again on its own at midnight tonight.",
         notSaved: "The availability of {dish} was not saved.",
-        undo: {
-          markedSoldOut: "Undo: marked {dish} sold out today",
-          markedOff: "Undo: took {dish} off the menu",
-          markedAvailable: "Undo: made {dish} available",
-          availableBack: "Undone. {dish} is available again.",
-          soldOutBack: "Undone. {dish} is sold out today again.",
-          offBack: "Undone. {dish} is off the menu again.",
-          soldOutEnded:
-            "That sold-out mark ended on its own, so there is nothing to undo.",
-        },
       },
       // The schedule (task 5, D-159): five optional parts under one
       // heading, days, hours, and Today only first, the sentence diners
@@ -894,17 +780,6 @@ export const en = {
             "Choose a day of the week first, since weeks say which of the month's Mondays.",
           scheduleShape: "That schedule could not be read. Reload the page.",
         },
-        undo: {
-          ticked: "Undo: ticked {box} for {dish}",
-          unticked: "Undo: unticked {box} for {dish}",
-          hours: "Undo: changed the hours for {dish}",
-          today: "Undo: set Today only for {dish}",
-          from: "Undo: changed the first day for {dish}",
-          until: "Undo: changed the last day for {dish}",
-          back: "Undone. The schedule for {dish} is as it was.",
-          scheduleChanged:
-            "The schedule was changed again since, so nothing was undone.",
-        },
       },
       // Cooked to order (task 7, D-167): one box under its own heading,
       // after Schedule. The advisory itself is the menu's, once, in the
@@ -914,12 +789,6 @@ export const en = {
         label: "Cooked to order",
         hint: "For meat, fish, or eggs that can be served rare or undercooked. Diners read Cooked to order. with this dish, and the menu carries the advisory once.",
         notSaved: "The Cooked to order mark for {dish} was not saved.",
-        undo: {
-          on: "Undo: ticked Cooked to order for {dish}",
-          off: "Undo: unticked Cooked to order for {dish}",
-          onBack: "Undone. {dish} is not marked cooked to order.",
-          offBack: "Undone. {dish} is marked cooked to order again.",
-        },
       },
       // The dish's allergens and their check (task 4, D-148): the nine
       // major allergens as boxes with a hint each, other allergens as typed
@@ -974,7 +843,7 @@ export const en = {
         addOther: "Add another allergen",
         removeOther: "Remove allergen",
         otherAdded: "Other allergen {position} added.",
-        otherRemoved: "{other} removed. Undo is available.",
+        otherRemoved: "{other} removed.",
         blankRemoved: "Other allergen {position} removed.",
         othersFull: "A dish lists ten other allergens at most.",
         // Suggested after the restaurant's own other allergens.
@@ -1031,13 +900,6 @@ export const en = {
               "{dish} in {section}, {menu} is no longer there, so nothing was applied.",
             failed: "Nothing was applied.",
           },
-          undo: {
-            applied: "Undo: applied this list to {dish} in {section}, {menu}",
-            back: "Undone. {dish} in {section}, {menu} has its old list back. It is not checked now.",
-            backUnchanged: "Undone. {dish} in {section}, {menu} is as it was.",
-            changed:
-              "{dish} in {section}, {menu} has changed since, so it stays as it is.",
-          },
         },
         notSaved: {
           allergens: "The allergens of {dish} were not saved.",
@@ -1056,27 +918,6 @@ export const en = {
           // A comma reads as two allergens to a diner (D-151).
           otherComma:
             "An allergen name holds no comma. Put each allergen in its own row, with Add another allergen.",
-        },
-        undo: {
-          ticked: "Undo: ticked {allergen} for {dish}",
-          unticked: "Undo: unticked {allergen} for {dish}",
-          tickedBack: "Undone. {allergen} is unticked again.",
-          untickedBack: "Undone. {allergen} is ticked again.",
-          otherAdded: "Undo: added {other}",
-          otherRemoved: "Undo: removed {other}",
-          otherRenamed: "Undo: renamed {from} to {to}",
-          othersChanged: "Undo: changed the other allergens for {dish}",
-          otherAddedBack: "Undone. {other} is removed.",
-          otherRemovedBack: "Undone. {other} is back.",
-          otherRenamedBack: "Undone. The name is {from} again.",
-          othersBack:
-            "Undone. The other allergens for {dish} are as they were.",
-          checked: "Undo: checked the allergens for {dish}",
-          unchecked: "Undo: unchecked the allergens for {dish}",
-          checkedBack: "Undone. The allergens for {dish} are not checked.",
-          uncheckedBack: "Undone. The allergens for {dish} are checked by you.",
-          listsChanged:
-            "The allergen list was changed again since, so nothing was undone.",
         },
       },
     },
@@ -1112,20 +953,21 @@ export const en = {
           one: "{count} choice list",
           other: "{count} choice lists",
         },
-        // A delete that takes options with it asks first, and names what
-        // goes (D-119). The question is the dialog's name.
+        // Every delete asks first (D-221), and names what goes when the
+        // list holds any (D-119). The question is the dialog's name.
         optionCount: {
           one: "{count} option",
           other: "{count} options",
         },
         deleteAsk: "Delete {list}, with its {options}?",
+        deleteAskEmpty: "Delete {list}?",
         keep: "Keep",
         added: "{list} added. {count}.",
         movedUp: "{list} moved up. {position} of {total}.",
         movedDown: "{list} moved down. {position} of {total}.",
         alreadyFirst: "{list} is already first.",
         alreadyLast: "{list} is already last.",
-        deleted: "{list} deleted. Undo is available.",
+        deleted: "{list} deleted.",
         removed: "{list} removed.",
         notAdded: "{list} was not added.",
         notMoved: "{list} was not moved.",
@@ -1141,25 +983,6 @@ export const en = {
           listChanged: "The choice lists changed. Reload the page.",
           // The database found more options than the owner was told about.
           grew: "It has options this page did not show. Press Delete again.",
-        },
-        undo: {
-          renamed: "Undo: renamed {from} to {to}",
-          added: "Undo: added {list}",
-          deleted: "Undo: deleted {list}",
-          moved: "Undo: moved {list}",
-          renamedBack: "Undone. The lead is {from} again.",
-          removed: "Undone. {list} is removed.",
-          restored: "Undone. {list} is back, {position} of {total}.",
-          movedBack: "Undone. {list} is back at {position} of {total}.",
-          textChanged: "That was changed again since, so nothing was undone.",
-          restoreBlocked:
-            "{list} cannot come back while another choice list is called {list}.",
-          renameBlocked:
-            "The lead {from} is taken by another choice list, so this was not undone.",
-          // Undo never deletes content: an added list that holds options
-          // now stays, and its Delete button is the way to remove it.
-          addGrew:
-            "{list} has options now, so it stays. To delete it, use its Delete button.",
         },
       },
       // The list's own page: its lead, then its options. The page is named
@@ -1193,10 +1016,6 @@ export const en = {
           parentGone: "This choice list is no longer here. Go back to Menus.",
           listChanged: "The options changed. Reload the page.",
         },
-        undo: {
-          lead: "Undo: changed the lead of {list}",
-          leadBack: "Undone. The lead is {list} again.",
-        },
       },
       // The options on the list's page: one row each, with three fields
       // and its allergen group, added by name (D-125).
@@ -1227,7 +1046,7 @@ export const en = {
         movedDown: "{option} moved down. {position} of {total}.",
         alreadyFirst: "{option} is already first.",
         alreadyLast: "{option} is already last.",
-        deleted: "{option} removed. Undo is available.",
+        deleted: "{option} removed.",
         removed: "{option} removed.",
         notSaved: {
           name: "Name of {option} was not saved.",
@@ -1250,25 +1069,6 @@ export const en = {
           gone: "That option is no longer here. Reload the page.",
           parentGone: "This choice list is no longer here. Go back to Menus.",
           listChanged: "The options changed. Reload the page.",
-        },
-        undo: {
-          renamed: "Undo: renamed {from} to {to}",
-          added: "Undo: added {option}",
-          deleted: "Undo: removed {option}",
-          moved: "Undo: moved {option}",
-          price: "Undo: changed the added price for {option}",
-          priceBack: "Undone. The added price for {option} is as it was.",
-          calories: "Undo: changed the calories for {option}",
-          caloriesBack: "Undone. The calories for {option} are as they were.",
-          renamedBack: "Undone. The name is {from} again.",
-          removed: "Undone. {option} is removed.",
-          restored: "Undone. {option} is back, {position} of {total}.",
-          movedBack: "Undone. {option} is back at {position} of {total}.",
-          textChanged: "That was changed again since, so nothing was undone.",
-          restoreBlocked:
-            "{option} cannot come back while another option is called {option}.",
-          renameBlocked:
-            "The name {from} is taken by another option, so this was not undone.",
         },
       },
       // An option's own allergens (D-154, D-166): the dish page's group
@@ -1304,20 +1104,6 @@ export const en = {
             "This option's list changed since this page showed it, so nothing was applied.",
           sourceUnchecked:
             "This option is not checked now, so nothing was applied.",
-        },
-        undo: {
-          ticked: "Undo: ticked {allergen} for {option}",
-          unticked: "Undo: unticked {allergen} for {option}",
-          othersChanged: "Undo: changed the other allergens for {option}",
-          othersBack:
-            "Undone. The other allergens for {option} are as they were.",
-          checked: "Undo: checked the allergens for {option}",
-          unchecked: "Undo: unchecked the allergens for {option}",
-          checkedBack: "Undone. The allergens for {option} are not checked.",
-          uncheckedBack:
-            "Undone. The allergens for {option} are checked by you.",
-          listsChanged:
-            "The option or its allergen list was changed again since, so nothing was undone.",
         },
       },
       // Where an option is, as the same-named offer names a place (D-129,

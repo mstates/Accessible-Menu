@@ -5,8 +5,8 @@ import type { Status } from "./status";
 // "Saved." once through the page's log, so a screen reader user hears what
 // a sighted owner sees in the status. A failure is said where it happens and
 // leaves "All changes saved." owed until the status is next saved; the save
-// that gets it there says only that, never both. An add, a move, a delete,
-// and an Undo say their own sentences on their screen, and nothing here.
+// that gets it there says only that, never both. An add, a move, and a
+// delete say their own sentences on their screen, and nothing here.
 
 export type Landing = {
   // A field's text, or a change that has its own sentence.

@@ -9,39 +9,36 @@ import { TextField } from "@/ui/TextField";
 import { AutosaveTextField } from "./AutosaveTextField";
 import { fieldSuffix, rowAction } from "./list-words";
 import { SavedStatus } from "./SavedStatus";
-import type { ListRow, RowListState, SharedRowListState } from "./useRowList";
+import type { ListRow, RowListState } from "./useRowList";
 
 type Props<
   Row extends ListRow,
   Field extends string,
-  Other extends { kind: string },
   OwnField extends string,
 > = {
-  list:
-    | RowListState<Row, Field, Other, OwnField>
-    | SharedRowListState<Row, Field, Other, OwnField>;
+  list: RowListState<Row, Field, OwnField>;
   // A lead for the rows, between the status and the list. A page whose
-  // own texts come first puts what it says about its rows here, right above
-  // them.
+  // own texts come first puts what it says about its rows here, right
+  // above them.
   intro?: string;
   // What the screen adds right after its own texts, before the status: a
   // section's page puts its choice lists here (D-166).
   afterOwn?: ReactNode;
   // What the screen adds after the add form: a section's page puts the
-  // section's move here, under the same status and the same Undo.
+  // section's move here, under the same status.
   children?: ReactNode;
-  // Whether the page's own texts are drawn here as text fields. A page that
-  // draws one of them itself, a choice list's lead as a combo box, says
-  // false and draws them before the list (D-166).
+  // Whether the page's own texts are drawn here as text fields. A page
+  // that draws one of them itself, a choice list's lead as a combo box,
+  // says false and draws them before the list (D-166).
   drawOwn?: boolean;
-  // Whether the saved status and Undo are drawn here. A list that shares
-  // its page's editor says false: the page draws its one status (D-111).
+  // Whether the saved status is drawn here. A list that shares its page's
+  // editing state says false: the page draws its one status (D-111).
   status?: boolean;
   // The level of each row's heading: 2 on a list page, 3 under a heading
   // of the page's own, as the choice lists sit under "Choice lists".
   rowHeading?: 2 | 3;
-  // What each saved row adds after its buttons: an option's allergen group
-  // (D-166).
+  // What each saved row adds after its buttons: an option's allergen
+  // group (D-166).
   afterRow?: (row: Row) => ReactNode;
   // What each saved row adds after its texts and before its link and
   // buttons: a menu's publish state, one line of text (Q-115).
@@ -53,11 +50,11 @@ type Props<
 };
 
 // One editing list on the page (D-128): the page's own texts when it has
-// them (D-135), the saved status and Undo, then the rows, then the add
-// form. Every list is drawn here, so every row is the same row: a heading
-// with the saved name, the name field, any other text the row has, a line
-// the list adds under them when it has one (Q-115), then the link to the
-// row's own page, Move up, Move down, and Delete.
+// them (D-135), the saved status, then the rows, then the add form. Every
+// list is drawn here, so every row is the same row: a heading with the
+// saved name, the name field, any other text the row has, a line the list
+// adds under them when it has one (Q-115), then the link to the row's own
+// page, Move up, Move down, and Delete.
 //
 // The heading is what a screen reader moves by, row to row, once a list is
 // long. It shows the saved name, never what is being typed, as the buttons'
@@ -67,7 +64,6 @@ type Props<
 export function RowList<
   Row extends ListRow,
   Field extends string,
-  Other extends { kind: string } = never,
   OwnField extends string = never,
 >({
   list,
@@ -80,7 +76,7 @@ export function RowList<
   afterRow,
   afterFields,
   labelledBy,
-}: Props<Row, Field, Other, OwnField>) {
+}: Props<Row, Field, OwnField>) {
   const { words, fields, link, editing, shown, unsaved, own } = list;
   const { strings, editing: editingWords } = words;
   const RowHeading = rowHeading === 2 ? "h2" : "h3";
@@ -119,12 +115,6 @@ export function RowList<
             outOfDate={editing.outOfDate}
             onRetry={list.tryAgain}
           />
-          <Button
-            aria-disabled={list.undoText ? undefined : true}
-            onPress={list.undoNewest}
-          >
-            {list.undoText ?? editingWords.undo}
-          </Button>
         </div>
       ) : null}
 

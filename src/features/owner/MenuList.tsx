@@ -7,13 +7,7 @@ import type { ListedMenu } from "@/domain/menu";
 import { RowList } from "./editing/RowList";
 import { useRowList } from "./editing/useRowList";
 import { menuList } from "./lists";
-import {
-  addMenu,
-  deleteMenu,
-  orderMenus,
-  renameMenu,
-  restoreMenu,
-} from "./menu-actions";
+import { addMenu, deleteMenu, orderMenus, renameMenu } from "./menu-actions";
 import { restaurantMenuPath } from "./paths";
 import { stateSentence, type PublishingStrings } from "./publishing-words";
 
@@ -35,8 +29,8 @@ type Props = {
 
 // The menus of one restaurant (D-111, D-128): the shared list, with one
 // field a row, its name. Each row links to the menu's own page, where its
-// sections are (D-122). Delete on a menu that holds sections asks first,
-// and names them and their dishes; an empty menu goes at once (D-119).
+// sections are (D-122). Delete asks first on every row (D-221), and names
+// the sections and dishes that go when the menu holds any (D-119).
 // Under each name, one line of plain text says what the menu's own page
 // says of its publish state (Q-115), from the same builder and the same
 // words (D-171), tied to no control: the states are read with the menus,
@@ -66,7 +60,6 @@ function MenuRows({
   const list = useRowList({
     words,
     idPrefix: menuList.idPrefix,
-    undoKey: `undo:${code}:menus`,
     rows: menus,
     fields: menuList.fields,
     valueOf: (menu) => menu.name,
@@ -74,19 +67,18 @@ function MenuRows({
     rule: menuList.rule,
     actions: {
       add: (name) => addMenu(code, name),
-      setText: (id, _field, value, expected) =>
-        renameMenu(code, id, value, expected),
+      setText: (id, _field, value) => renameMenu(code, id, value),
       remove: (id, told) => deleteMenu(code, id, told),
-      restore: (id, order) => restoreMenu(code, id, order),
       order: (ids) => orderMenus(code, ids),
     },
+    deleteAsksFirst: true,
     held: (menu) => ({
       sections: menu.sections,
       dishes: menu.dishes,
       options: 0,
     }),
-    // A published menu leaves diners the moment it is deleted, and comes
-    // back with Undo (D-82, migration 12).
+    // A published menu leaves diners the moment it is deleted (D-82,
+    // migration 12).
     describeDelete: (menu) => (menu.published ? strings.deletePublished : null),
     link: {
       label: strings.editSections,

@@ -48,8 +48,7 @@ import { expectWrites, guardWrites } from "./write-guard";
 // an action the server does not know, which is how the failed state is
 // reached. Real saves, "Saved." (D-118), a lead chosen from the
 // suggestions, an option that lands, a rename that clears a check, a list
-// that moved under the page, the apply, and Undo with something to undo
-// are covered by tests/local, by the unit tests, by the boundary scripts,
+// that moved under the page, and the apply are covered by tests/local, by the unit tests, by the boundary scripts,
 // and by hand.
 //
 // A list's page is named by its id, which the setup finds and writes down,
@@ -260,8 +259,8 @@ test("a list's page is named for its lead, its title names every level inside it
   );
 });
 
-// D-166: the lead is a combo box with suggested leads, then the status and
-// Undo, then the options' lead, then the rows, then the add form.
+// D-166: the lead is a combo box with suggested leads, then the status,
+// then the options' lead, then the rows, then the add form.
 test("the page reads in order: the lead with its hint and suggestions, the status, the options' lead, the rows, and the add form", async ({
   page,
 }) => {

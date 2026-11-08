@@ -10,7 +10,6 @@ import { moveDish } from "./actions";
 import {
   movedSentence,
   notMovedSentence,
-  type DishUndo,
   type MoveStrings,
 } from "./dish-words";
 
@@ -21,15 +20,11 @@ type Props = {
   dishGone: string;
   code: string;
   dish: { id: string; name: string };
-  // The section the dish is in now, and its menu.
-  section: { id: string; name: string };
-  menu: { id: string; name: string };
   // The sections it can move to, each under its menu, in order: every live
   // section of every live menu of the restaurant but this one.
   targets: SelectGroup[];
-  // The page's one editing state and its one Undo (D-111).
+  // The page's one editing state (D-111).
   saves: Editing;
-  record: (entry: DishUndo) => void;
   // Says a sentence once the page shows the dish in that section.
   sayOnceIn: (sectionId: string, sentence: string) => void;
 };
@@ -51,11 +46,8 @@ export function MoveDish({
   dishGone,
   code,
   dish,
-  section,
-  menu,
   targets,
   saves,
-  record,
   sayOnceIn,
 }: Props) {
   const announce = useAnnounce();
@@ -91,18 +83,6 @@ export function MoveDish({
           return;
         }
         saves.landed();
-        record({
-          kind: "relocate",
-          id: dish.id,
-          name: dish.name,
-          from: {
-            id: section.id,
-            name: section.name,
-            menu: menu.name,
-            order: result.value.order,
-          },
-          to: { id: target.id, name: target.label, menu: group.label },
-        });
         setChoice(null);
         sayOnceIn(
           target.id,

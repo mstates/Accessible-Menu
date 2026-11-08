@@ -3,17 +3,13 @@
 import { useMemo } from "react";
 import type { ChoiceHome, OwnerChoiceList } from "@/domain/choices";
 import type { EditingStrings } from "../editing/list-words";
-import {
-  useSharedRowList,
-  type ListRow,
-  type SharedEditor,
-} from "../editing/useRowList";
+import type { Editing } from "../editing/useEditing";
+import { useSharedRowList, type ListRow } from "../editing/useRowList";
 import { restaurantChoiceListPath } from "../paths";
 import {
   addChoiceList,
   deleteChoiceList,
   orderChoiceLists,
-  restoreChoiceList,
 } from "./choice-actions";
 import {
   CHOICE_LIST_PREFIX,
@@ -26,33 +22,33 @@ import {
 // The choice lists of a dish or a section, as rows on its page (D-166):
 // one row a list, named by its lead, with the link to the list's own page,
 // Move up, Move down, and Delete, and the add form that takes a lead. The
-// rows share the page's one editing state and one Undo (D-145), so the
-// page keeps one queue, one status, and one Undo whatever it holds. A list
-// with options asks before it is deleted (D-119); an empty one goes at
-// once, with Undo. The lead is edited on the list's own page, so a row has
-// no field.
+// rows share the page's one editing state (D-145), so the page keeps one
+// queue and one status whatever it holds. Delete asks first on every row
+// (D-221), naming the options when the list holds any (D-119). The lead is
+// edited on the list's own page, so a row has no field.
 
 export type ChoiceListRow = ListRow & { options: number };
 
-type Props<Entry extends { kind: string }> = {
+type Props = {
   strings: ChoiceStrings;
   editingStrings: EditingStrings;
   code: string;
   home: ChoiceHome;
   lists: OwnerChoiceList[];
-  shared: SharedEditor<Entry>;
+  // The page's one editing state.
+  shared: Editing;
 };
 
 export const CHOICE_LISTS_HEADING_ID = "choice-lists-heading";
 
-export function useChoiceListRows<Entry extends { kind: string }>({
+export function useChoiceListRows({
   strings,
   editingStrings,
   code,
   home,
   lists,
   shared,
-}: Props<Entry>) {
+}: Props) {
   const words = useMemo(
     () => choiceListWords(strings, editingStrings, home.kind),
     [strings, editingStrings, home.kind],
@@ -66,7 +62,7 @@ export function useChoiceListRows<Entry extends { kind: string }>({
       })),
     [lists],
   );
-  const list = useSharedRowList<ChoiceListRow, never, Entry>(
+  const list = useSharedRowList<ChoiceListRow, never>(
     {
       words,
       idPrefix: CHOICE_LIST_PREFIX,
@@ -92,9 +88,9 @@ export function useChoiceListRows<Entry extends { kind: string }>({
         // A row has no field, so nothing here is ever sent.
         setText: async () => ({ ok: false, problem: { kind: "failed" } }),
         remove: (id, told) => deleteChoiceList(code, home, id, told),
-        restore: (id, order) => restoreChoiceList(code, home, id, order),
         order: (ids) => orderChoiceLists(code, home, ids),
       },
+      deleteAsksFirst: true,
       held: (row) => ({ sections: 0, dishes: 0, options: row.options }),
       link: {
         label: strings.lists.edit,
@@ -111,6 +107,4 @@ export function useChoiceListRows<Entry extends { kind: string }>({
   };
 }
 
-export type ChoiceListRowsState<Entry extends { kind: string }> = ReturnType<
-  typeof useChoiceListRows<Entry>
->;
+export type ChoiceListRowsState = ReturnType<typeof useChoiceListRows>;

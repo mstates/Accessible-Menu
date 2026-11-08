@@ -193,7 +193,6 @@
   - text: The words diners read first, like Choose one side or Add on.
   - button "Add choice list"
   - status: All changes saved
-  - button "Undo" [disabled]
   - paragraph:
     - 'link "Next dish: House salad"'
   - heading "Move this dish" [level=2]

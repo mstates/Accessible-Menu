@@ -1,4 +1,8 @@
-import type { OwnerAllergens, UsMajorAllergen } from "@/domain/allergens";
+import type {
+  AllergenLists,
+  OwnerAllergens,
+  UsMajorAllergen,
+} from "@/domain/allergens";
 import type { AllergenId } from "@/domain/types";
 import type { ListProblem } from "../editing/list-words";
 import type {
@@ -6,16 +10,14 @@ import type {
   ApplyProblem,
   SameNamedPlace,
 } from "./allergen-words";
-import type { GroupChange, UndoLists } from "./group-undo";
 
 // What an allergen group writes to and speaks for: a dish (D-148, D-149) or
 // an option of a choice list (D-166). The group itself is one hook and one
 // component; a target gives it the element ids and editing keys, the
-// subject its sentences name, the three writes, the Undo entries its page
-// keeps, and the same-named Apply (D-129). Every write carries the lists
-// the page showed, and an option's carries the option's name too (D-153):
-// what the server last confirmed, read when the queue sends it. Pure
-// types.
+// subject its sentences name, the three writes, and the same-named Apply
+// (D-129). Every write carries the lists the page showed, and an option's
+// carries the option's name too (D-153): what the server last confirmed,
+// read when the queue sends it. Pure types.
 
 type ServerProblem = Exclude<
   ListProblem,
@@ -83,7 +85,7 @@ export function groupIds(prefix: string): GroupIds {
   };
 }
 
-export type AllergenTarget<Entry> = {
+export type AllergenTarget = {
   ids: GroupIds;
   subject: AllergenSubject;
   // The three writes. shown is the lists the page showed, and words the
@@ -92,38 +94,26 @@ export type AllergenTarget<Entry> = {
   writes: {
     allergens: (
       allergens: UsMajorAllergen[],
-      shown: UndoLists,
+      shown: AllergenLists,
       words: string | null,
     ) => Promise<GroupResult>;
     others: (
       others: string[],
-      shown: UndoLists,
+      shown: AllergenLists,
       words: string | null,
     ) => Promise<GroupResult>;
     check: (
       on: boolean,
-      shown: UndoLists,
+      shown: AllergenLists,
       words: string | null,
     ) => Promise<GroupResult>;
-  };
-  // The page's own Undo entries around the group's changes: make wraps a
-  // change the group just made, with the words it carried; read gives one
-  // back, or null for an entry that is not the group's.
-  entries: {
-    make: (change: GroupChange, words: string | null) => Entry;
-    read: (
-      entry: Entry,
-    ) => { change: GroupChange; words: string | null } | null;
   };
   // The same-named offer (D-129), grown to options (D-166).
   sameNamed?: {
     places: SameNamedPlace[];
     apply: (
       place: SameNamedPlace,
-      shown: UndoLists,
-    ) => Promise<GroupApplyResult>;
-    undoApply: (
-      entry: Extract<GroupChange, { kind: "apply" }>,
+      shown: AllergenLists,
     ) => Promise<GroupApplyResult>;
   };
 };

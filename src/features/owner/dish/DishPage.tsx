@@ -5,7 +5,6 @@ import { Announcer, useAnnounce } from "@/core/a11y/announcer";
 import type { AllergenCopy } from "@/domain/allergens";
 import type { DietaryCopy } from "@/domain/dietary";
 import type { OwnerDish, OwnerDishDetail, OwnerSize } from "@/domain/dish";
-import type { Hours } from "@/domain/hours";
 import type { ScheduleCopy } from "@/domain/schedule";
 import type { TimeCopy } from "@/domain/time";
 import { Button } from "@/ui/Button";
@@ -44,7 +43,6 @@ type Props = {
   code: string;
   dish: OwnerDishDetail;
   section: { id: string; name: string };
-  menu: { id: string; name: string };
   // The dish's sizes, in price order, as the server holds them.
   sizes: OwnerSize[];
   // The dish's choice lists, in order, with how many options each holds
@@ -68,10 +66,9 @@ type Props = {
   timeZone: string;
   lang: string;
   // What the server decided the dish's availability is at this render
-  // (D-160), the hours it decided it from, and its clock as an instant,
-  // which every time-dependent line reads (task 5).
+  // (D-160), and its clock as an instant, which every time-dependent line
+  // reads (task 5).
   showing: ShowingNow;
-  hours: Hours | null;
   now: string;
   dietaryCopy: DietaryCopy;
   // The diner-facing schedule words, with the singular day names.
@@ -90,9 +87,9 @@ const PRICE_HEADING_ID = "dish-price-heading";
 // lead, the description, the price group under its heading with calories
 // beside each price, the note, the allergen group under its heading, the
 // dietary tags, availability, the schedule, the Cooked to order box, and
-// the choice lists each under theirs, the saved status and Undo, the link
-// to the next dish, and the move to another section (D-129). Everything on
-// it shares one queue, one status, and one Undo (D-111).
+// the choice lists each under theirs, the saved status, the link to the
+// next dish, and the move to another section (D-129). Everything on it
+// shares one queue and one status (D-111).
 export function DishPage(props: Props) {
   return (
     <Announcer>
@@ -108,7 +105,6 @@ function DishEditor({
   code,
   dish,
   section,
-  menu,
   sizes,
   lists,
   sizeNames,
@@ -120,7 +116,6 @@ function DishEditor({
   timeZone,
   lang,
   showing,
-  hours,
   now,
   dietaryCopy,
   scheduleCopy,
@@ -128,9 +123,9 @@ function DishEditor({
 }: Props) {
   // A move changes the page's title, since the title names the section and
   // the menu, and Next's route announcer reads a changed title at once and
-  // assertively. So a move, and the Undo of one, owe their sentence until
-  // the page shows the dish in its new section, and say it a moment after
-  // that, on a timer and not an animation frame (D-130, D-141).
+  // assertively. So a move owes its sentence until the page shows the dish
+  // in its new section, and says it a moment after that, on a timer and not
+  // an animation frame (D-130, D-141).
   const announce = useAnnounce();
   const owed = useRef<{ sectionId: string; sentence: string } | null>(null);
   useEffect(() => {
@@ -156,9 +151,7 @@ function DishEditor({
     lists,
     sizes,
     sameNamed,
-    sayOnceIn,
     showing,
-    hours,
     timeZone,
     lang,
     now,
@@ -398,12 +391,6 @@ function DishEditor({
           outOfDate={page.editing.outOfDate}
           onRetry={page.tryAgain}
         />
-        <Button
-          aria-disabled={page.undoText ? undefined : true}
-          onPress={page.undoNewest}
-        >
-          {page.undoText ?? editing.undo}
-        </Button>
       </div>
 
       {/* The next dish in the section, so typing a section is one pass
@@ -428,11 +415,8 @@ function DishEditor({
         dishGone={strings.errors.parentGone}
         code={code}
         dish={{ id: dish.id, name: dish.name }}
-        section={section}
-        menu={menu}
         targets={targets}
         saves={page.editing}
-        record={page.record}
         sayOnceIn={sayOnceIn}
       />
     </>

@@ -22,10 +22,9 @@ import { guardWrites } from "./write-guard";
 // listRowChecks in owner-lists.ts, the delete confirmation's included; its
 // clock tests run on the menus page, since the dialog is one piece for
 // every list. This file holds what is a menu's page's own. Typing, real
-// saves and the "Saved." they say (D-118), add, a delete that lands, Undo
-// with something to undo, and a name that is taken are covered by the unit
-// tests and by hand. Which section holds dishes and
-// which holds none comes from the setup.
+// saves and the "Saved." they say (D-118), add, a delete that lands, and a
+// name that is taken are covered by the unit tests and by hand. Which
+// section holds dishes and which holds none comes from the setup.
 //
 // A menu's page is named by its id, which the setup finds and writes down,
 // so every path here is read when a test runs, never when this file loads.
@@ -71,12 +70,12 @@ listRowChecks({
   words: strings,
   path: sectionsPath,
   h1: () => ownerFixture().withSections.name,
-  // The name field and Move up, Move down, and Delete; the add field, Add,
-  // and Undo, and, above them, Publish and Unpublish, since the menu with
+  // The name field and Move up, Move down, and Delete; the add field and
+  // Add, and, above them, Publish and Unpublish, since the menu with
   // sections is published (D-82, migration 12). A section's note is on its
   // own page (D-135), so its row is the row every list has.
   rowControls: 4,
-  pageControls: 5,
+  pageControls: 4,
   rowLink: {
     label: strings.editDishes,
     target: () => {
@@ -101,7 +100,14 @@ listRowChecks({
         question: deleteQuestion(withDishes.name, withDishes.dishes),
       };
     },
-    empty: () => ownerFixture().emptySection.name,
+    // A section that holds nothing asks by its name alone (D-221).
+    empty: () => {
+      const { emptySection } = ownerFixture();
+      return {
+        name: emptySection.name,
+        question: fill(strings.deleteAskEmpty, { section: emptySection.name }),
+      };
+    },
   },
 });
 

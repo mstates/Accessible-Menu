@@ -19,7 +19,6 @@ import {
   addChoiceOption,
   orderChoiceOptions,
   removeChoiceOption,
-  restoreChoiceOption,
   setChoiceListLead,
   setOptionText,
 } from "./choice-actions";
@@ -33,22 +32,15 @@ import {
   type ChoiceStrings,
   type LeadField,
 } from "./choice-words";
-import {
-  optionAllergenStrings,
-  optionAllergenUndoLabel,
-  optionAllergenUndoSchema,
-  type OptionAllergenUndo,
-} from "./option-words";
+import { optionAllergenStrings } from "./option-words";
 import type { OptionAllergensState } from "./useOptionAllergens";
 
 // A choice list's own page (D-166): the lead as the page's own text, the
 // options as the shared list with three fields a row, and under each row
 // the option's allergen group (D-154). The list owns the page's one
-// editing state and one Undo, as a list page does; the groups' entries sit
-// on the same stack and come back to the group that made them by the
-// option's id. A rename that lands hands the group the option as the
-// server now holds it, so the check the database cleared is said after
-// "Saved." (Michael, October 10, 2026).
+// editing state, as a list page does. A rename that lands hands the group
+// the option as the server now holds it, so the check the database cleared
+// is said after "Saved." (Michael, October 10, 2026).
 
 type Props = {
   strings: ChoiceStrings;
@@ -100,15 +92,9 @@ export function useChoiceListPage({
     [],
   );
 
-  const rows = useRowList<
-    OwnerOption,
-    OptionText,
-    OptionAllergenUndo,
-    LeadField
-  >({
+  const rows = useRowList<OwnerOption, OptionText, LeadField>({
     words,
     idPrefix: OPTION_PREFIX,
-    undoKey: `undo:${code}:list:${list.id}`,
     rows: options,
     fields: OPTION_TEXTS,
     valueOf: (option, field) => option[field],
@@ -116,12 +102,14 @@ export function useChoiceListPage({
     rule: optionTexts.rule,
     actions: {
       add: (name) => addChoiceOption(code, list.id, name),
-      setText: (id, field, value, expected) =>
-        setOptionText(code, list.id, id, field, value, expected),
+      setText: (id, field, value) =>
+        setOptionText(code, list.id, id, field, value),
       remove: (id) => removeChoiceOption(code, list.id, id),
-      restore: (id, order) => restoreChoiceOption(code, list.id, id, order),
       order: (ids) => orderChoiceOptions(code, list.id, ids),
     },
+    // An option is a part of the list's form and goes on the press, as a
+    // dish's size does (D-221).
+    deleteAsksFirst: false,
     own: {
       row: { id: list.id, name: list.lead },
       fields: LEAD_FIELDS,
@@ -135,35 +123,23 @@ export function useChoiceListPage({
         const taken = siblings.find((lead) => nameKey(lead) === key);
         return taken === undefined ? null : { id: "", name: taken };
       },
-      setText: (_field, value, expected) =>
-        setChoiceListLead(code, list.id, value, expected),
+      setText: (_field, value) => setChoiceListLead(code, list.id, value),
     },
-    // A rename that landed, or the Undo of one: the option's group learns
-    // the option as the server holds it now, and the check it cleared is
-    // said after the save's "Saved." or after the Undo's own sentence.
-    rowLanded: (row, field, value, how) => {
-      if (field !== "name") return null;
+    // A rename that landed: the option's group learns the option as the
+    // server holds it now, and the check it cleared is said after the
+    // save's "Saved."
+    rowLanded: (row, field, value) => {
+      if (field !== "name") return;
       const option = (value as { option?: OwnerOption }).option;
-      if (!option) return null;
+      if (!option) return;
       const said = groups.current.get(row.id)?.confirmName(option) ?? null;
-      if (said && how === "saved") announce(said);
-      return how === "undone" ? said : null;
+      if (said) announce(said);
     },
     tryAgain: (key, value) => {
       for (const group of groups.current.values()) {
         if (group.group.tryAgain(key, value)) return true;
       }
       return false;
-    },
-    other: {
-      schema: optionAllergenUndoSchema,
-      label: (entry) => optionAllergenUndoLabel(groupStrings, entry),
-      undo: async (entry) => {
-        const group = groups.current.get(entry.subject);
-        return group
-          ? group.undo(entry)
-          : { outcome: "stale", sentence: editingStrings.stale };
-      },
     },
   });
 

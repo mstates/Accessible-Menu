@@ -4,11 +4,9 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 import { expireRestaurant } from "@/core/cache";
 import {
-  listOwnerDishes,
   moveOwnerDish,
   setOwnerDishCalories,
   setOwnerDishCookedToOrder,
-  setOwnerDishOrder,
   setOwnerDishPrice,
   setOwnerDishPriceKind,
   setOwnerDishText,
@@ -20,8 +18,8 @@ import { AVAILABILITY } from "@/domain/availability";
 import { parseCalories, type Calories } from "@/domain/calories";
 import {
   addOwnerSize,
+  removeOwnerSize,
   setOwnerSizeCalories,
-  setOwnerSizeDeleted,
   setOwnerSizeName,
   setOwnerSizePrice,
   type SizeWriteError,
@@ -40,7 +38,6 @@ import {
   type PriceKind,
   type SizeText,
 } from "@/domain/dish";
-import { mergeOrder } from "@/domain/menu";
 import { normalizeMenuCode } from "@/domain/menu-url";
 import { parsePrice } from "@/domain/money";
 import type { ListProblem } from "../editing/list-words";
@@ -72,20 +69,14 @@ type ServerMoveProblem = Exclude<
   { kind: "unreachable" } | { kind: "out-of-date" }
 >;
 
-export type DishMoveResult<Value> =
+export type DishMoveResult<Value = null> =
   { ok: true; value: Value } | { ok: false; problem: ServerMoveProblem };
 
 const idSchema = z.uuid();
 const availabilitySchema = z.enum(AVAILABILITY);
-// A row as the page read it, for an Undo that writes it back exactly.
-const availabilityRowSchema = z.object({
-  available: z.boolean(),
-  soldOutAt: z.string().nullable(),
-});
 const dishTextSchema = z.enum(DISH_TEXTS);
 const sizeTextSchema = z.enum(SIZE_TEXTS);
 const kindSchema = z.enum(PRICE_KINDS);
-const orderSchema = z.array(z.uuid()).min(1).max(500);
 
 function refuse(problem: ServerProblem): { ok: false; problem: ServerProblem } {
   return { ok: false, problem };
@@ -107,26 +98,22 @@ function sizeTexts(size: OwnerSize): Record<SizeText, string> {
   return { name: size.name, price: size.price, calories: size.calories };
 }
 
-// A dish that is not there is the page's own parent gone for an ordinary
-// save, and "changed" for an Undo, whose change no longer stands.
-function fromDishWrite(
-  error: DishWriteError,
-  missing: "parent-gone" | "changed",
-): ServerProblem {
-  return error.kind === "not-found" ? { kind: missing } : { kind: "failed" };
+// A dish that is not there is the page's own parent gone.
+function fromDishWrite(error: DishWriteError): ServerProblem {
+  return error.kind === "not-found"
+    ? { kind: "parent-gone" }
+    : { kind: "failed" };
 }
 
 function fromSizeWrite(
   error: SizeWriteError,
-  missing: "gone" | "parent-gone" | "changed",
+  missing: "gone" | "parent-gone",
 ): ServerProblem {
   switch (error.kind) {
     case "name-taken":
       return { kind: "name-taken" };
     case "not-found":
       return { kind: missing };
-    case "grew":
-      return { kind: "grew" };
     default:
       return { kind: "failed" };
   }
@@ -152,16 +139,13 @@ function readCalories(
 }
 
 // Writes the dish's description, note, one price (D-139), or calories
-// (D-167). With expected, the write is an Undo: it happens only if the
-// text is still the one the change wrote, and never writes over a newer
-// change. A price or calories travel as the field's text and are read
+// (D-167). A price or calories travel as the field's text and are read
 // here, on both sides.
 export async function setDishText(
   rawCode: string,
   rawDish: string,
   rawField: string,
   rawValue: string,
-  expected?: string,
 ): Promise<DishPageResult<Record<DishText, string>>> {
   const scope = await dishScope(rawCode, rawDish);
   if (!scope.ok) return scope;
@@ -171,31 +155,24 @@ export async function setDishText(
   const value = cleanDishText(field.data, rawValue);
   const rule = dishTextProblem(field.data, value);
   if (rule) return refuse({ kind: "invalid", rule });
-  const was = typeof expected === "string" ? expected : undefined;
   let result;
   if (field.data === "price") {
     const price = readPrice(value);
-    const wasPrice = was === undefined ? undefined : readPrice(was);
-    if ("rule" in price || (wasPrice && "rule" in wasPrice)) return failed;
+    if ("rule" in price) return failed;
     result = await setOwnerDishPrice(
       scope.client,
       scope.sectionId,
       scope.dishId,
       price.cents,
-      wasPrice?.cents,
     );
   } else if (field.data === "calories") {
     const calories = readCalories(value);
-    const wasCalories = was === undefined ? undefined : readCalories(was);
-    if ("rule" in calories || (wasCalories && "rule" in wasCalories)) {
-      return failed;
-    }
+    if ("rule" in calories) return failed;
     result = await setOwnerDishCalories(
       scope.client,
       scope.sectionId,
       scope.dishId,
       calories.calories,
-      wasCalories?.calories,
     );
   } else {
     result = await setOwnerDishText(
@@ -204,18 +181,10 @@ export async function setDishText(
       scope.dishId,
       field.data,
       value === "" ? null : value,
-      was === undefined ? undefined : was === "" ? null : was,
     );
   }
   refresh();
-  if (!result.ok) {
-    return refuse(
-      fromDishWrite(
-        result.error,
-        was === undefined ? "parent-gone" : "changed",
-      ),
-    );
-  }
+  if (!result.ok) return refuse(fromDishWrite(result.error));
   return { ok: true, value: textsOf(result.value) };
 }
 
@@ -224,106 +193,56 @@ export async function setDishPriceKind(
   rawCode: string,
   rawDish: string,
   rawKind: string,
-  expected?: string,
 ): Promise<DishPageResult<{ priceKind: PriceKind }>> {
   const scope = await dishScope(rawCode, rawDish);
   if (!scope.ok) return scope;
   const kind = kindSchema.safeParse(rawKind);
   if (!kind.success) return failed;
-  let was: PriceKind | undefined;
-  if (expected !== undefined) {
-    const parsed = kindSchema.safeParse(expected);
-    if (!parsed.success) return failed;
-    was = parsed.data;
-  }
   const result = await setOwnerDishPriceKind(
     scope.client,
     scope.sectionId,
     scope.dishId,
     kind.data,
-    was,
   );
   refresh();
-  if (!result.ok) {
-    return refuse(
-      fromDishWrite(
-        result.error,
-        was === undefined ? "parent-gone" : "changed",
-      ),
-    );
-  }
+  if (!result.ok) return refuse(fromDishWrite(result.error));
   return { ok: true, value: { priceKind: result.value.priceKind } };
 }
 
-// The Cooked to order mark (D-167): on or off, saved at once. With
-// expected, the write is an Undo: it lands only while the mark is still
-// the one the change left.
+// The Cooked to order mark (D-167): on or off, saved at once.
 export async function setDishCookedToOrder(
   rawCode: string,
   rawDish: string,
   rawOn: unknown,
-  rawExpected?: unknown,
 ): Promise<DishPageResult<{ cookedToOrder: boolean }>> {
   const scope = await dishScope(rawCode, rawDish);
   if (!scope.ok) return scope;
   const on = z.boolean().safeParse(rawOn);
   if (!on.success) return failed;
-  let expected: boolean | undefined;
-  if (rawExpected !== undefined) {
-    const was = z.boolean().safeParse(rawExpected);
-    if (!was.success) return failed;
-    expected = was.data;
-  }
   const result = await setOwnerDishCookedToOrder(
     scope.client,
     scope.sectionId,
     scope.dishId,
     on.data,
-    expected,
   );
   refresh();
-  if (!result.ok) {
-    return refuse(
-      fromDishWrite(
-        result.error,
-        expected === undefined ? "parent-gone" : "changed",
-      ),
-    );
-  }
+  if (!result.ok) return refuse(fromDishWrite(result.error));
   return { ok: true, value: { cookedToOrder: result.value.cookedToOrder } };
 }
 
 // How the dish stands (D-160): available, sold out today, or off the menu
 // for now. A sold-out mark is the server's own clock, never a browser's.
-// With exact and expected, the write is an Undo: it puts the row back as
-// it was, and only while the dish still holds the row the change left, so
-// it never writes over a newer choice and never makes a new mark.
 export async function setDishAvailability(
   rawCode: string,
   rawDish: string,
   rawChoice: unknown,
-  rawExact?: unknown,
-  rawExpected?: unknown,
 ): Promise<DishPageResult<{ available: boolean; soldOutAt: string | null }>> {
   const scope = await dishScope(rawCode, rawDish);
   if (!scope.ok) return scope;
   const choice = availabilitySchema.safeParse(rawChoice);
   if (!choice.success) return failed;
   let patch: AvailabilityPatch;
-  let expected: AvailabilityPatch | undefined;
-  if (rawExact !== undefined) {
-    const exact = availabilityRowSchema.safeParse(rawExact);
-    const was = availabilityRowSchema.safeParse(rawExpected);
-    if (!exact.success || !was.success) return failed;
-    patch = {
-      available: exact.data.available,
-      sold_out_at: exact.data.soldOutAt,
-    };
-    expected = {
-      available: was.data.available,
-      sold_out_at: was.data.soldOutAt,
-    };
-  } else if (choice.data === "off") {
+  if (choice.data === "off") {
     patch = { available: false, sold_out_at: null };
   } else if (choice.data === "sold-out") {
     patch = { available: true, sold_out_at: new Date().toISOString() };
@@ -336,20 +255,12 @@ export async function setDishAvailability(
     scope.dishId,
     scope.userId,
     patch,
-    expected,
   );
   // Availability reaches diners without Publish (D-84, D-160): the
   // restaurant's pages re-render on their next request.
   if (result.ok) expireRestaurant(normalizeMenuCode(rawCode));
   refresh();
-  if (!result.ok) {
-    return refuse(
-      fromDishWrite(
-        result.error,
-        expected === undefined ? "parent-gone" : "changed",
-      ),
-    );
-  }
+  if (!result.ok) return refuse(fromDishWrite(result.error));
   return {
     ok: true,
     value: {
@@ -372,15 +283,13 @@ export async function addSize(
   return { ok: true, value: result.value };
 }
 
-// Writes a size's name, price, or calories. With expected, the write is an
-// Undo.
+// Writes a size's name, price, or calories.
 export async function setSizeText(
   rawCode: string,
   rawDish: string,
   rawSize: string,
   rawField: string,
   rawValue: string,
-  expected?: string,
 ): Promise<DishPageResult<Record<SizeText, string>>> {
   const scope = await dishScope(rawCode, rawDish);
   if (!scope.ok) return scope;
@@ -391,31 +300,24 @@ export async function setSizeText(
   const value = cleanSizeText(field.data, rawValue);
   const rule = sizeTextProblem(field.data, value);
   if (rule) return refuse({ kind: "invalid", rule });
-  const was = typeof expected === "string" ? expected : undefined;
   let result;
   if (field.data === "price") {
     const price = readPrice(value);
-    const wasPrice = was === undefined ? undefined : readPrice(was);
-    if ("rule" in price || (wasPrice && "rule" in wasPrice)) return failed;
+    if ("rule" in price) return failed;
     result = await setOwnerSizePrice(
       scope.client,
       scope.dishId,
       id.data,
       price.cents,
-      wasPrice?.cents,
     );
   } else if (field.data === "calories") {
     const calories = readCalories(value);
-    const wasCalories = was === undefined ? undefined : readCalories(was);
-    if ("rule" in calories || (wasCalories && "rule" in wasCalories)) {
-      return failed;
-    }
+    if ("rule" in calories) return failed;
     result = await setOwnerSizeCalories(
       scope.client,
       scope.dishId,
       id.data,
       calories.calories,
-      wasCalories?.calories,
     );
   } else {
     result = await setOwnerSizeName(
@@ -423,66 +325,28 @@ export async function setSizeText(
       scope.dishId,
       id.data,
       value === "" ? null : value,
-      was === undefined ? undefined : was === "" ? null : was,
     );
   }
   refresh();
-  if (!result.ok) {
-    return refuse(
-      fromSizeWrite(result.error, was === undefined ? "gone" : "changed"),
-    );
-  }
+  if (!result.ok) return refuse(fromSizeWrite(result.error, "gone"));
   return { ok: true, value: sizeTexts(result.value) };
 }
 
-// Marks a size removed. The row stays, so Undo can bring it back. With
-// onlyIfBlank, which an Undo of an add sends, the size goes only while it
-// has no name, no price, and no calories (D-119).
+// Marks a size removed. The row stays, with deleted_at set; the page takes
+// it out on the press, since a size is a part of the dish's form (D-221).
 export async function removeSize(
   rawCode: string,
   rawDish: string,
   rawSize: string,
-  onlyIfBlank: boolean,
 ): Promise<DishPageResult> {
   const scope = await dishScope(rawCode, rawDish);
   if (!scope.ok) return scope;
   const id = idSchema.safeParse(rawSize);
-  if (!id.success) return refuse({ kind: onlyIfBlank ? "changed" : "gone" });
-  const result = await setOwnerSizeDeleted(
-    scope.client,
-    scope.dishId,
-    id.data,
-    true,
-    onlyIfBlank === true,
-  );
+  if (!id.success) return refuse({ kind: "gone" });
+  const result = await removeOwnerSize(scope.client, scope.dishId, id.data);
   refresh();
-  if (!result.ok) {
-    return refuse(
-      fromSizeWrite(result.error, onlyIfBlank ? "changed" : "gone"),
-    );
-  }
+  if (!result.ok) return refuse(fromSizeWrite(result.error, "gone"));
   return { ok: true, value: null };
-}
-
-// Brings a removed size back, with its name and its price.
-export async function restoreSize(
-  rawCode: string,
-  rawDish: string,
-  rawSize: string,
-): Promise<DishPageResult<OwnerSize>> {
-  const scope = await dishScope(rawCode, rawDish);
-  if (!scope.ok) return scope;
-  const id = idSchema.safeParse(rawSize);
-  if (!id.success) return refuse({ kind: "changed" });
-  const result = await setOwnerSizeDeleted(
-    scope.client,
-    scope.dishId,
-    id.data,
-    false,
-  );
-  refresh();
-  if (!result.ok) return refuse(fromSizeWrite(result.error, "changed"));
-  return { ok: true, value: result.value };
 }
 
 function fromMove(error: DishWriteError): ServerMoveProblem {
@@ -503,64 +367,18 @@ function fromMove(error: DishWriteError): ServerMoveProblem {
 // Moves the dish to another section of its restaurant, last, with its
 // sizes (D-129). section_id is not a column owners write, so the move goes
 // through move_item(), which checks the caller and the restaurant for
-// itself and refuses a name that section already has (migration 6). It
-// answers with the order the dish's old section had, which is what Undo
-// puts back.
+// itself and refuses a name that section already has (migration 6).
 export async function moveDish(
   rawCode: string,
   rawDish: string,
   rawSection: string,
-): Promise<DishMoveResult<{ order: string[] }>> {
+): Promise<DishMoveResult> {
   const scope = await dishScope(rawCode, rawDish);
   if (!scope.ok) return scope;
   const section = idSchema.safeParse(rawSection);
   if (!section.success) return { ok: false, problem: { kind: "section-gone" } };
-  let order: string[];
-  try {
-    const dishes = await listOwnerDishes(scope.client, scope.sectionId);
-    order = dishes.map((dish) => dish.id);
-  } catch {
-    return { ok: false, problem: { kind: "failed" } };
-  }
   const result = await moveOwnerDish(scope.client, scope.dishId, section.data);
   refresh();
   if (!result.ok) return { ok: false, problem: fromMove(result.error) };
-  return { ok: true, value: { order } };
-}
-
-// Undo of a move: the dish goes back to the section it came from, and that
-// section's list goes back to the order it had. If the order cannot be set,
-// because the list changed since, the dish is back all the same and says
-// where it landed.
-export async function moveDishBack(
-  rawCode: string,
-  rawDish: string,
-  rawSection: string,
-  rawOrder: string[],
-): Promise<DishMoveResult<{ position: number; total: number }>> {
-  const scope = await dishScope(rawCode, rawDish);
-  if (!scope.ok) return scope;
-  const section = idSchema.safeParse(rawSection);
-  const order = orderSchema.safeParse(rawOrder);
-  if (!section.success || !order.success) {
-    return { ok: false, problem: { kind: "changed" } };
-  }
-  const result = await moveOwnerDish(scope.client, scope.dishId, section.data);
-  refresh();
-  if (!result.ok) return { ok: false, problem: fromMove(result.error) };
-
-  let live: string[];
-  try {
-    const dishes = await listOwnerDishes(scope.client, section.data);
-    live = dishes.map((dish) => dish.id);
-  } catch {
-    return { ok: true, value: { position: 0, total: 0 } };
-  }
-  const wanted = mergeOrder(order.data, live);
-  const placed = await setOwnerDishOrder(scope.client, section.data, wanted);
-  const final = placed.ok ? wanted : live;
-  return {
-    ok: true,
-    value: { position: final.indexOf(scope.dishId) + 1, total: final.length },
-  };
+  return { ok: true, value: null };
 }

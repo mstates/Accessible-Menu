@@ -248,7 +248,6 @@ export default async function RestaurantDishPage({ params }: Props) {
           schedule: dish.schedule,
         }}
         section={{ id: section.id, name: section.name }}
-        menu={menu}
         sizes={sizes}
         lists={lists}
         sizeNames={sizeNames}
@@ -264,7 +263,6 @@ export default async function RestaurantDishPage({ params }: Props) {
           until:
             showing.state === "sold-out" ? showing.until.toISOString() : null,
         }}
-        hours={restaurant.hours}
         now={now.toISOString()}
         dietaryCopy={en.dietary}
         scheduleCopy={{ ...en.schedule, day: en.owner.restaurants.days }}

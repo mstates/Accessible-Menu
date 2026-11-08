@@ -2,12 +2,9 @@ import { describe, expect, it } from "vitest";
 import { en } from "../../src/copy";
 import {
   cleanMenuName,
-  deleteAsksFirst,
-  HOLDS_NOTHING,
   inOrder,
   MENU_LIMITS,
   menuNameProblem,
-  mergeOrder,
   moveInOrder,
   nameTaken,
 } from "../../src/domain/menu";
@@ -99,24 +96,6 @@ describe("moving a menu one step", () => {
   });
 });
 
-describe("the order to put back after a restore", () => {
-  it("is the remembered order when nothing else changed", () => {
-    expect(mergeOrder(["a", "b", "c"], ["a", "c", "b"])).toEqual([
-      "a",
-      "b",
-      "c",
-    ]);
-  });
-
-  it("drops a menu that is gone and keeps a new one at the end", () => {
-    expect(mergeOrder(["a", "b", "c"], ["c", "d", "a"])).toEqual([
-      "a",
-      "c",
-      "d",
-    ]);
-  });
-});
-
 describe("the list in a given order", () => {
   const menus = [
     { id: "a", name: "Lunch" },
@@ -143,28 +122,7 @@ describe("the list in a given order", () => {
 
 // Whether a delete that would take more than the owner was told is refused
 // is the database's rule now (migration 5), proven by the boundary script.
-describe("a delete that takes content with it (D-119)", () => {
-  it("asks first when the row holds anything, and not when it is empty", () => {
-    expect(deleteAsksFirst(HOLDS_NOTHING)).toBe(false);
-    expect(deleteAsksFirst({ sections: 0, dishes: 0, options: 0 })).toBe(false);
-    expect(
-      deleteAsksFirst({ sections: 1, dishes: 0, options: 0 }),
-      "a menu",
-    ).toBe(true);
-    expect(
-      deleteAsksFirst({ sections: 4, dishes: 12, options: 0 }),
-      "a menu",
-    ).toBe(true);
-    expect(
-      deleteAsksFirst({ sections: 0, dishes: 1, options: 0 }),
-      "a section",
-    ).toBe(true);
-    expect(
-      deleteAsksFirst({ sections: 0, dishes: 0, options: 2 }),
-      "a choice list (D-166)",
-    ).toBe(true);
-  });
-
+describe("what a delete says the owner was told (D-119)", () => {
   it("keeps the counts on a listed menu through a reorder", () => {
     const menus = [
       { id: "a", name: "Lunch", sections: 0, dishes: 0 },

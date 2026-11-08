@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { en } from "../../src/copy";
 import {
-  allergenNotUndone,
   allergensNotSavedSentence,
-  allergenUndoLabel,
-  allergenUndoneSentence,
   applyName,
   appliedSentence,
   checkNotSavedSentence,
@@ -18,24 +15,18 @@ import {
   otherRemovedSentence,
   otherSuffix,
   otherWords,
-  othersChange,
   sameNamedLine,
   stampLine,
   type SameNamedPlace,
 } from "../../src/features/owner/allergens/allergen-words";
-import {
-  dishUndoSchema,
-  dishWords,
-  undoLabel,
-  type DishUndo,
-} from "../../src/features/owner/dish/dish-words";
+import { dishWords } from "../../src/features/owner/dish/dish-words";
 import {
   notSavedSentence,
   problemText,
 } from "../../src/features/owner/editing/list-words";
 
 // What the allergen group on a dish's page says, built from copy (D-148,
-// D-129), and the Undo entries it keeps.
+// D-129).
 
 const strings = en.owner.dish.allergens;
 const editing = en.owner.editing;
@@ -53,64 +44,6 @@ const place: SameNamedPlace = {
   reviewed: false,
   reason: "unchecked",
 };
-
-describe("the Undo entries of the allergen group", () => {
-  const entries: DishUndo[] = [
-    {
-      kind: "allergen",
-      id: "d1",
-      name: dish,
-      allergen: "milk",
-      on: true,
-      before: { allergens: [], others: [] },
-      after: { allergens: ["milk"], others: [] },
-    },
-    {
-      kind: "others",
-      id: "d1",
-      name: dish,
-      before: { allergens: ["milk"], others: [] },
-      after: { allergens: ["milk"], others: ["celery"] },
-    },
-    {
-      kind: "check",
-      id: "d1",
-      name: dish,
-      on: true,
-      lists: { allergens: ["milk"], others: ["celery"] },
-    },
-    {
-      kind: "apply",
-      id: "d2",
-      dish,
-      section: "Mains",
-      menu: "Dinner",
-      before: { allergens: [], others: [], reviewed: false },
-      after: { allergens: ["milk"], others: ["celery"] },
-      at: "2026-10-08T12:00:00+00:00",
-    },
-  ];
-
-  it.each(entries)("keeps a %s entry as it was", (entry) => {
-    expect(dishUndoSchema.parse(JSON.parse(JSON.stringify(entry)))).toEqual(
-      entry,
-    );
-  });
-
-  it("refuses an allergen outside the nine", () => {
-    expect(
-      dishUndoSchema.safeParse({
-        kind: "allergen",
-        id: "d1",
-        name: dish,
-        allergen: "celery",
-        on: true,
-        before: { allergens: [], others: [] },
-        after: { allergens: [], others: [] },
-      }).success,
-    ).toBe(false);
-  });
-});
 
 describe("the words of the other-allergen rows", () => {
   it("names a row by its place, its buttons by its name, and says a taken name", () => {
@@ -154,9 +87,7 @@ describe("the words of the other-allergen rows", () => {
 
   it("says a row added and removed", () => {
     expect(otherAddedSentence(strings, 2)).toBe("Other allergen 2 added.");
-    expect(otherRemovedSentence(strings, "celery")).toBe(
-      "celery removed. Undo is available.",
-    );
+    expect(otherRemovedSentence(strings, "celery")).toBe("celery removed.");
   });
 });
 
@@ -273,124 +204,7 @@ describe("the same-named offer (D-129)", () => {
   });
 });
 
-describe("Undo in the allergen group", () => {
-  const tick: DishUndo = {
-    kind: "allergen",
-    id: "d1",
-    name: dish,
-    allergen: "sesame",
-    on: true,
-    before: { allergens: ["milk"], others: [] },
-    after: { allergens: ["milk", "sesame"], others: [] },
-  };
-  const applied: DishUndo = {
-    kind: "apply",
-    id: "d2",
-    dish,
-    section: "Mains",
-    menu: "Dinner",
-    before: { allergens: [], others: [], reviewed: true },
-    after: { allergens: ["milk"], others: [] },
-    at: "2026-10-08T12:00:00+00:00",
-  };
-
-  it("names each change in the control, through the page's own label", () => {
-    expect(undoLabel(en.owner.dish, tick)).toBe(
-      `Undo: ticked Sesame for ${dish}`,
-    );
-    expect(allergenUndoLabel(strings, { ...tick, on: false })).toBe(
-      `Undo: unticked Sesame for ${dish}`,
-    );
-    expect(
-      allergenUndoLabel(strings, {
-        kind: "others",
-        id: "d1",
-        name: dish,
-        before: { allergens: [], others: ["celery"] },
-        after: { allergens: [], others: ["celery", "mustard"] },
-      }),
-    ).toBe("Undo: added mustard");
-    expect(
-      allergenUndoLabel(strings, {
-        kind: "others",
-        id: "d1",
-        name: dish,
-        before: { allergens: [], others: ["celery"] },
-        after: { allergens: [], others: ["lupin"] },
-      }),
-    ).toBe("Undo: renamed celery to lupin");
-    expect(
-      allergenUndoLabel(strings, {
-        kind: "check",
-        id: "d1",
-        name: dish,
-        on: true,
-        lists: { allergens: [], others: [] },
-      }),
-    ).toBe(`Undo: checked the allergens for ${dish}`);
-    expect(allergenUndoLabel(strings, applied)).toBe(
-      `Undo: applied this list to ${dish} in Mains, Dinner`,
-    );
-  });
-
-  it("says what it put back, and that a check it cleared is gone", () => {
-    expect(allergenUndoneSentence(strings, tick, false)).toBe(
-      "Undone. Sesame is unticked again.",
-    );
-    expect(allergenUndoneSentence(strings, tick, true)).toBe(
-      "Undone. Sesame is unticked again. The list is not checked now.",
-    );
-    expect(allergenUndoneSentence(strings, applied, false)).toBe(
-      `Undone. ${dish} in Mains, Dinner has its old list back. It is not checked now.`,
-    );
-    expect(
-      allergenUndoneSentence(
-        strings,
-        { ...applied, before: { ...applied.before, reviewed: false } },
-        false,
-      ),
-    ).toBe(`Undone. ${dish} in Mains, Dinner is as it was.`);
-  });
-
-  it("drops an entry whose lists moved, with one sentence, and keeps one that merely failed", () => {
-    expect(
-      allergenNotUndone(strings, editing, words, tick, {
-        kind: "lists-changed",
-      }),
-    ).toEqual({ outcome: "stale", sentence: strings.undo.listsChanged });
-    expect(
-      allergenNotUndone(strings, editing, words, applied, {
-        kind: "lists-changed",
-      }),
-    ).toEqual({
-      outcome: "stale",
-      sentence: `${dish} in Mains, Dinner has changed since, so it stays as it is.`,
-    });
-    expect(
-      allergenNotUndone(strings, editing, words, tick, { kind: "failed" }),
-    ).toEqual({
-      outcome: "failed",
-      sentence: `${editing.notUndone} ${editing.problems.failed}`,
-    });
-  });
-
-  it("reads one change to the other allergens", () => {
-    expect(othersChange(["a"], ["a", "b"])).toEqual({
-      kind: "added",
-      other: "b",
-    });
-    expect(othersChange(["a", "b"], ["a"])).toEqual({
-      kind: "removed",
-      other: "b",
-    });
-    expect(othersChange(["a"], ["c"])).toEqual({
-      kind: "renamed",
-      from: "a",
-      to: "c",
-    });
-    expect(othersChange(["a", "b"], ["c", "d"])).toEqual({ kind: "changed" });
-  });
-
+describe("what the allergen group says when a save fails", () => {
   it("says what was not saved, then why", () => {
     expect(
       allergensNotSavedSentence(strings, words, dish, { kind: "failed" }),

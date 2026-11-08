@@ -18,12 +18,10 @@ import {
   type ListProblem,
   type TextWords,
 } from "../editing/list-words";
-import type { UndoOutcome } from "../editing/undo";
-import type { GroupChange, UndoLists } from "./group-undo";
 
 // Every sentence the allergen group shows or speaks, built in one place
-// from copy (D-148, D-152), and what its Undo entries say. The nine boxes,
-// the other-allergen rows, the check, the sentence diners will read with
+// from copy (D-148, D-152). The nine boxes, the other-allergen rows, the
+// check, the sentence diners will read with
 // who checked it and when, and, on a dish's page, the same-named offer
 // (D-129). The sentence diners read comes from the domain builder, the one
 // place it lives (module rule 8). A sentence that names its subject names
@@ -49,9 +47,6 @@ export type AllergenSubject = {
   noun: "dish" | "option";
   name: string;
 };
-
-// The entries the group leaves, as this file reads them.
-export type AllergenUndo = GroupChange;
 
 // A sentence with the subject's name in its placeholder. A bare name is a
 // dish's, which is how the dish page's own callers and tests name it.
@@ -368,184 +363,4 @@ export function notAppliedSentence(
         editing.problems.outOfDate,
       );
   }
-}
-
-// What one change to the other allergens was: one name added, removed, or
-// renamed, or more than one thing at once.
-export type OthersChange =
-  | { kind: "added"; other: string }
-  | { kind: "removed"; other: string }
-  | { kind: "renamed"; from: string; to: string }
-  | { kind: "changed" };
-
-export function othersChange(
-  before: readonly string[],
-  after: readonly string[],
-): OthersChange {
-  const gone = before.filter((name) => !after.includes(name));
-  const came = after.filter((name) => !before.includes(name));
-  if (gone.length === 0 && came.length === 1 && came[0] !== undefined) {
-    return { kind: "added", other: came[0] };
-  }
-  if (came.length === 0 && gone.length === 1 && gone[0] !== undefined) {
-    return { kind: "removed", other: gone[0] };
-  }
-  if (
-    gone.length === 1 &&
-    came.length === 1 &&
-    gone[0] !== undefined &&
-    came[0] !== undefined
-  ) {
-    return { kind: "renamed", from: gone[0], to: came[0] };
-  }
-  return { kind: "changed" };
-}
-
-function placeOf(entry: Extract<AllergenUndo, { kind: "apply" }>) {
-  return { dish: entry.dish, section: entry.section, menu: entry.menu };
-}
-
-// The subject an entry's sentences name: the entry's name, in the noun's
-// placeholder.
-function subjectOf(
-  entry: { name: string },
-  noun: AllergenSubject["noun"],
-): AllergenSubject {
-  return { id: "", noun, name: entry.name };
-}
-
-// The Undo control's whole name for one of the group's changes, which is
-// also its visible text.
-export function allergenUndoLabel(
-  strings: AllergenStrings,
-  entry: AllergenUndo,
-  noun: AllergenSubject["noun"] = "dish",
-): string {
-  switch (entry.kind) {
-    case "allergen":
-      return named(
-        entry.on ? strings.undo.ticked : strings.undo.unticked,
-        subjectOf(entry, noun),
-        { allergen: strings.names[entry.allergen] },
-      );
-    case "others": {
-      const change = othersChange(entry.before.others, entry.after.others);
-      switch (change.kind) {
-        case "added":
-          return fill(strings.undo.otherAdded, { other: change.other });
-        case "removed":
-          return fill(strings.undo.otherRemoved, { other: change.other });
-        case "renamed":
-          return fill(strings.undo.otherRenamed, change);
-        case "changed":
-          return named(strings.undo.othersChanged, subjectOf(entry, noun));
-      }
-      break;
-    }
-    case "check":
-      return named(
-        entry.on ? strings.undo.checked : strings.undo.unchecked,
-        subjectOf(entry, noun),
-      );
-    case "apply":
-      return fill(strings.sameNamed.undo.applied, placeOf(entry));
-  }
-}
-
-// What Undo says once it has put one of the group's changes back. A change
-// to a list that cleared a check standing at the time says so too.
-export function allergenUndoneSentence(
-  strings: AllergenStrings,
-  entry: AllergenUndo,
-  clearedCheck: boolean,
-  noun: AllergenSubject["noun"] = "dish",
-): string {
-  const cleared = clearedCheck ? ` ${strings.clearedNow}` : "";
-  switch (entry.kind) {
-    case "allergen":
-      return (
-        fill(entry.on ? strings.undo.tickedBack : strings.undo.untickedBack, {
-          allergen: strings.names[entry.allergen],
-        }) + cleared
-      );
-    case "others": {
-      const change = othersChange(entry.before.others, entry.after.others);
-      switch (change.kind) {
-        case "added":
-          return (
-            fill(strings.undo.otherAddedBack, { other: change.other }) + cleared
-          );
-        case "removed":
-          return (
-            fill(strings.undo.otherRemovedBack, { other: change.other }) +
-            cleared
-          );
-        case "renamed":
-          return (
-            fill(strings.undo.otherRenamedBack, { from: change.from }) + cleared
-          );
-        case "changed":
-          return (
-            named(strings.undo.othersBack, subjectOf(entry, noun)) + cleared
-          );
-      }
-      break;
-    }
-    case "check":
-      return named(
-        entry.on ? strings.undo.checkedBack : strings.undo.uncheckedBack,
-        subjectOf(entry, noun),
-      );
-    case "apply":
-      return fill(
-        entry.before.reviewed
-          ? strings.sameNamed.undo.back
-          : strings.sameNamed.undo.backUnchanged,
-        placeOf(entry),
-      );
-  }
-}
-
-// What Undo says when it could not put one of the group's changes back,
-// and what becomes of its entry: a list that moved since drops it, with
-// one sentence; an uncheck that found the check gone, or an apply whose
-// other dish changed, drops it too; anything else is an ordinary failure
-// that keeps the entry for another try.
-export function allergenNotUndone(
-  strings: AllergenStrings,
-  editing: EditingStrings,
-  words: TextWords,
-  entry: AllergenUndo,
-  problem: ListProblem | { kind: "lists-changed" },
-): { outcome: Exclude<UndoOutcome, "applied">; sentence: string } {
-  if (problem.kind === "lists-changed") {
-    if (entry.kind === "apply") {
-      return {
-        outcome: "stale",
-        sentence: fill(strings.sameNamed.undo.changed, placeOf(entry)),
-      };
-    }
-    return { outcome: "stale", sentence: strings.undo.listsChanged };
-  }
-  if (
-    problem.kind === "changed" ||
-    problem.kind === "gone" ||
-    problem.kind === "parent-gone" ||
-    problem.kind === "mismatch"
-  ) {
-    return { outcome: "stale", sentence: editing.stale };
-  }
-  const name = entry.kind === "apply" ? entry.dish : entry.name;
-  return {
-    outcome: problem.kind === "name-taken" ? "blocked" : "failed",
-    sentence: failureSentence(
-      editing.notUndone,
-      problemText(words, problem, name),
-    ),
-  };
-}
-
-// The lists an entry remembers, as a write carries them.
-export function listsOf(lists: UndoLists): AllergenLists {
-  return { allergens: lists.allergens, others: lists.others };
 }

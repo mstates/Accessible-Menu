@@ -19,7 +19,7 @@ import { shaped } from "./log";
 // choice_options; this is the only file that names them, and the only
 // place the row shapes are known. Features see OwnerChoiceList as a row on
 // a dish's or a section's page and OwnerOption on the list's own page. A
-// delete marks the row and keeps it, so Undo can bring it back; reads
+// delete marks the row and keeps it, with deleted_at set; reads
 // leave marked rows out. Owners write a list's lead, sort, and deleted_at,
 // and an option's name, added price, calories, the two allergen lists, the
 // check, sort, and deleted_at, and nothing else: never a list's home or an
@@ -287,23 +287,21 @@ export async function addOwnerChoiceList(
 // Writes a list's lead, scoped to the home the page read it under. Under
 // row level security a list the caller does not own matches zero rows
 // without an error, so the write asks for the row back and reads an empty
-// answer as not found. With expected, the write happens only if the lead
-// is still that value: an Undo never writes over a newer change.
+// answer as not found.
 export async function setOwnerChoiceListLead(
   client: SupabaseClient,
   home: ChoiceHome,
   id: string,
   lead: string,
-  expected?: string,
 ): Promise<ChoiceWriteResult<OwnerChoiceList>> {
-  let update = client
+  const { data, error } = await client
     .from("choice_lists")
     .update({ lead })
     .eq("id", id)
     .eq(homeColumn(home), home.id)
-    .is("deleted_at", null);
-  if (expected !== undefined) update = update.eq("lead", expected);
-  const { data, error } = await update.select(listColumns).maybeSingle();
+    .is("deleted_at", null)
+    .select(listColumns)
+    .maybeSingle();
   if (error) return refused(error.code, error.message);
   if (!data) return notFound;
   const row = shaped(listSchema, data, "choice_lists");
@@ -336,29 +334,6 @@ export async function deleteOwnerChoiceList(
     return { ok: false, error: { kind: "grew" } };
   }
   return error.message === "delete_not_found" ? notFound : failed;
-}
-
-// Brings a deleted list back, with its options. It fails with name-taken
-// while another list of the home has its lead.
-export async function restoreOwnerChoiceList(
-  client: SupabaseClient,
-  home: ChoiceHome,
-  id: string,
-): Promise<ChoiceWriteResult<OwnerChoiceList>> {
-  const { data, error } = await client
-    .from("choice_lists")
-    .update({ deleted_at: null })
-    .eq("id", id)
-    .eq(homeColumn(home), home.id)
-    .not("deleted_at", "is", null)
-    .select(listColumns)
-    .maybeSingle();
-  if (error) return refused(error.code, error.message);
-  if (!data) return notFound;
-  const row = shaped(listSchema, data, "choice_lists");
-  return row
-    ? { ok: true, value: { id: row.id, lead: row.lead, options: 0 } }
-    : failed;
 }
 
 // set_choice_list_order() takes the whole list or nothing: a list that is
@@ -478,27 +453,22 @@ export async function addOwnerOption(
 // Writes one column of an option, scoped to the list the page read it in.
 // Under row level security an option the caller does not own matches zero
 // rows without an error, so the write asks for the row back and reads an
-// empty answer as not found. With expected, the write happens only if the
-// value is still that one: an Undo never writes over a newer change.
+// empty answer as not found.
 async function writeOption(
   client: SupabaseClient,
   listId: string,
   id: string,
   viewer: string | null,
   values: Record<string, unknown>,
-  expected: Record<string, string | number | boolean | null>,
 ): Promise<ChoiceWriteResult<OwnerOption>> {
-  let update = client
+  const { data, error } = await client
     .from("choice_options")
     .update(values)
     .eq("id", id)
     .eq("choice_list_id", listId)
-    .is("deleted_at", null);
-  for (const [column, value] of Object.entries(expected)) {
-    update =
-      value === null ? update.is(column, null) : update.eq(column, value);
-  }
-  const { data, error } = await update.select(optionColumns).maybeSingle();
+    .is("deleted_at", null)
+    .select(optionColumns)
+    .maybeSingle();
   if (error) return refused(error.code, error.message);
   if (!data) return notFound;
   const row = shaped(optionSchema, data, "choice_options");
@@ -514,16 +484,8 @@ export function renameOwnerOption(
   id: string,
   viewer: string | null,
   name: string,
-  expected?: string,
 ): Promise<ChoiceWriteResult<OwnerOption>> {
-  return writeOption(
-    client,
-    listId,
-    id,
-    viewer,
-    { name },
-    expected === undefined ? {} : { name: expected },
-  );
+  return writeOption(client, listId, id, viewer, { name });
 }
 
 // An option's added price, in cents, or null for none.
@@ -532,20 +494,11 @@ export function setOwnerOptionPrice(
   listId: string,
   id: string,
   cents: number | null,
-  expected?: number | null,
 ): Promise<ChoiceWriteResult<OwnerOption>> {
-  return writeOption(
-    client,
-    listId,
-    id,
-    null,
-    { added_price_cents: cents },
-    expected === undefined ? {} : { added_price_cents: expected },
-  );
+  return writeOption(client, listId, id, null, { added_price_cents: cents });
 }
 
-// The two calorie columns a pair of calories lives in, and what a write
-// expects of each when the pair is the one the page showed (D-167).
+// The two calorie columns a pair of calories lives in (D-167).
 function calorieColumns(calories: Calories | null) {
   return {
     calories_low: calories?.low ?? null,
@@ -559,37 +512,23 @@ export function setOwnerOptionCalories(
   listId: string,
   id: string,
   calories: Calories | null,
-  expected?: Calories | null,
 ): Promise<ChoiceWriteResult<OwnerOption>> {
-  return writeOption(
-    client,
-    listId,
-    id,
-    null,
-    calorieColumns(calories),
-    expected === undefined ? {} : calorieColumns(expected),
-  );
+  return writeOption(client, listId, id, null, calorieColumns(calories));
 }
 
-// Marks an option removed, or brings it back with its lists and its check
-// as they were. Bringing one back fails with name-taken while another
-// option of the list has its name.
-export async function setOwnerOptionDeleted(
+// Marks an option removed. The row stays, with deleted_at set and its
+// lists and its check as they were.
+export async function removeOwnerOption(
   client: SupabaseClient,
   listId: string,
   id: string,
-  deleted: boolean,
 ): Promise<ChoiceWriteResult<OwnerOption>> {
-  const update = client
+  const { data, error } = await client
     .from("choice_options")
-    .update({ deleted_at: deleted ? new Date().toISOString() : null })
+    .update({ deleted_at: new Date().toISOString() })
     .eq("id", id)
-    .eq("choice_list_id", listId);
-  const { data, error } = await (
-    deleted
-      ? update.is("deleted_at", null)
-      : update.not("deleted_at", "is", null)
-  )
+    .eq("choice_list_id", listId)
+    .is("deleted_at", null)
     .select(optionColumns)
     .maybeSingle();
   if (error) return refused(error.code, error.message);
@@ -638,14 +577,12 @@ export type OptionAllergenPatch = {
 
 // What the option must still hold for the write to land (D-153): the name
 // and the lists the page showed, for every write in the option's group;
-// the flag, for an uncheck; the stamp's time, for the Undo of an apply. A
-// miss comes back as not found, which the caller reads as the option
-// having changed.
+// the flag, for an uncheck. A miss comes back as not found, which the
+// caller reads as the option having changed.
 export type OptionAllergenExpected = {
   name?: string;
   lists?: AllergenLists;
   allergens_reviewed?: boolean;
-  allergens_reviewed_at?: string;
 };
 
 // Writes an option's allergen lists or its check, scoped to the list the
@@ -684,9 +621,6 @@ export async function writeOwnerOptionAllergens(
   }
   if (expected.allergens_reviewed !== undefined) {
     update = update.eq("allergens_reviewed", expected.allergens_reviewed);
-  }
-  if (expected.allergens_reviewed_at !== undefined) {
-    update = update.eq("allergens_reviewed_at", expected.allergens_reviewed_at);
   }
   const { data, error } = await update.select(optionColumns).maybeSingle();
   if (error) return refused(error.code, error.message);

@@ -164,7 +164,6 @@
   - text: The words diners read first, like Choose one side or Add on.
   - button "Add choice list"
   - status: All changes saved
-  - button "Undo" [disabled]
   - paragraph: This is the last dish in Starters.
   - heading "Move this dish" [level=2]
   - text: Move to, Choose a section

@@ -53,8 +53,8 @@ import { expectWrites, guardWrites } from "./write-guard";
 // answers it inside the browser as an action the server does not know,
 // which is how the failed state is reached. Real saves, "Saved." (D-118),
 // a size that lands, a name chosen from the suggestions, a check that
-// lands with its stamp, a list that moved under the page, the apply, Undo
-// with something to undo, and a dish that really moves are covered by
+// lands with its stamp, a list that moved under the page, the apply, and a
+// dish that really moves are covered by
 // tests/local, by the unit tests, by the boundary scripts, and by hand.
 //
 // A dish's page is named by its id, which the setup finds and writes down,

@@ -14,9 +14,9 @@ import { dishScope, listScope, ownerScope } from "../owner-scope";
 import type { GroupApplyResult } from "./target";
 
 // The same-named Apply's other side (D-129, grown to options by D-166): a
-// dish or an option that gets the subject's lists and the check, and gets
-// its old lists back on Undo. The subject is read and checked by the
-// action that calls this, a dish's or an option's; the target is read here
+// dish or an option that gets the subject's lists and the check. The
+// subject is read and checked by the action that calls this, a dish's or
+// an option's; the target is read here
 // as the signed-in owner, live in a live home, written through its own
 // table's writer, and answered in the group's one shape. It lives in its
 // own file, not in an actions file: every export of a "use server" file is
@@ -56,7 +56,6 @@ type Patch = {
 
 type Expected = {
   lists?: AllergenLists;
-  allergens_reviewed_at?: string;
 };
 
 type Written =
@@ -215,32 +214,4 @@ export async function applyListsTo(
     });
   }
   return { ok: true, value: checked.value };
-}
-
-// Undo of an apply: the target gets its old lists back and is left
-// unchecked, since the stamp it had before cannot be restored, and only
-// while it still holds the stamp the apply made.
-export async function undoApplyTo(
-  rawCode: string,
-  target: ApplyTarget,
-  before: AllergenLists,
-  at: string,
-  viewer: string,
-): Promise<GroupApplyResult> {
-  const opened = await openTarget(rawCode, target, viewer);
-  if (!opened.ok) return opened.result;
-  const written = await opened.write(
-    {
-      allergens: inFixedOrder(before.allergens),
-      custom_allergens: before.others,
-      allergens_reviewed: false,
-    },
-    { allergens_reviewed_at: at },
-  );
-  if (!written.ok) {
-    return refuseApply({
-      kind: written.notFound ? "target-changed" : "failed",
-    });
-  }
-  return { ok: true, value: written.value };
 }

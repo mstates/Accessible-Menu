@@ -37,7 +37,6 @@
   - text: The words diners read first, like Choose one side or Add on.
   - button "Add choice list"
   - status: All changes saved
-  - button "Undo" [disabled]
   - paragraph: Dishes are the items in this section, like soup or a salad.
   - list:
     - listitem:

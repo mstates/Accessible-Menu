@@ -5,13 +5,11 @@ import { z } from "zod";
 import {
   addOwnerSection,
   deleteOwnerSection,
-  listOwnerSections,
-  restoreOwnerSection,
   setOwnerSectionOrder,
   setOwnerSectionText,
   type SectionWriteError,
 } from "@/core/supabase/sections";
-import { mergeOrder, type Held } from "@/domain/menu";
+import type { Held } from "@/domain/menu";
 import {
   cleanSectionText,
   sectionTextProblem,
@@ -54,17 +52,12 @@ function refuse(problem: ServerProblem): { ok: false; problem: ServerProblem } {
 
 const gone = refuse({ kind: "gone" });
 
-// A row that is not there is "gone" for an ordinary save, and "changed" for
-// an Undo, whose change no longer stands.
-function fromWrite(
-  error: SectionWriteError,
-  missing: "gone" | "changed",
-): ServerProblem {
+function fromWrite(error: SectionWriteError): ServerProblem {
   switch (error.kind) {
     case "name-taken":
       return { kind: "name-taken" };
     case "not-found":
-      return { kind: missing };
+      return { kind: "gone" };
     case "mismatch":
       return { kind: "mismatch" };
     case "grew":
@@ -90,23 +83,20 @@ export async function addSection(
   if (rule) return refuse({ kind: "invalid", rule });
   const result = await addOwnerSection(scope.client, scope.menuId, name);
   refresh();
-  if (!result.ok) return refuse(fromWrite(result.error, "gone"));
+  if (!result.ok) return refuse(fromWrite(result.error));
   return {
     ok: true,
     value: { row: result.value.section, total: result.value.total },
   };
 }
 
-// Writes a section's name. With expected, the write is an Undo: it happens
-// only if the name is still the one the change wrote, and never writes over
-// a newer change. A section's note and its every-dish line are written from
-// the section's own page (D-135).
+// Writes a section's name. A section's note is written from the section's
+// own page (D-135).
 export async function renameSection(
   rawCode: string,
   rawMenu: string,
   rawId: string,
   rawName: string,
-  expected?: string,
 ): Promise<SectionActionResult<OwnerSection>> {
   const scope = await menuScope(rawCode, rawMenu);
   if (!scope.ok) return scope;
@@ -124,27 +114,22 @@ export async function renameSection(
     id.data,
     "name",
     name,
-    typeof expected === "string" ? expected : undefined,
   );
   refresh();
-  if (!result.ok) {
-    return refuse(
-      fromWrite(result.error, expected === undefined ? "gone" : "changed"),
-    );
-  }
+  if (!result.ok) return refuse(fromWrite(result.error));
   return { ok: true, value: result.value };
 }
 
-// Marks the section deleted. The row stays, so Undo can bring it back with
-// everything under it (WCAG 3.3.4).
+// Marks the section deleted: the row stays, marked by deleted_at, with its
+// dishes.
 //
-// A section that holds dishes asks first (D-119), and the rule is held by
-// the database, not only on the page. Every delete says how many dishes the
-// owner was told go with the section: none for a delete at once and for an
-// Undo of an add, the confirmation's number otherwise. The database counts
-// them in the statement that marks the section, and refuses a delete that
-// would take more (migration 5). The refresh brings the page the count it
-// missed, so the next press asks.
+// Every delete asks first (D-221), and names the dishes that go when the
+// section holds any (D-119); that rule is held by the database, not only
+// on the page. Every delete says how many dishes the owner was told go with
+// the section: the confirmation's number, zero for a section that holds
+// none. The database counts them in the statement that marks the section,
+// and refuses a delete that would take more (migration 5). The refresh
+// brings the page the count it missed, so the next press asks with it.
 export async function deleteSection(
   rawCode: string,
   rawMenu: string,
@@ -167,42 +152,8 @@ export async function deleteSection(
     told.data,
   );
   refresh();
-  if (!result.ok) return refuse(fromWrite(result.error, "gone"));
+  if (!result.ok) return refuse(fromWrite(result.error));
   return { ok: true, value: null };
-}
-
-// Brings a deleted section back, then puts the list in the order it had
-// before the delete. If the order cannot be set, because the list changed
-// since, the section is back all the same and says where it landed.
-export async function restoreSection(
-  rawCode: string,
-  rawMenu: string,
-  rawId: string,
-  rawOrder: string[],
-): Promise<SectionActionResult<{ position: number; total: number }>> {
-  const scope = await menuScope(rawCode, rawMenu);
-  if (!scope.ok) return scope;
-  const id = idSchema.safeParse(rawId);
-  const order = orderSchema.safeParse(rawOrder);
-  if (!id.success || !order.success) return refuse({ kind: "changed" });
-  const result = await restoreOwnerSection(scope.client, scope.menuId, id.data);
-  refresh();
-  if (!result.ok) return refuse(fromWrite(result.error, "changed"));
-
-  let live: string[];
-  try {
-    const sections = await listOwnerSections(scope.client, scope.menuId);
-    live = sections.map((section) => section.id);
-  } catch {
-    return { ok: true, value: { position: 0, total: 0 } };
-  }
-  const wanted = mergeOrder(order.data, live);
-  const placed = await setOwnerSectionOrder(scope.client, scope.menuId, wanted);
-  const final = placed.ok ? wanted : live;
-  return {
-    ok: true,
-    value: { position: final.indexOf(id.data) + 1, total: final.length },
-  };
 }
 
 export async function orderSections(
@@ -220,6 +171,6 @@ export async function orderSections(
     order.data,
   );
   refresh();
-  if (!result.ok) return refuse(fromWrite(result.error, "gone"));
+  if (!result.ok) return refuse(fromWrite(result.error));
   return { ok: true, value: null };
 }

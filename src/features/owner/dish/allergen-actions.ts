@@ -19,11 +19,7 @@ import {
 import type { OwnerDishAllergens, OwnerDishDetail } from "@/domain/dish";
 import { ALLERGEN_IDS } from "@/domain/types";
 import { majorRuleOf } from "../allergens/allergen-words";
-import {
-  applyListsTo,
-  inFixedOrder,
-  undoApplyTo,
-} from "../allergens/apply-server";
+import { applyListsTo, inFixedOrder } from "../allergens/apply-server";
 import type {
   GroupApplyResult,
   GroupProblem,
@@ -269,31 +265,4 @@ async function applyAs(
     shown.data.target,
     scope.userId,
   );
-}
-
-// Undo of an apply: the other side gets its old lists back and is left
-// unchecked, since the stamp it had before cannot be restored, and only
-// while it still holds the stamp the apply made.
-export async function undoDishAllergensApply(
-  rawCode: string,
-  rawDish: string,
-  rawTarget: unknown,
-  rawBefore: unknown,
-  rawAt: unknown,
-): Promise<ApplyResult> {
-  const scope = await dishScope(rawCode, rawDish);
-  if (!scope.ok) return scope;
-  const target = targetSchema.safeParse(rawTarget);
-  const before = listsSchema.safeParse(rawBefore);
-  const at = z.string().min(1).safeParse(rawAt);
-  if (!target.success || !before.success || !at.success) return applyFailed;
-  const result = await undoApplyTo(
-    rawCode,
-    target.data,
-    before.data,
-    at.data,
-    scope.userId,
-  );
-  refresh();
-  return result;
 }

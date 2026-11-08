@@ -14,7 +14,6 @@ import {
   deleteSection,
   orderSections,
   renameSection,
-  restoreSection,
 } from "./section-actions";
 
 type Props = {
@@ -37,8 +36,8 @@ type Props = {
 // The sections of one menu (D-111, D-128): the shared list, with one field
 // a row, its name, so a section's row is the row every list has. Each row
 // links to the section's own page, where its dishes are, and its note
-// (D-135). Delete on a section that holds dishes asks first, and names
-// them; an empty section goes at once (D-119). The publishing group comes
+// (D-135). Delete asks first on every row (D-221), and names the dishes
+// that go when the section holds any (D-119). The publishing group comes
 // first, then the lead, then the saved status and the rows.
 export function SectionList(props: Props) {
   return (
@@ -64,7 +63,6 @@ function SectionRows({
   const list = useRowList({
     words,
     idPrefix: sectionList.idPrefix,
-    undoKey: `undo:${code}:menu:${menuId}`,
     rows: sections,
     fields: sectionList.fields,
     valueOf: (section) => section.name,
@@ -72,12 +70,11 @@ function SectionRows({
     rule: sectionList.rule,
     actions: {
       add: (name) => addSection(code, menuId, name),
-      setText: (id, _field, value, expected) =>
-        renameSection(code, menuId, id, value, expected),
+      setText: (id, _field, value) => renameSection(code, menuId, id, value),
       remove: (id, told) => deleteSection(code, menuId, id, told),
-      restore: (id, order) => restoreSection(code, menuId, id, order),
       order: (ids) => orderSections(code, menuId, ids),
     },
+    deleteAsksFirst: true,
     held: (section) => ({ sections: 0, dishes: section.dishes, options: 0 }),
     link: {
       label: strings.editDishes,

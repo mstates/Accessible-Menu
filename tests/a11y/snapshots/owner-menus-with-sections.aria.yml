@@ -25,7 +25,6 @@
     - paragraph: Unpublish takes this menu away from diners at once.
   - paragraph: Sections are the headings on this menu, like Starters and Mains. Edit dishes opens a section's own page, with its dishes and its note. Each change saves when you leave its field.
   - status: All changes saved
-  - button "Undo" [disabled]
   - list:
     - listitem:
       - heading "Starters" [level=2]

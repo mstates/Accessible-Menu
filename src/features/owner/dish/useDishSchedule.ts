@@ -17,7 +17,6 @@ import {
 } from "@/domain/hours";
 import {
   MONTH_KEYS,
-  monthName,
   normalizeSchedule,
   sameSchedule,
   scheduleSentence,
@@ -34,22 +33,13 @@ import { useConfirmed } from "../editing/confirmed";
 import {
   failureSentence,
   problemText,
-  undoOutcome,
-  type EditingStrings,
   type ListProblem,
   type TextWords,
 } from "../editing/list-words";
-import type { TextEditor } from "../editing/texts";
-import { pushUndo } from "../editing/undo";
-import type { DishStrings, DishUndo } from "./dish-words";
+import type { Editing } from "../editing/useEditing";
+import type { DishStrings } from "./dish-words";
 import { setDishSchedule } from "./schedule-actions";
-import {
-  scheduleUndoneSentence,
-  type BoxName,
-  type Reversed,
-  type SchedulePart,
-  type ScheduleUndo,
-} from "./schedule-words";
+import type { SchedulePart } from "./schedule-words";
 
 // The schedule on a dish's page (D-159, task 5): five optional parts under
 // one heading, each its own control, all one column. Every write sends the
@@ -70,10 +60,10 @@ import {
 
 type Props = {
   strings: DishStrings;
-  editingStrings: EditingStrings;
   code: string;
   dish: OwnerDishDetail;
-  editor: TextEditor<DishUndo>;
+  // The page's one editing state.
+  editing: Editing;
   words: TextWords;
   announce: (text: string) => void;
   timeZone: string;
@@ -147,10 +137,9 @@ function withKey<Key extends string>(
 
 export function useDishSchedule({
   strings,
-  editingStrings,
   code,
   dish,
-  editor,
+  editing,
   words,
   announce,
   timeZone,
@@ -159,7 +148,6 @@ export function useDishSchedule({
   scheduleCopy,
   timeCopy,
 }: Props) {
-  const { editing } = editor;
   const copy = strings.schedule;
   const ids = SCHEDULE_IDS;
   const at = new Date(now);
@@ -172,17 +160,6 @@ export function useDishSchedule({
       patch: (s: Schedule | null) => Schedule | null,
     ) => patch(current),
   );
-
-  const boxName: BoxName = (part, key) => {
-    if (part === "days" && isDayKey(key)) return scheduleCopy.day[key];
-    if (part === "weeks" && isWeekKey(key)) return copy.weeks[key];
-    if (part === "months" && isMonthKey(key)) return monthName(key, lang);
-    return key;
-  };
-
-  function record(entry: DishUndo) {
-    editor.undo.replace(pushUndo(editor.undo.peek(), entry));
-  }
 
   // What went wrong, in words: the schedule's own rules first.
   function problemOf(problem: ListProblem): string {
@@ -244,7 +221,7 @@ export function useDishSchedule({
     next: Schedule | null,
     before: Schedule | null,
     failure: { fieldId: string; typed: string | null },
-    extra: { box?: string; on?: boolean; cleared?: boolean } = {},
+    extra: { on?: boolean; cleared?: boolean } = {},
   ): Promise<boolean> {
     const result = await editing.call(() =>
       setDishSchedule(code, dish.id, next, before),
@@ -287,15 +264,6 @@ export function useDishSchedule({
       editing.landedField(key, failure.typed);
     }
     confirmedRef.current = result.value.schedule;
-    record({
-      kind: "schedule",
-      id: dish.id,
-      name: dish.name,
-      part,
-      ...(extra.box !== undefined ? { box: extra.box, on: extra.on } : {}),
-      from: before,
-      to: result.value.schedule,
-    });
     if (extra.cleared) announce(copy.weeksCleared);
     return true;
   }
@@ -355,7 +323,7 @@ export function useDishSchedule({
           next,
           before,
           { fieldId, typed: null },
-          { box: key, on, cleared },
+          { on, cleared },
         );
       });
     });
@@ -526,33 +494,6 @@ export function useDishSchedule({
     });
   }
 
-  // The inverse of a change: the schedule as it was, while the dish still
-  // holds the schedule the change left.
-  async function reverse(entry: ScheduleUndo): Promise<Reversed> {
-    const result = await editing.call(() =>
-      setDishSchedule(code, dish.id, entry.from, entry.to),
-    );
-    if (!result.ok) {
-      if (result.problem.kind === "schedule-changed") {
-        return {
-          ok: false,
-          outcome: "stale",
-          sentence: copy.undo.scheduleChanged,
-        };
-      }
-      return {
-        ok: false,
-        outcome: undoOutcome(result.problem),
-        sentence: failureSentence(
-          editingStrings.notUndone,
-          problemOf(result.problem),
-        ),
-      };
-    }
-    confirmedRef.current = result.value.schedule;
-    return { ok: true, sentence: scheduleUndoneSentence(copy, entry) };
-  }
-
   // Sends a failed save of the group's again, with the value that failed.
   function tryAgain(key: string, failedValue: string): boolean {
     for (const [part, prefix] of [
@@ -596,7 +537,6 @@ export function useDishSchedule({
   return {
     ids,
     shown,
-    boxName,
     days: {
       keys: DAY_KEYS,
       shown: shown?.days ?? [],
@@ -661,7 +601,6 @@ export function useDishSchedule({
       shown && showing
         ? showingSentence(showing, shown, at, timeZone, lang, copy, timeCopy)
         : null,
-    reverse,
     tryAgain,
   };
 }

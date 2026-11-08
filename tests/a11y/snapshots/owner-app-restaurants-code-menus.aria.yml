@@ -15,7 +15,6 @@
     - link "Back to the dashboard"
   - paragraph: Each change saves when you leave its field.
   - status: All changes saved
-  - button "Undo" [disabled]
   - list:
     - listitem:
       - heading "Lunch" [level=2]

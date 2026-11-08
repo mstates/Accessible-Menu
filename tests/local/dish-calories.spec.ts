@@ -9,10 +9,10 @@ import { hearLog, heard } from "../a11y/owner-lists";
 // Calories and the Cooked to order box on a dish's page, with saves that
 // land for real against the stand-in (D-167, task 7): calories saved under
 // One price, under Market price, and on a size, read back as typed and as
-// a range, the three refusals unsent, and Undo; the box ticked and
-// unticked, each said once, read back after a reload, and undone. The gate
-// cannot land a save, so this runs here. Each check leaves the stand-in as
-// it found it, so the checks run in any order.
+// a range, the three refusals unsent; the box ticked and unticked, each
+// said once, read back after a reload. The gate cannot land a save, so
+// this runs here. Each check leaves the stand-in as it found it, so the
+// checks run in any order.
 
 const { code } = ownerEnv();
 const strings = en.owner.dish;
@@ -76,10 +76,6 @@ function status(page: Page) {
   return page.locator('main [role="status"]');
 }
 
-function undoButton(page: Page, label: string) {
-  return page.getByRole("button", { name: label, exact: true });
-}
-
 type Row = {
   id: string;
   calories_low: number | null;
@@ -101,11 +97,10 @@ async function writesSoFar(): Promise<number> {
   return ((await response.json()) as unknown[]).length;
 }
 
-test("calories under One price save on Enter as a number and as a range, say Saved. once each, read back after a reload, and Undo puts them back", async ({
+test("calories under One price save on Enter as a number and as a range, say Saved. once each, and read back after a reload", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
-  const dish = dishes.one.name;
   await openDish(page, "one");
   const calories = caloriesField(page);
   await expect(calories).toHaveValue("320");
@@ -130,11 +125,6 @@ test("calories under One price save on Enter as a number and as a range, say Sav
 
   await reload(page);
   await expect(caloriesField(page)).toHaveValue("1250");
-  await undoButton(page, fill(strings.undo.calories, { dish })).click();
-  await expect
-    .poll(() => said(page, fill(strings.undo.caloriesBack, { dish })))
-    .toBe(1);
-  await expect(caloriesField(page)).toHaveValue("300 to 340");
   await expectNoMissingIds(page);
 
   // As it was.
@@ -174,7 +164,7 @@ test("calories in the wrong shape, over the cap, or out of order are refused in 
   expect(await writesSoFar()).toBe(before);
 });
 
-test("a size's calories save on Enter, read back after a reload, and Undo puts them back", async ({
+test("a size's calories save on Enter and read back after a reload", async ({
   page,
 }) => {
   await openDish(page, "sizes");
@@ -185,24 +175,19 @@ test("a size's calories save on Enter, read back after a reload, and Undo puts t
   await expect.poll(() => said(page, saved)).toBe(1);
   await reload(page);
   await expect(sizeCaloriesField(page, "Cup")).toHaveValue("190 to 210");
-  await undoButton(
-    page,
-    fill(strings.undo.sizeCalories, { size: "Cup" }),
-  ).click();
-  await expect
-    .poll(() =>
-      said(page, fill(strings.undo.sizeCaloriesBack, { size: "Cup" })),
-    )
-    .toBe(1);
-  await expect(sizeCaloriesField(page, "Cup")).toHaveValue("180");
   await expectNoMissingIds(page);
+
+  // As it was.
+  await sizeCaloriesField(page, "Cup").fill("180");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => said(page, saved)).toBe(1);
+  await expect(sizeCaloriesField(page, "Cup")).toHaveValue("180");
 });
 
-test("Cooked to order ticked and unticked each say Saved. once, hold after a reload, and are undone", async ({
+test("Cooked to order ticked and unticked each say Saved. once and hold after a reload", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
-  const dish = dishes.one.name;
   await openDish(page, "one");
   await expect(cookedBox(page)).not.toBeChecked();
   await cookedWords(page).click();
@@ -212,32 +197,14 @@ test("Cooked to order ticked and unticked each say Saved. once, hold after a rel
   await reload(page);
   await expect(cookedBox(page)).toBeChecked();
 
-  await undoButton(page, fill(strings.cookedToOrder.undo.on, { dish })).click();
-  await expect
-    .poll(() => said(page, fill(strings.cookedToOrder.undo.onBack, { dish })))
-    .toBe(1);
-  await expect(cookedBox(page)).not.toBeChecked();
-  expect((await row("items", dishes.one.id)).cooked_to_order).toBe(false);
-
+  // As it was: unticked, said once, held after a reload.
   await cookedWords(page).click();
+  await expect(cookedBox(page)).not.toBeChecked();
   await expect.poll(() => said(page, saved)).toBe(1);
-  await cookedWords(page).click();
-  await expect.poll(() => said(page, saved)).toBe(2);
-  await expect(cookedBox(page)).not.toBeChecked();
-  await undoButton(
-    page,
-    fill(strings.cookedToOrder.undo.off, { dish }),
-  ).click();
-  await expect
-    .poll(() => said(page, fill(strings.cookedToOrder.undo.offBack, { dish })))
-    .toBe(1);
-  await expect(cookedBox(page)).toBeChecked();
-  await expectNoMissingIds(page);
-
-  // As it was.
-  await cookedWords(page).click();
-  await expect.poll(() => said(page, saved)).toBe(3);
   expect((await row("items", dishes.one.id)).cooked_to_order).toBe(false);
+  await expectNoMissingIds(page);
+  await reload(page);
+  await expect(cookedBox(page)).not.toBeChecked();
 });
 
 test("a Cooked to order tick the server refuses goes back, is said once with Try again, and Try again lands it", async ({

@@ -12,7 +12,6 @@ import {
   movedSentence,
   notMovedSentence,
   type MoveStrings,
-  type SectionMove,
 } from "./section-move";
 
 type Props = {
@@ -22,14 +21,10 @@ type Props = {
   sectionGone: string;
   code: string;
   section: { id: string; name: string };
-  // The menu the section is in now, and the restaurant's other menus, in
-  // order: the ones it can move to.
-  menu: OwnerMenu;
+  // The restaurant's other menus, in order: the ones it can move to.
   otherMenus: OwnerMenu[];
-  // The page's one editing state and its one Undo, which the dishes above
-  // share (D-111).
+  // The page's one editing state, which the dishes above share (D-111).
   saves: Editing;
-  record: (entry: SectionMove) => void;
   // Says a sentence once the page shows the section in that menu.
   sayOnceIn: (menuId: string, sentence: string) => void;
 };
@@ -49,10 +44,8 @@ export function MoveSection({
   sectionGone,
   code,
   section,
-  menu,
   otherMenus,
   saves,
-  record,
   sayOnceIn,
 }: Props) {
   const announce = useAnnounce();
@@ -85,13 +78,6 @@ export function MoveSection({
           return;
         }
         saves.landed();
-        record({
-          kind: "relocate",
-          id: section.id,
-          name: section.name,
-          from: { id: menu.id, name: menu.name, order: result.value.order },
-          to: { id: target.id, name: target.name },
-        });
         setChoice(null);
         sayOnceIn(target.id, movedSentence(strings, section.name, target.name));
       });

@@ -107,8 +107,6 @@ export const sectionTexts = {
         hint: dishes.section.noteHint,
         multiline: true,
         notSaved: sections.notSaved.note,
-        changed: sections.undo.note,
-        back: sections.undo.noteBack,
       },
     },
   }),

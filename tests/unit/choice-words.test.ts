@@ -1,32 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { en } from "../../src/copy";
-import { fill } from "../../src/copy/fill";
+import { HOLDS_NOTHING } from "../../src/domain/menu";
 import {
-  choiceListEntrySchema,
-  choiceListUndoLabel,
   choiceListWords,
   choiceListsLead,
   leadWords,
   optionWords,
   placeIn,
-  readListEntry,
-  wrapListEntry,
 } from "../../src/features/owner/choices/choice-words";
 import {
-  isOptionAllergenUndo,
   optionAllergenHeading,
   optionAllergenStrings,
-  optionAllergenUndoLabel,
-  optionAllergenUndoSchema,
-  readChange,
-  wrapChange,
 } from "../../src/features/owner/choices/option-words";
 import {
   dishPlaces,
   optionPlaces,
 } from "../../src/features/owner/allergens/places";
 import {
-  allergenUndoneSentence,
   allergensNotSavedSentence,
   applyName,
   sameNamedLine,
@@ -38,8 +28,6 @@ import {
   notSavedSentence,
   problemText,
   rowAction,
-  undoLabel,
-  undoneSentence,
 } from "../../src/features/owner/editing/list-words";
 
 // What the choice lists say (D-166, task 7): the rows on a home page, the
@@ -88,7 +76,7 @@ describe("the rows on a dish's or a section's page", () => {
     );
   });
 
-  it("ask before a delete that takes options, and not before an empty one", () => {
+  it("ask before every delete, naming the options when there are some (D-221)", () => {
     expect(
       deleteQuestion(dishWords, "Choose one side", {
         sections: 0,
@@ -96,6 +84,9 @@ describe("the rows on a dish's or a section's page", () => {
         options: 3,
       }),
     ).toBe("Delete Choose one side, with its 3 options?");
+    expect(deleteQuestion(dishWords, "Add on", HOLDS_NOTHING)).toBe(
+      "Delete Add on?",
+    );
     expect(dishWords.strings.keep).toBe("Keep");
   });
 
@@ -104,53 +95,6 @@ describe("the rows on a dish's or a section's page", () => {
     expect(choiceListsLead(strings, "section")).toBe(strings.leadSection);
     expect(dishWords.strings.newHint).toBe(strings.lists.newHint);
     expect(Object.keys(dishWords.fields)).toEqual([]);
-  });
-
-  it("wrap their entries for the home page's stack and read them back", () => {
-    const entry = wrapListEntry({ kind: "add", id: "l1", name: "Add on" });
-    expect(
-      choiceListEntrySchema.parse(JSON.parse(JSON.stringify(entry))),
-    ).toEqual(entry);
-    expect(readListEntry(entry)).toEqual({
-      kind: "add",
-      id: "l1",
-      name: "Add on",
-    });
-    expect(readListEntry({ kind: "relocate" })).toBeNull();
-    expect(choiceListUndoLabel(dishWords, entry)).toBe("Undo: added Add on");
-    expect(
-      choiceListUndoLabel(
-        dishWords,
-        wrapListEntry({
-          kind: "delete",
-          id: "l1",
-          name: "Choose one side",
-          order: ["l1"],
-        }),
-      ),
-    ).toBe("Undo: deleted Choose one side");
-    expect(
-      choiceListEntrySchema.safeParse({
-        kind: "choice-list",
-        entry: {
-          kind: "text",
-          field: "lead",
-          id: "l1",
-          name: "",
-          from: "",
-          to: "",
-        },
-      }).success,
-      "a row has no field, so no text entry is read",
-    ).toBe(false);
-  });
-
-  it("say when an added list cannot be undone because it holds options now", () => {
-    expect(
-      fill(strings.lists.undo.addGrew ?? "", { list: "Choose one side" }),
-    ).toBe(
-      "Choose one side has options now, so it stays. To delete it, use its Delete button.",
-    );
   });
 });
 
@@ -164,31 +108,6 @@ describe("the list's own page", () => {
     expect(notSavedSentence(lead, "lead", "Choose one side")).toBe(
       "The lead of Choose one side was not saved.",
     );
-    expect(
-      undoLabel(lead, {
-        kind: "own",
-        field: "lead",
-        id: "l1",
-        name: "Choose one side",
-        from: "Choose one side",
-        to: "Choose a side",
-      }),
-    ).toBe("Undo: changed the lead of Choose one side");
-    expect(
-      undoneSentence(
-        lead,
-        {
-          kind: "own",
-          field: "lead",
-          id: "l1",
-          name: "Choose one side",
-          from: "Choose one side",
-          to: "Choose a side",
-        },
-        0,
-        0,
-      ),
-    ).toBe("Undone. The lead is Choose one side again.");
     expect(problemText(lead, { kind: "parent-gone" }, "")).toBe(
       strings.page.errors.parentGone,
     );
@@ -230,31 +149,6 @@ describe("the list's own page", () => {
     expect(problemText(options, { kind: "name-taken" }, "Fries")).toBe(
       "This list already has an option called Fries.",
     );
-    expect(
-      undoLabel(options, {
-        kind: "text",
-        field: "calories",
-        id: "o1",
-        name: "Fries",
-        from: "",
-        to: "320",
-      }),
-    ).toBe("Undo: changed the calories for Fries");
-    expect(
-      undoneSentence(
-        options,
-        {
-          kind: "text",
-          field: "price",
-          id: "o1",
-          name: "Fries",
-          from: "",
-          to: "2.00",
-        },
-        0,
-        0,
-      ),
-    ).toBe("Undone. The added price for Fries is as it was.");
   });
 });
 
@@ -278,64 +172,6 @@ describe("an option's allergen group, in the option's words", () => {
     expect(
       allergensNotSavedSentence(group, options, fries, { kind: "failed" }),
     ).toBe(`The allergens of Fries were not saved. ${editing.problems.failed}`);
-    expect(
-      allergenUndoneSentence(
-        group,
-        {
-          kind: "check",
-          id: "o1",
-          name: "Fries",
-          on: true,
-          lists: { allergens: [], others: [] },
-        },
-        false,
-        "option",
-      ),
-    ).toBe("Undone. The allergens for Fries are not checked.");
-  });
-
-  it("keeps its entries on the list page's stack with the option's id and name, and reads them back", () => {
-    const change = {
-      kind: "allergen" as const,
-      id: "o1",
-      name: "Fries",
-      allergen: "milk" as const,
-      on: true,
-      before: { allergens: [], others: [] },
-      after: { allergens: ["milk" as const], others: [] },
-    };
-    const entry = wrapChange(change, "Fries", "o1");
-    expect(entry).toMatchObject({
-      kind: "option-allergen",
-      words: "Fries",
-      subject: "o1",
-    });
-    expect(
-      optionAllergenUndoSchema.parse(JSON.parse(JSON.stringify(entry))),
-    ).toEqual(entry);
-    expect(readChange(entry)).toEqual({ change, words: "Fries" });
-    expect(isOptionAllergenUndo(entry)).toBe(true);
-    expect(isOptionAllergenUndo({ kind: "allergen" })).toBe(false);
-    expect(optionAllergenUndoLabel(group, entry)).toBe(
-      "Undo: ticked Milk for Fries",
-    );
-    const apply = wrapChange(
-      {
-        kind: "apply",
-        target: "dish",
-        id: "d2",
-        dish: "Fries",
-        section: "Sides",
-        menu: "Dinner",
-        before: { allergens: [], others: [], reviewed: false },
-        after: { allergens: ["milk"], others: [] },
-        at: "2026-10-10T00:00:00Z",
-      },
-      "Fries",
-      "o1",
-    );
-    expect(apply.subject).toBe("o1");
-    expect(readChange(apply).change.kind).toBe("apply");
   });
 });
 

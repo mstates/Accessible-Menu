@@ -12,7 +12,7 @@ import {
 
 // The polite live region for an editing screen (D-111): what must be heard
 // without moving focus, a field that saved (D-118), a failed save, a move, a
-// delete, an Undo. It is a log, on the page and empty from the first
+// delete. It is a log, on the page and empty from the first
 // render, so it already exists when its first message arrives, which is
 // what makes a screen reader speak it. Each message is its own node, added
 // to the log and taken out after seven seconds: a log speaks additions

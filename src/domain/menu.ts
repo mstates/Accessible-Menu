@@ -8,11 +8,11 @@ export type OwnerMenu = { id: string; name: string };
 // What a row holds that a delete would take with it (D-119): for a menu, its
 // sections that are not deleted and their dishes that are not deleted; for a
 // section, its dishes, with no sections; for a choice list, its options
-// (D-166). It is also what a delete says the owner was told about: nothing
-// for a delete at once and for an Undo, the confirmation's numbers
-// otherwise. The database counts again in the statement that marks the row
-// and refuses a delete that would take more (migrations 5 and 11), so a
-// page that is out of date never deletes anything nobody was asked about.
+// (D-166). It is also what a delete says the owner was told about: the
+// confirmation's numbers, zeros for a row that holds nothing (D-221). The
+// database counts again in the statement that marks the row and refuses a
+// delete that would take more (migrations 5 and 11), so a page that is out
+// of date never deletes anything nobody was asked about.
 export type Held = { sections: number; dishes: number; options: number };
 
 export const HOLDS_NOTHING: Held = { sections: 0, dishes: 0, options: 0 };
@@ -48,12 +48,6 @@ export type MenuPublishState = {
 export type PublishBlocker =
   | { kind: "size-unnamed" | "size-unpriced"; dish: string; section: string }
   | { kind: "no-dishes" };
-
-// A delete that takes content with it asks first (D-119): a row that holds
-// anything opens the confirmation, an empty one goes at once.
-export function deleteAsksFirst(held: Held): boolean {
-  return held.sections + held.dishes + held.options > 0;
-}
 
 // Also a table constraint in the database (migration 3), which is the
 // boundary. These checks exist to name the field and the message.
@@ -113,17 +107,6 @@ export function moveInOrder(
   next[from] = other;
   next[to] = moved;
   return next;
-}
-
-// The order to put back after a restore: the remembered order, kept to the
-// menus that are live now, with any menu it never knew after them in the
-// order they have today.
-export function mergeOrder(
-  remembered: readonly string[],
-  live: readonly string[],
-): string[] {
-  const known = remembered.filter((id) => live.includes(id));
-  return [...known, ...live.filter((id) => !known.includes(id))];
 }
 
 // The menus in the order the ids give. A menu the ids do not name keeps its

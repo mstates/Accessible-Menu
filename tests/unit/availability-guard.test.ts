@@ -18,11 +18,7 @@ const allowed: Record<string, string> = {
   "src/core/supabase/dishes.ts":
     "reads and writes the column, and never reads its meaning",
   "src/features/owner/dish/actions.ts":
-    "writes the mark the owner's choice means, and an Undo's exact previous value",
-  "src/features/owner/dish/schedule-words.ts":
-    "the Undo entry's schema remembers the previous mark, to write it back exactly",
-  "src/features/owner/dish/useDishAvailability.ts":
-    "records the previous mark for Undo and asks the decider whether it has ended",
+    "writes the mark the owner's choice means",
   "app/app/restaurants/[code]/dishes/[dish]/page.tsx":
     "hands the row to the decider and the mark to the page",
   "src/domain/snapshot.ts":

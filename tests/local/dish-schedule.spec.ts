@@ -23,17 +23,17 @@ import { hearLog, heard } from "../a11y/owner-lists";
 
 // The dietary tags, availability, and the schedule on a dish's page with
 // saves that land for real against the stand-in (task 5, D-66, D-159,
-// D-160): a tag tick said once and kept after a reload, with its Undo; a
+// D-160): a tag tick said once and kept after a reload, and its untick; a
 // page whose tags moved under it, from another tab, refused with one
 // sentence and no Try again; a failed tick with Try again; Sold out today
 // with the line saying when it comes back, from the restaurant's hours,
-// and Off the menu for now, each with its Undo; a mark that has ended
-// reading as available; a day, the hours pair as one commit, dates in
-// their forms, Today only, a week with no day refused unsent, the last
-// day unticked taking the weeks with it, a month, a schedule that moved
-// under the page, and an Undo after another tab changed it. The gate
-// cannot land a save, so this runs here. Each check leaves the stand-in as
-// it found it, so the checks run in any order.
+// and Off the menu for now, each put back to Available; a mark that has
+// ended reading as available; a day, the hours pair as one commit, dates
+// in their forms, Today only, a week with no day refused unsent, the last
+// day unticked taking the weeks with it, a month, and a schedule that
+// moved under the page. The gate cannot land a save, so this runs here.
+// Each check leaves the stand-in as it found it, so the checks run in any
+// order.
 
 const { code } = ownerEnv();
 const strings = en.owner.dish;
@@ -92,10 +92,6 @@ function status(page: Page) {
 
 function tryAgainButton(page: Page) {
   return page.getByRole("button", { name: editing.tryAgain, exact: true });
-}
-
-function undoButton(page: Page, label: string) {
-  return page.getByRole("button", { name: label, exact: true });
 }
 
 function tagsLine(page: Page) {
@@ -162,7 +158,7 @@ function reads(value: Schedule): string {
   return `${fill(schedule.dinersRead, { sentence: `"${sentence}"` })} ${showing}`;
 }
 
-test("a tag tick says Saved. once, reads under the group, holds after a reload, and Undo unticks it", async ({
+test("a tag tick says Saved. once, reads under the group, holds after a reload, and an untick clears it", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -181,14 +177,10 @@ test("a tag tick says Saved. once, reads under the group, holds after a reload, 
   await reload(page);
   await expect(box(page, vegan)).toBeChecked();
 
-  await undoButton(
-    page,
-    fill(tags.undo.ticked, { tag: vegan, dish: dishes.market.name }),
-  ).click();
-  await expect
-    .poll(() => said(page, fill(tags.undo.tickedBack, { tag: vegan })))
-    .toBe(1);
+  // As it was.
+  await press(page, vegan);
   await expect(box(page, vegan)).not.toBeChecked();
+  await expect.poll(() => said(page, saved)).toBe(1);
   await expect(tagsLine(page)).toHaveCount(0);
   expect((await row(dishes.market.id)).dietary_tags).toEqual([]);
   await reload(page);
@@ -235,7 +227,7 @@ test("a tick that fails is said once with Try again, and Try again lands it", as
   expect((await row(dishes.market.id)).dietary_tags).toEqual([]);
 });
 
-test("Sold out today says Saved. once, the group's line says when it comes back, it holds after a reload, and Undo makes the dish available", async ({
+test("Sold out today says Saved. once, the group's line says when it comes back, it holds after a reload, and Available clears the mark", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -261,19 +253,10 @@ test("Sold out today says Saved. once, the group's line says when it comes back,
     availability.endsMidnight,
   );
 
-  await undoButton(
-    page,
-    fill(availability.undo.markedSoldOut, { dish: dishes.one.name }),
-  ).click();
-  await expect
-    .poll(() =>
-      said(
-        page,
-        fill(availability.undo.availableBack, { dish: dishes.one.name }),
-      ),
-    )
-    .toBe(1);
+  // As it was.
+  await press(page, availability.available);
   await expect(radio(page, availability.available)).toBeChecked();
+  await expect.poll(() => said(page, saved)).toBe(1);
   await expect(availabilityGroup(page)).toHaveAccessibleDescription("");
   expect((await row(dishes.one.id)).sold_out_at).toBeNull();
   await knob("reset-details", {});
@@ -353,7 +336,7 @@ test("the line reads the end of the restaurant's day from its hours: today by it
   }
 });
 
-test("Off the menu for now says Saved. once and that diners do not see the dish, and Undo makes it available again", async ({
+test("Off the menu for now says Saved. once and that diners do not see the dish, and Available brings it back", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -365,19 +348,10 @@ test("Off the menu for now says Saved. once and that diners do not see the dish,
     availability.hidden,
   );
   expect((await row(dishes.sizes.id)).available).toBe(false);
-  await undoButton(
-    page,
-    fill(availability.undo.markedOff, { dish: dishes.sizes.name }),
-  ).click();
-  await expect
-    .poll(() =>
-      said(
-        page,
-        fill(availability.undo.availableBack, { dish: dishes.sizes.name }),
-      ),
-    )
-    .toBe(1);
+  // As it was.
+  await press(page, availability.available);
   await expect(radio(page, availability.available)).toBeChecked();
+  await expect.poll(() => said(page, saved)).toBe(2);
   expect((await row(dishes.sizes.id)).available).toBe(true);
 });
 
@@ -408,7 +382,7 @@ test("a sold-out mark whose day has ended reads as available, and a new mark lan
   }
 });
 
-test("a day tick says Saved. once, the sentence and the next day read under the group, it holds after a reload, and Undo takes it back", async ({
+test("a day tick says Saved. once, the sentence and the next day read under the group, it holds after a reload, and an untick clears it", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -427,14 +401,10 @@ test("a day tick says Saved. once, the sentence and the next day read under the 
   await expect(box(page, tuesday)).toBeChecked();
   await expect(scheduleLine(page)).toHaveText(reads({ days: ["tue"] }));
 
-  await undoButton(
-    page,
-    fill(schedule.undo.ticked, { box: tuesday, dish: dishes.one.name }),
-  ).click();
-  await expect
-    .poll(() => said(page, fill(schedule.undo.back, { dish: dishes.one.name })))
-    .toBe(1);
+  // As it was.
+  await press(page, tuesday);
   await expect(box(page, tuesday)).not.toBeChecked();
+  await expect.poll(() => said(page, saved)).toBe(1);
   await expect(scheduleLine(page)).toHaveText(schedule.none);
   expect((await row(dishes.one.id)).special_schedule).toBeNull();
 });
@@ -604,7 +574,7 @@ test("the hours pair left with two problems shows both at once, each under its o
   expect((await row(dishes.one.id)).special_schedule).toBeNull();
 });
 
-test("a date reads in each of its forms and comes back with its year, a day-first number and a last day before the first are refused unsent, Today only fills both days with its own sentence, and Undo takes it back", async ({
+test("a date reads in each of its forms and comes back with its year, a day-first number and a last day before the first are refused unsent, and Today only fills both days with its own sentence", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -674,16 +644,6 @@ test("a date reads in each of its forms and comes back with its year, a day-firs
   });
   await expectNoMissingIds(page);
 
-  await undoButton(
-    page,
-    fill(schedule.undo.today, { dish: dishes.one.name }),
-  ).click();
-  await expect
-    .poll(() => said(page, fill(schedule.undo.back, { dish: dishes.one.name })))
-    .toBe(1);
-  await expect(first).toHaveValue("October 31, 2099");
-  await expect(last).toHaveValue("November 5, 2099");
-
   // As it was.
   await first.fill("");
   await page.keyboard.press("Enter");
@@ -694,7 +654,7 @@ test("a date reads in each of its forms and comes back with its year, a day-firs
   expect((await row(dishes.one.id)).special_schedule).toBeNull();
 });
 
-test("a week with no day is refused unsent, lands after a day with Try again, the last day unticked takes the weeks with it and says so, and Undo puts both back", async ({
+test("a week with no day is refused unsent, lands after a day with Try again, and the last day unticked takes the weeks with it and says so", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -730,28 +690,9 @@ test("a week with no day is refused unsent, lands after a day with Try again, th
   await expect(box(page, first)).not.toBeChecked();
   expect((await row(dishes.one.id)).special_schedule).toBeNull();
   await expectNoMissingIds(page);
-
-  await undoButton(
-    page,
-    fill(schedule.undo.unticked, { box: monday, dish: dishes.one.name }),
-  ).click();
-  await expect
-    .poll(() => said(page, fill(schedule.undo.back, { dish: dishes.one.name })))
-    .toBe(1);
-  await expect(box(page, monday)).toBeChecked();
-  await expect(box(page, first)).toBeChecked();
-  expect((await row(dishes.one.id)).special_schedule).toEqual({
-    days: ["mon"],
-    weeks: ["first"],
-  });
-
-  // As it was.
-  await press(page, monday);
-  await expect.poll(() => said(page, saved)).toBe(3);
-  expect((await row(dishes.one.id)).special_schedule).toBeNull();
 });
 
-test("a month tick lands and reads, and a tick on a page whose schedule moved under it is refused once, with no Try again, as is an Undo after another tab changed it", async ({
+test("a month tick lands and reads, and a tick on a page whose schedule moved under it is refused once, with no Try again", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -779,14 +720,6 @@ test("a month tick lands and reads, and a tick on a page whose schedule moved un
     days: ["fri"],
   });
 
-  await undoButton(
-    page,
-    fill(schedule.undo.ticked, { box: january, dish: dishes.one.name }),
-  ).click();
-  await expect.poll(() => said(page, schedule.undo.scheduleChanged)).toBe(1);
-  expect((await row(dishes.one.id)).special_schedule).toEqual({
-    days: ["fri"],
-  });
   await expectNoMissingIds(page);
 
   // As it was.

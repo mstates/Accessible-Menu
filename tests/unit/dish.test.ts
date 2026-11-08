@@ -223,11 +223,4 @@ describe("the order a dish's sizes keep on the page", () => {
       holdSizeOrder(["cup", "bowl", "pint"], ids(["pint", "cup", "half"])),
     ).toEqual(["cup", "pint", "half"]);
   });
-
-  it("puts a restored size back where it was, from the order it was removed from", () => {
-    const beforeRemove = ["cup", "pint", "bowl"];
-    expect(holdSizeOrder(beforeRemove, ids(["cup", "bowl", "pint"]))).toEqual(
-      beforeRemove,
-    );
-  });
 });

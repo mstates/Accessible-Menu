@@ -21,8 +21,8 @@ type Props = {
   onConfirm: () => void;
 };
 
-// The one dialog (D-119): a question before a delete that takes content with
-// it, with two answers. Semantics, the focus trap, Escape, and the inert
+// The one dialog (D-119, D-221): the question before a row's delete, with
+// two answers. Semantics, the focus trap, Escape, and the inert
 // page behind it come from React Aria. The question is the dialog's heading
 // and its name. The dialog takes focus first, so the question is read, and a
 // tenth of a second later focus moves to Keep (D-136): Enter, or a key held a

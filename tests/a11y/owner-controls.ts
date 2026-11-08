@@ -23,7 +23,6 @@ import { listRows } from "./owner-lists";
 // data file (D-126) without repeating it.
 
 const strings = en.owner.restaurants;
-const editing = en.owner.editing;
 
 const link = (name: string): Control => ({ role: "link", name });
 const button = (name: string): Control => ({ role: "button", name });
@@ -117,7 +116,7 @@ async function rowControls(
     button(named(words.moveDown, row)),
     button(named(words.remove, row)),
   ]);
-  return [...rows, button(words.add), button(editing.undo)];
+  return [...rows, button(words.add)];
 }
 
 export async function dashboardControls(page: Page): Promise<Control[]> {
@@ -239,7 +238,7 @@ export async function sectionControls(
 // the page shows it, Add a size, each other allergen's two buttons, named
 // by the row as the page shows it, Add another allergen, each same-named
 // dish's or option's Apply button, Today only (task 5), the choice lists'
-// controls (task 7), Undo, the link to the next dish when there is one,
+// controls (task 7), the link to the next dish when there is one,
 // and the move's button; the move's Select is named by its label and its
 // value, so the sweep checks it.
 export async function dishControls(
@@ -309,7 +308,6 @@ export async function dishControls(
     ...applies.map((name) => button(name)),
     button(words.schedule.todayOnly),
     ...(await choiceListControls(page)),
-    button(editing.undo),
     ...nextName.map((text) => link(text)),
     button(words.move.submit),
   ];
@@ -318,7 +316,7 @@ export async function dishControls(
 // A choice list's page (D-166): the breadcrumb's links, Show suggested
 // leads, each option's three buttons named by the option, each option's
 // other-allergen buttons and Add another allergen, each same-named Apply
-// button, Add option, and Undo.
+// button, and Add option.
 export async function choiceListPageControls(
   page: Page,
   trail: readonly string[],
@@ -376,7 +374,6 @@ export async function choiceListPageControls(
     ...nav,
     ...trail.map((crumb) => link(crumb)),
     button(words.page.showLeads),
-    button(editing.undo),
     ...rows.flat(),
     button(words.options.add),
   ];

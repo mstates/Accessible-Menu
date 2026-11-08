@@ -19,11 +19,7 @@ import {
 import { CHOICE_LIMITS, type OwnerOption } from "@/domain/choices";
 import { ALLERGEN_IDS } from "@/domain/types";
 import { majorRuleOf } from "../allergens/allergen-words";
-import {
-  applyListsTo,
-  inFixedOrder,
-  undoApplyTo,
-} from "../allergens/apply-server";
+import { applyListsTo, inFixedOrder } from "../allergens/apply-server";
 import type {
   GroupApplyResult,
   GroupProblem,
@@ -284,31 +280,4 @@ async function applyAs(
     shown.data.target,
     scope.userId,
   );
-}
-
-// Undo of an apply from an option: the other side gets its old lists back
-// and is left unchecked, only while it still holds the stamp the apply
-// made.
-export async function undoOptionAllergensApply(
-  rawCode: string,
-  rawList: string,
-  rawTarget: unknown,
-  rawBefore: unknown,
-  rawAt: unknown,
-): Promise<GroupApplyResult> {
-  const scope = await listScope(rawCode, rawList);
-  if (!scope.ok) return scope;
-  const target = targetSchema.safeParse(rawTarget);
-  const before = listsSchema.safeParse(rawBefore);
-  const at = z.string().min(1).safeParse(rawAt);
-  if (!target.success || !before.success || !at.success) return applyFailed;
-  const result = await undoApplyTo(
-    rawCode,
-    target.data,
-    before.data,
-    at.data,
-    scope.userId,
-  );
-  refresh();
-  return result;
 }

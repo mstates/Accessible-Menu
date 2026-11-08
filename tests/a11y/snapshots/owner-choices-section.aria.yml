@@ -26,7 +26,6 @@
   - button "Show suggested leads"
   - text: The words diners read first, like Choose one side or Add on.
   - status: All changes saved
-  - button "Undo" [disabled]
   - paragraph: Options are what a diner picks or adds, like Fries or Ranch. Each has its own allergen list.
   - list:
     - listitem:

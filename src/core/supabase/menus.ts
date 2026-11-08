@@ -13,7 +13,7 @@ import { listSectionDishes } from "./sections";
 // Owner-side reads and writes on menus, through the owner's own client so
 // row level security decides what is visible (D-75) and the table
 // constraints decide what is valid (migration 3). A delete marks the row and
-// keeps it, so Undo can bring it back; reads leave marked rows out. Owners
+// keeps it, with deleted_at set; reads leave marked rows out. Owners
 // write name, sort, and deleted_at as columns and nothing else: publishing
 // goes through publish_menu() and unpublish_menu() alone, definers that
 // check the caller and write the flag, the time, and the snapshot together
@@ -205,23 +205,21 @@ export async function addOwnerMenu(
 
 // Under row level security a menu the caller does not own matches zero rows
 // without an error, so each write asks for the row back and reads an empty
-// answer as not found. With expected, the rename happens only if the name is
-// still that value: an Undo never writes over a newer change.
+// answer as not found.
 export async function renameOwnerMenu(
   client: SupabaseClient,
   restaurantId: string,
   id: string,
   name: string,
-  expected?: string,
 ): Promise<MenuWriteResult<OwnerMenu>> {
-  let update = client
+  const { data, error } = await client
     .from("menus")
     .update({ name })
     .eq("id", id)
     .eq("restaurant_id", restaurantId)
-    .is("deleted_at", null);
-  if (expected !== undefined) update = update.eq("name", expected);
-  const { data, error } = await update.select(columns).maybeSingle();
+    .is("deleted_at", null)
+    .select(columns)
+    .maybeSingle();
   if (error) return refused(error.code);
   if (!data) return notFound;
   const row = shaped(rowSchema, data, "menus");
@@ -252,27 +250,6 @@ export async function deleteOwnerMenu(
     return { ok: false, error: { kind: "grew" } };
   }
   return error.message === "delete_not_found" ? notFound : failed;
-}
-
-// Brings a deleted menu back. It fails with name-taken while another menu
-// has its name.
-export async function restoreOwnerMenu(
-  client: SupabaseClient,
-  restaurantId: string,
-  id: string,
-): Promise<MenuWriteResult<OwnerMenu>> {
-  const { data, error } = await client
-    .from("menus")
-    .update({ deleted_at: null })
-    .eq("id", id)
-    .eq("restaurant_id", restaurantId)
-    .not("deleted_at", "is", null)
-    .select(columns)
-    .maybeSingle();
-  if (error) return refused(error.code);
-  if (!data) return notFound;
-  const row = shaped(rowSchema, data, "menus");
-  return row ? { ok: true, value: toMenu(row) } : failed;
 }
 
 // set_menu_order() takes the whole list or nothing: a list that is not

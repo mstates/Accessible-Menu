@@ -22,7 +22,7 @@ import { flashBanner } from "../a11y/saved-banner";
 // exist only under A11Y_HEAR (playwright.config.ts). Three readings that were
 // first made by ear: the one-node label (D-193, D-140), a dialog's first
 // focus (D-136), and "Saved." after a rename with Enter (D-118, D-140). Each
-// was proven able to go red against a one-line undo before it was trusted.
+// was proven able to go red against a one-line revert before it was trusted.
 // A fourth, Details' save as a page load with its banner (D-211, D-214,
 // D-216), is read as the Mac reads it (D-217): an alert served in the HTML
 // is not said at the load, so the words come two VO-Right steps on. It

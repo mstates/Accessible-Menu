@@ -241,8 +241,8 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
     [clearFailure],
   );
 
-  // A save that was not a field landed: an add, a move, a delete, or an
-  // Undo, which says its own sentence.
+  // A save that was not a field landed: an add, a move, or a delete, which
+  // says its own sentence.
   const landed = useCallback(() => land("change"), [land]);
 
   const failField = useCallback(
@@ -257,7 +257,7 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
     [announce],
   );
 
-  // A change with no field of its own failed: a move, a delete, an Undo.
+  // A change with no field of its own failed: a move, a delete.
   const failChange = useCallback(
     (sentence: string) => {
       live.current.failed += 1;

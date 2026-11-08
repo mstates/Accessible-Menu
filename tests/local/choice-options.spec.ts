@@ -26,14 +26,13 @@ import { expectNamedByOneLabel } from "./chrome-name";
 // against the stand-in (D-166, D-154, D-153): an option added by name
 // landing with its group unchecked; a tick and the check, each said once
 // and kept after a reload, the check stamped; a rename of a checked option
-// clearing the check and saying so, and its Undo; a check pressed right
-// after a rename's Enter carrying the new name; a stale tab refused with
-// one sentence and no Try again, after a list changed elsewhere and after
-// a rename elsewhere; Remove and its Undo bringing the option back in its
-// place with its lists and check; the other-allergen refusals; and Apply
-// from a checked option to a same-named dish, and back. The gate cannot
-// land a save, so this runs here. Each check leaves the stand-in as it
-// found it, so the checks run in any order.
+// clearing the check and saying so; a check pressed right after a rename's
+// Enter carrying the new name; a stale tab refused with one sentence and
+// no Try again, after a list changed elsewhere and after a rename
+// elsewhere; Remove going on one press (D-221); the other-allergen
+// refusals; and Apply from a checked option to a same-named dish. The gate
+// cannot land a save, so this runs here. Each check leaves the stand-in as
+// it found it, so the checks run in any order.
 
 const { code } = ownerEnv();
 const strings = en.owner.choices;
@@ -72,8 +71,26 @@ function tryAgainButton(page: Page) {
   return page.getByRole("button", { name: editing.tryAgain, exact: true });
 }
 
-function undoButton(page: Page, label: string | RegExp) {
-  return page.getByRole("button", { name: label, exact: true });
+// A dish's Delete asks first (D-221). The dialog's confirming button takes
+// no pointer press for half a second after it opens (D-119), so it is
+// pressed by key: Tab from Keep, once focus has reached it (D-136), then
+// Enter.
+async function confirmDishDelete(page: Page, dish: string): Promise<void> {
+  const dishes = en.owner.dishes;
+  const dialog = page.getByRole("alertdialog", {
+    name: fill(dishes.deleteAskEmpty, { dish }),
+    exact: true,
+  });
+  await expect(dialog).toHaveCount(1);
+  await expect(
+    dialog.getByRole("button", { name: dishes.keep, exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
+    dialog.getByRole("button", { name: dishes.remove, exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toHaveCount(0);
 }
 
 function nameField(page: Page, option: string) {
@@ -221,7 +238,7 @@ const addedSentence = (name: string, count: number) =>
     ),
   });
 
-test("an option added by name lands unchecked with its own group, a tick and the check each say Saved. once and hold after a reload with the stamp, and Remove then Undo brings it back in its place with its list and check", async ({
+test("an option added by name lands unchecked with its own group, a tick and the check each say Saved. once and hold after a reload with the stamp, and Remove goes on one press with focus on the row before it", async ({
   page,
 }) => {
   const { lists } = ownerFixture();
@@ -264,7 +281,8 @@ test("an option added by name lands unchecked with its own group, a tick and the
     "Garlic knot",
   ]);
 
-  // Removed and brought back in its place, with its list and its check.
+  // Removed on one press, as a part of the list's own form (D-221), which
+  // leaves the stand-in as it was.
   await optionButton(page, strings.options.remove, "Garlic knot").click();
   await expect
     .poll(() => said(page, forOption(strings.options.deleted, "Garlic knot")))
@@ -276,41 +294,7 @@ test("an option added by name lands unchecked with its own group, a tick and the
     nameField(page, "Buttered roll"),
     "focus goes to the row before it, since none follows",
   ).toBeFocused();
-  await undoButton(
-    page,
-    forOption(strings.options.undo.deleted, "Garlic knot"),
-  ).click();
-  await expect
-    .poll(() =>
-      said(
-        page,
-        fill(strings.options.undo.restored, {
-          option: "Garlic knot",
-          position: 2,
-          total: 2,
-        }),
-      ),
-    )
-    .toBe(1);
-  expect((await optionIds(page)).map((option) => option.name)).toEqual([
-    "Buttered roll",
-    "Garlic knot",
-  ]);
-  await expect(groupOf(page, knot.id).boxOf("wheat")).toBeChecked();
-  await expect(
-    groupOf(page, knot.id).check,
-    "the check came back with it",
-  ).toBeChecked();
-  const back = await row(knot.id);
-  expect(back.deleted_at).toBeNull();
-  expect(back.allergens_reviewed).toBe(true);
   await expectNoMissingIds(page);
-
-  // As it was.
-  await optionButton(page, strings.options.remove, "Garlic knot").click();
-  await expect
-    .poll(() => said(page, forOption(strings.options.deleted, "Garlic knot")))
-    .toBe(2);
   await expect.poll(async () => (await row(knot.id)).deleted_at).not.toBeNull();
   expect(
     (await rows()).filter(
@@ -320,7 +304,7 @@ test("an option added by name lands unchecked with its own group, a tick and the
   ).toBe(1);
 });
 
-test("a rename of a checked option says Saved. then that the list is not checked, the stamp says why, a reload shows it unchecked, Undo puts the name back and says the check is still gone, and a check pressed right after the rename's Enter carries the new name and lands", async ({
+test("a rename of a checked option says Saved. then that the list is not checked, the stamp says why, a reload shows it unchecked, and a check pressed right after the rename's Enter carries the new name and lands", async ({
   page,
 }) => {
   const [ranch] = await (async () => {
@@ -354,38 +338,10 @@ test("a rename of a checked option says Saved. then that the list is not checked
   await expect(groupOf(page, ranch.id).check).not.toBeChecked();
   await expectNoMissingIds(page);
 
-  // Checked again elsewhere, so the page shows it checked after a reload,
-  // then the rename undone: the Undo's write is itself a rename, which
-  // clears that check, and the Undo's own sentence says so after itself.
-  await setElsewhere(ranch.id, { allergens: ["milk", "eggs"], checked: true });
-  await reload(page);
-  await expect(groupOf(page, ranch.id).check).toBeChecked();
-  await undoButton(
-    page,
-    fill(strings.options.undo.renamed, {
-      from: "Ranch",
-      to: "Buttermilk ranch",
-    }),
-  ).click();
-  await expect
-    .poll(() =>
-      said(
-        page,
-        `${fill(strings.options.undo.renamedBack, { from: "Ranch" })} ${group.clearedNow}`,
-      ),
-    )
-    .toBe(1);
-  await expect(nameField(page, "Ranch")).toHaveValue("Ranch");
-  await expect(
-    groupOf(page, ranch.id).check,
-    "the rename back cleared the check",
-  ).not.toBeChecked();
-  expect((await row(ranch.id)).allergens_reviewed).toBe(false);
-
   // Michael's queued-check case (D-149, D-153): the name saved with Enter
   // and the box pressed at once. The check waits its turn behind the save,
   // carries the new name the save answered with, and lands.
-  await nameField(page, "Ranch").fill("House ranch");
+  await nameField(page, "Buttermilk ranch").fill("House ranch");
   await page.keyboard.press("Enter");
   await groupOf(page, ranch.id).checkWords.click();
   await expect.poll(() => said(page, saved)).toBe(2);
@@ -555,7 +511,7 @@ test("another allergen on an option is refused unsent as holding a comma, as one
     .toBe(true);
 });
 
-test("Apply from a checked option gives the same-named dish this list and the check, and Undo puts the dish back; a dish's page offers the same to a same-named option", async ({
+test("Apply from a checked option gives the same-named dish this list and the check; a dish's page offers the same to a same-named option", async ({
   page,
 }) => {
   const { dishes, lists } = ownerFixture();
@@ -603,16 +559,15 @@ test("Apply from a checked option gives the same-named dish this list and the ch
     await expect(apply, "the line goes").toHaveCount(0);
     await expectNoMissingIds(page);
 
-    await undoButton(page, /^Undo: applied this list to Ranch in /).click();
-    await expect
-      .poll(
-        async () =>
-          (await heard(page)).filter(
-            (each) =>
-              each.startsWith("Undone. ") && each.endsWith(" is as it was."),
-          ).length,
-      )
-      .toBe(1);
+    // The dish is cleared again elsewhere, so its own page below starts
+    // with no list and no check.
+    const clear = new URLSearchParams({
+      id: addedDish.id,
+      allergens: "",
+      others: "",
+      checked: "0",
+    });
+    await fetch(`${standin}/__test/set-allergens?${clear}`);
     const back = (
       (await (await fetch(`${standin}/__test/items`)).json()) as typeof dishRows
     ).find((each) => each.id === addedDish.id);
@@ -661,7 +616,8 @@ test("Apply from a checked option gives the same-named dish this list and the ch
     }
     await page.goto(restaurantDishPath(code, addedDish.id));
     await page.waitForLoadState("networkidle");
-    // The dish is deleted from its section's page.
+    // The dish is deleted from its section's page, through the dialog
+    // (D-221).
     const { withDishes } = ownerFixture();
     await page.goto(`/app/restaurants/${code}/sections/${withDishes.id}`);
     await page.waitForLoadState("networkidle");
@@ -675,6 +631,7 @@ test("Apply from a checked option gives the same-named dish this list and the ch
         exact: true,
       })
       .click();
+    await confirmDishDelete(page, "Ranch");
     await expect
       .poll(() => said(page, fill(en.owner.dishes.deleted, { dish: "Ranch" })))
       .toBe(1);

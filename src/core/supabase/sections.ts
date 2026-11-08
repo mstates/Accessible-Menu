@@ -11,7 +11,7 @@ import { shaped } from "./log";
 // Owner-side reads and writes on a menu's sections, through the owner's own
 // client so row level security decides what is visible (D-75) and the table
 // constraints decide what is valid (migration 4). A delete marks the row
-// and keeps it, so Undo can bring it back; reads leave marked rows out.
+// and keeps it, with deleted_at set; reads leave marked rows out.
 // Owners write name, note, sort, and deleted_at as columns and nothing
 // else; what a section offered with every dish is a choice list now
 // (migration 11, choices.ts). A delete goes through
@@ -278,28 +278,23 @@ export async function addOwnerSection(
 // Writes one of a section's texts. Under row level security a section the
 // caller does not own matches zero rows without an error, so the write asks
 // for the row back and reads an empty answer as not found. A blank note is
-// stored as null. With expected, the write happens only if the text is
-// still that value: an Undo never writes over a newer change.
+// stored as null.
 export async function setOwnerSectionText(
   client: SupabaseClient,
   menuId: string,
   id: string,
   field: SectionText,
   value: string,
-  expected?: string,
 ): Promise<SectionWriteResult<OwnerSection>> {
   const column = columnOf[field];
-  let update = client
+  const { data, error } = await client
     .from("sections")
     .update({ [column]: value === "" ? null : value })
     .eq("id", id)
     .eq("menu_id", menuId)
-    .is("deleted_at", null);
-  if (expected !== undefined) {
-    update =
-      expected === "" ? update.is(column, null) : update.eq(column, expected);
-  }
-  const { data, error } = await update.select(columns).maybeSingle();
+    .is("deleted_at", null)
+    .select(columns)
+    .maybeSingle();
   if (error) return refused(error.code);
   if (!data) return notFound;
   const row = shaped(rowSchema, data, "sections");
@@ -330,27 +325,6 @@ export async function deleteOwnerSection(
     return { ok: false, error: { kind: "grew" } };
   }
   return error.message === "delete_not_found" ? notFound : failed;
-}
-
-// Brings a deleted section back. It fails with name-taken while another
-// section of the menu has its name.
-export async function restoreOwnerSection(
-  client: SupabaseClient,
-  menuId: string,
-  id: string,
-): Promise<SectionWriteResult<OwnerSection>> {
-  const { data, error } = await client
-    .from("sections")
-    .update({ deleted_at: null })
-    .eq("id", id)
-    .eq("menu_id", menuId)
-    .not("deleted_at", "is", null)
-    .select(columns)
-    .maybeSingle();
-  if (error) return refused(error.code);
-  if (!data) return notFound;
-  const row = shaped(rowSchema, data, "sections");
-  return row ? { ok: true, value: toSection(row) } : failed;
 }
 
 // Moves a section to another menu of its restaurant, last, with its dishes

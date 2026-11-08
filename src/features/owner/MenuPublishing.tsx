@@ -51,8 +51,8 @@ type Press = "publish" | "unpublish";
 // Publish stays enabled while something blocks it (D-111 never disables):
 // the press refuses with the first problem's sentence, and the list above
 // the buttons says what to fix, a size with no name or no price (D-139) or
-// the menu with no dishes at all (D-177). Neither press is an Undo entry:
-// each is its own reversible button, and Undo stays about content.
+// the menu with no dishes at all (D-177). Each press is its own reversible
+// button: the other one puts it back.
 export function MenuPublishing({
   strings,
   editing,

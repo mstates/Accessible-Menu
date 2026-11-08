@@ -46,7 +46,7 @@ type Props = {
 // same-named dish or option elsewhere in the restaurant (D-129). The check box is
 // described by its hint, by that sentence, which is always on the page, so
 // nothing ever points at a gone id (D-147), and by its error while one
-// stands. Everything saves through the page's one queue, status, and Undo
+// stands. Everything saves through the page's one queue and status
 // (D-111).
 export function AllergenGroup({
   strings,

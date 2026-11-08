@@ -6,21 +6,14 @@ import { expireRestaurant } from "@/core/cache";
 import {
   addOwnerMenu,
   deleteOwnerMenu,
-  listOwnerMenuNames,
   listPublishBlockers,
   publishOwnerMenu,
   renameOwnerMenu,
-  restoreOwnerMenu,
   setOwnerMenuOrder,
   unpublishOwnerMenu,
   type MenuWriteError,
 } from "@/core/supabase/menus";
-import {
-  mergeOrder,
-  type Held,
-  type OwnerMenu,
-  type PublishBlocker,
-} from "@/domain/menu";
+import type { Held, OwnerMenu, PublishBlocker } from "@/domain/menu";
 import { normalizeMenuCode } from "@/domain/menu-url";
 import type { ListProblem } from "./editing/list-words";
 import { menuList } from "./lists";
@@ -36,8 +29,8 @@ import type { PublishFailure } from "./publishing-words";
 // input: they are checked here and in ownerScope, and row level security
 // decides whether the rows are this owner's. Publish and Unpublish go
 // through the database's two functions, which check the caller themselves
-// (migration 12). A delete, a restore, a move, Publish, and Unpublish each
-// change what diners read (D-170, Q-79), so each clears the restaurant's
+// (migration 12). A delete, a move, Publish, and Unpublish each change
+// what diners read (D-170, Q-79), so each clears the restaurant's
 // pages at the edge once its write has landed (core/cache); a rename and
 // an add reach diners through Publish and clear nothing.
 
@@ -70,17 +63,12 @@ function readName(raw: unknown): { name: string } | ServerProblem {
   return rule ? { kind: "invalid", rule } : { name };
 }
 
-// A row that is not there is "gone" for an ordinary save, and "changed" for
-// an Undo, whose change no longer stands.
-function fromWrite(
-  error: MenuWriteError,
-  missing: "gone" | "changed",
-): ServerProblem {
+function fromWrite(error: MenuWriteError): ServerProblem {
   switch (error.kind) {
     case "name-taken":
       return { kind: "name-taken" };
     case "not-found":
-      return { kind: missing };
+      return { kind: "gone" };
     case "mismatch":
       return { kind: "mismatch" };
     case "grew":
@@ -105,20 +93,17 @@ export async function addMenu(
     name.name,
   );
   refresh();
-  if (!result.ok) return refuse(fromWrite(result.error, "gone"));
+  if (!result.ok) return refuse(fromWrite(result.error));
   return {
     ok: true,
     value: { row: result.value.menu, total: result.value.total },
   };
 }
 
-// With expected, the rename is an Undo: it happens only if the name is still
-// the one the change wrote, and never writes over a newer change.
 export async function renameMenu(
   rawCode: string,
   rawId: string,
   rawName: string,
-  expected?: string,
 ): Promise<MenuActionResult<OwnerMenu>> {
   const scope = await ownerScope(rawCode);
   if (!scope.ok) return scope;
@@ -131,30 +116,24 @@ export async function renameMenu(
     scope.restaurantId,
     id.data,
     name.name,
-    typeof expected === "string" ? expected : undefined,
   );
   refresh();
-  if (!result.ok) {
-    return refuse(
-      fromWrite(result.error, expected === undefined ? "gone" : "changed"),
-    );
-  }
+  if (!result.ok) return refuse(fromWrite(result.error));
   return { ok: true, value: result.value };
 }
 
-// Marks the menu deleted. The row stays, so Undo can bring it back with
-// everything under it (WCAG 3.3.4).
+// Marks the menu deleted: the row stays, marked by deleted_at, with
+// everything under it.
 //
-// A delete that takes content with it asks first (D-119), and the rule is
-// held by the database, not only on the page. Every delete says what the
-// owner was told goes with the menu: nothing for a delete at once and for
-// an Undo of an add, the confirmation's numbers otherwise. The database
+// Every delete asks first (D-221), and names what goes with the menu when
+// it holds any (D-119); that rule is held by the database, not only on the
+// page. Every delete says what the owner was told goes with the menu: the
+// confirmation's numbers, zeros for a menu that holds nothing. The database
 // counts the menu's sections and their dishes in the statement that marks
 // it, and refuses a delete that would take more of either (migration 5).
-// So a page that is out of date, after another tab or a restored one, never
-// deletes anything nobody was asked about, and an Undo never deletes
-// content at all. The refresh brings the page the count it missed, so the
-// next press asks.
+// So a page that is out of date, after another tab, never deletes anything
+// nobody was asked about. The refresh brings the page the count it missed,
+// so the next press asks with it.
 export async function deleteMenu(
   rawCode: string,
   rawId: string,
@@ -177,50 +156,8 @@ export async function deleteMenu(
   );
   if (result.ok) expireRestaurant(normalizeMenuCode(rawCode));
   refresh();
-  if (!result.ok) return refuse(fromWrite(result.error, "gone"));
+  if (!result.ok) return refuse(fromWrite(result.error));
   return { ok: true, value: null };
-}
-
-// Brings a deleted menu back, then puts the list in the order it had before
-// the delete. If the order cannot be set, because the list changed since,
-// the menu is back all the same and says where it landed.
-export async function restoreMenu(
-  rawCode: string,
-  rawId: string,
-  rawOrder: string[],
-): Promise<MenuActionResult<{ position: number; total: number }>> {
-  const scope = await ownerScope(rawCode);
-  if (!scope.ok) return scope;
-  const id = idSchema.safeParse(rawId);
-  const order = orderSchema.safeParse(rawOrder);
-  if (!id.success || !order.success) return refuse({ kind: "changed" });
-  const result = await restoreOwnerMenu(
-    scope.client,
-    scope.restaurantId,
-    id.data,
-  );
-  if (result.ok) expireRestaurant(normalizeMenuCode(rawCode));
-  refresh();
-  if (!result.ok) return refuse(fromWrite(result.error, "changed"));
-
-  let live: string[];
-  try {
-    const menus = await listOwnerMenuNames(scope.client, scope.restaurantId);
-    live = menus.map((menu) => menu.id);
-  } catch {
-    return { ok: true, value: { position: 0, total: 0 } };
-  }
-  const wanted = mergeOrder(order.data, live);
-  const placed = await setOwnerMenuOrder(
-    scope.client,
-    scope.restaurantId,
-    wanted,
-  );
-  const final = placed.ok ? wanted : live;
-  return {
-    ok: true,
-    value: { position: final.indexOf(id.data) + 1, total: final.length },
-  };
 }
 
 export async function orderMenus(
@@ -238,7 +175,7 @@ export async function orderMenus(
   );
   if (result.ok) expireRestaurant(normalizeMenuCode(rawCode));
   refresh();
-  if (!result.ok) return refuse(fromWrite(result.error, "gone"));
+  if (!result.ok) return refuse(fromWrite(result.error));
   return { ok: true, value: null };
 }
 

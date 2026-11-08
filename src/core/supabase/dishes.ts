@@ -25,7 +25,7 @@ import { shaped } from "./log";
 // table is called items; this is the only file that names it, and the only
 // place the row shape is known. Features see OwnerDish on a section's page
 // and OwnerDishDetail on the dish's own page. A delete marks the row and
-// keeps it, so Undo can bring it back; reads leave marked rows out. Owners
+// keeps it, with deleted_at set; reads leave marked rows out. Owners
 // write name, description, the price choice, price_cents, the two calorie
 // columns, the Cooked to order mark (D-167), note, the two allergen lists,
 // the allergen check, the dietary tags, available with the sold-out mark,
@@ -264,48 +264,41 @@ export async function addOwnerDish(
 
 // Under row level security a dish the caller does not own matches zero rows
 // without an error, so each write asks for the row back and reads an empty
-// answer as not found. With expected, the rename happens only if the name
-// is still that value: an Undo never writes over a newer change.
+// answer as not found.
 export async function renameOwnerDish(
   client: SupabaseClient,
   sectionId: string,
   id: string,
   name: string,
-  expected?: string,
 ): Promise<DishWriteResult<OwnerDish>> {
-  let update = client
+  const { data, error } = await client
     .from("items")
     .update({ name })
     .eq("id", id)
     .eq("section_id", sectionId)
-    .is("deleted_at", null);
-  if (expected !== undefined) update = update.eq("name", expected);
-  const { data, error } = await update.select(columns).maybeSingle();
+    .is("deleted_at", null)
+    .select(columns)
+    .maybeSingle();
   if (error) return refused(error.code);
   if (!data) return notFound;
   const row = shaped(rowSchema, data, "items");
   return row ? { ok: true, value: toDish(row) } : failed;
 }
 
-// Marks a dish deleted, or brings it back. A dish holds nothing, so its
-// delete counts nothing and goes at once (D-119). Bringing it back fails
-// with name-taken while another dish of the section has its name.
-export async function setOwnerDishDeleted(
+// Marks a dish deleted. The row stays, with deleted_at set. A dish holds
+// nothing a delete counts, so this counts nothing; the page asks first all
+// the same (D-221).
+export async function deleteOwnerDish(
   client: SupabaseClient,
   sectionId: string,
   id: string,
-  deleted: boolean,
 ): Promise<DishWriteResult<OwnerDish>> {
-  const update = client
+  const { data, error } = await client
     .from("items")
-    .update({ deleted_at: deleted ? new Date().toISOString() : null })
+    .update({ deleted_at: new Date().toISOString() })
     .eq("id", id)
-    .eq("section_id", sectionId);
-  const { data, error } = await (
-    deleted
-      ? update.is("deleted_at", null)
-      : update.not("deleted_at", "is", null)
-  )
+    .eq("section_id", sectionId)
+    .is("deleted_at", null)
     .select(columns)
     .maybeSingle();
   if (error) return refused(error.code);
@@ -318,46 +311,33 @@ export async function setOwnerDishDeleted(
 // section the page read the dish in, so a page whose dish has moved since
 // gets not found, never a silent write. Under row level security a dish the
 // caller does not own matches zero rows without an error, so the write asks
-// for the row back and reads an empty answer as not found. With expected,
-// the write happens only if the value is still that one: an Undo never
-// writes over a newer change.
+// for the row back and reads an empty answer as not found.
 async function writeDish(
   client: SupabaseClient,
   sectionId: string,
   id: string,
   column: "description" | "note" | "price_cents" | "price_kind",
   value: string | number | null,
-  expected: string | number | null | undefined,
 ): Promise<DishWriteResult<OwnerDishDetail>> {
-  return writeDishColumns(
-    client,
-    sectionId,
-    id,
-    { [column]: value },
-    expected === undefined ? {} : { [column]: expected },
-  );
+  return writeDishColumns(client, sectionId, id, { [column]: value });
 }
 
-// The same, for a write of more than one column at once, each with what it
-// must still hold: a pair of calories (D-167).
+// The same, for a write of more than one column at once: a pair of
+// calories (D-167).
 async function writeDishColumns(
   client: SupabaseClient,
   sectionId: string,
   id: string,
   values: Record<string, unknown>,
-  expected: Record<string, string | number | boolean | null>,
 ): Promise<DishWriteResult<OwnerDishDetail>> {
-  let update = client
+  const { data, error } = await client
     .from("items")
     .update(values)
     .eq("id", id)
     .eq("section_id", sectionId)
-    .is("deleted_at", null);
-  for (const [column, value] of Object.entries(expected)) {
-    update =
-      value === null ? update.is(column, null) : update.eq(column, value);
-  }
-  const { data, error } = await update.select(detailColumns).maybeSingle();
+    .is("deleted_at", null)
+    .select(detailColumns)
+    .maybeSingle();
   if (error) return refused(error.code, error.message);
   if (!data) return notFound;
   const row = shaped(detailSchema, data, "items");
@@ -385,12 +365,11 @@ export type AllergenPatch = {
 
 // What the dish must still hold for the write to land: the lists the page
 // showed, for every write that changes or checks a list; the flag, for an
-// uncheck; the stamp's time, for the Undo of an apply. A miss comes back as
-// not found, which the caller reads as the lists having moved.
+// uncheck. A miss comes back as not found, which the caller reads as the
+// lists having moved.
 export type AllergenExpected = {
   lists?: AllergenLists;
   allergens_reviewed?: boolean;
-  allergens_reviewed_at?: string;
 };
 
 // Writes a dish's allergen lists or its check, scoped to the section the
@@ -429,9 +408,6 @@ export async function writeOwnerDishAllergens(
   if (expected.allergens_reviewed !== undefined) {
     update = update.eq("allergens_reviewed", expected.allergens_reviewed);
   }
-  if (expected.allergens_reviewed_at !== undefined) {
-    update = update.eq("allergens_reviewed_at", expected.allergens_reviewed_at);
-  }
   const { data, error } = await update.select(detailColumns).maybeSingle();
   if (error) return refused(error.code, error.message);
   if (!data) return notFound;
@@ -469,8 +445,7 @@ export async function writeOwnerDishTags(
 
 // What a write on a dish's availability sets (D-160): the flag and the
 // mark together, so the three states are the three rows the database
-// allows. With expected, the write lands only while the dish still holds
-// that pair: an Undo never writes over a newer choice.
+// allows.
 export type AvailabilityPatch = {
   available: boolean;
   sold_out_at: string | null;
@@ -482,22 +457,15 @@ export async function writeOwnerDishAvailability(
   id: string,
   viewer: string | null,
   patch: AvailabilityPatch,
-  expected?: AvailabilityPatch,
 ): Promise<DishWriteResult<OwnerDishDetail>> {
-  let update = client
+  const { data, error } = await client
     .from("items")
     .update({ available: patch.available, sold_out_at: patch.sold_out_at })
     .eq("id", id)
     .eq("section_id", sectionId)
-    .is("deleted_at", null);
-  if (expected) {
-    update = update.eq("available", expected.available);
-    update =
-      expected.sold_out_at === null
-        ? update.is("sold_out_at", null)
-        : update.eq("sold_out_at", expected.sold_out_at);
-  }
-  const { data, error } = await update.select(detailColumns).maybeSingle();
+    .is("deleted_at", null)
+    .select(detailColumns)
+    .maybeSingle();
   if (error) return refused(error.code, error.message);
   if (!data) return notFound;
   const row = shaped(detailSchema, data, "items");
@@ -658,9 +626,8 @@ export function setOwnerDishText(
   id: string,
   field: "description" | "note",
   value: string | null,
-  expected?: string | null,
 ): Promise<DishWriteResult<OwnerDishDetail>> {
-  return writeDish(client, sectionId, id, field, value, expected);
+  return writeDish(client, sectionId, id, field, value);
 }
 
 // A dish's one price, in cents, or null for none (D-139).
@@ -669,9 +636,8 @@ export function setOwnerDishPrice(
   sectionId: string,
   id: string,
   cents: number | null,
-  expected?: number | null,
 ): Promise<DishWriteResult<OwnerDishDetail>> {
-  return writeDish(client, sectionId, id, "price_cents", cents, expected);
+  return writeDish(client, sectionId, id, "price_cents", cents);
 }
 
 // The two calorie columns a pair of calories lives in (D-167): the low
@@ -683,40 +649,24 @@ function calorieColumns(calories: Calories | null) {
   };
 }
 
-// A dish's calories, both columns in one statement, or none (D-167). With
-// expected, the write happens only while the dish still holds that pair.
+// A dish's calories, both columns in one statement, or none (D-167).
 export function setOwnerDishCalories(
   client: SupabaseClient,
   sectionId: string,
   id: string,
   calories: Calories | null,
-  expected?: Calories | null,
 ): Promise<DishWriteResult<OwnerDishDetail>> {
-  return writeDishColumns(
-    client,
-    sectionId,
-    id,
-    calorieColumns(calories),
-    expected === undefined ? {} : calorieColumns(expected),
-  );
+  return writeDishColumns(client, sectionId, id, calorieColumns(calories));
 }
 
-// The Cooked to order mark (D-167). With expected, the write is an Undo:
-// it lands only while the mark is still the one the change left.
+// The Cooked to order mark (D-167).
 export function setOwnerDishCookedToOrder(
   client: SupabaseClient,
   sectionId: string,
   id: string,
   on: boolean,
-  expected?: boolean,
 ): Promise<DishWriteResult<OwnerDishDetail>> {
-  return writeDishColumns(
-    client,
-    sectionId,
-    id,
-    { cooked_to_order: on },
-    expected === undefined ? {} : { cooked_to_order: expected },
-  );
+  return writeDishColumns(client, sectionId, id, { cooked_to_order: on });
 }
 
 // How a dish is priced (D-139). The other choices' values stay stored and
@@ -726,9 +676,8 @@ export function setOwnerDishPriceKind(
   sectionId: string,
   id: string,
   kind: PriceKind,
-  expected?: PriceKind,
 ): Promise<DishWriteResult<OwnerDishDetail>> {
-  return writeDish(client, sectionId, id, "price_kind", kind, expected);
+  return writeDish(client, sectionId, id, "price_kind", kind);
 }
 
 // Moves a dish to another section of its restaurant, last, with its sizes

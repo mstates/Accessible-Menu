@@ -36,11 +36,10 @@ type Props = {
 export const LEAD_FIELD_ID = "option-own-lead";
 
 // A choice list's own page (D-166): the lead first, a combo box with
-// suggested leads that keeps any text typed, then the status and Undo,
-// then the options, each a row with its name, its added price, its
-// calories, its buttons, and its allergen group under them, and the add
-// form. Everything on it shares one queue, one status, and one Undo
-// (D-111).
+// suggested leads that keeps any text typed, then the status, then the
+// options, each a row with its name, its added price, its calories, its
+// buttons, and its allergen group under them, and the add form. Everything
+// on it shares one queue and one status (D-111).
 export function ChoiceListPage(props: Props) {
   return (
     <Announcer>
@@ -119,7 +118,6 @@ function ChoiceListEditor({
             listId={list.id}
             option={option}
             editing={rows.editing}
-            record={rows.record}
             words={page.words}
             gone={strings.page.errors.parentGone}
             announce={page.announce}

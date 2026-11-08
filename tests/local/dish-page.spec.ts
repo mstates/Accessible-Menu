@@ -12,11 +12,11 @@ import { chromeName, expectNamedByOneLabel } from "./chrome-name";
 // A dish's page with saves that land for real against the stand-in (D-128,
 // D-139, D-142): the texts and the price, the price choice and what the
 // other choices keep, a size added, named from the suggestions, priced,
-// removed, and put back in its place, the order sizes keep while the page
-// is open and take after a reload, the move with its sentence after the
-// new title, the link to the next dish, a failed save with Try again, and
-// Undo after a reload. The gate cannot land a save, so this runs here. Each
-// check leaves the stand-in as it found it, so the checks run in any order.
+// and removed on one press, the order sizes keep while the page is open
+// and take after a reload, the move with its sentence after the new title
+// and the move back, the link to the next dish, and a failed save with Try
+// again. The gate cannot land a save, so this runs here. Each check leaves
+// the stand-in as it found it, so the checks run in any order.
 
 const { code } = ownerEnv();
 const strings = en.owner.dish;
@@ -84,10 +84,6 @@ async function choose(page: Page, label: string): Promise<void> {
 
 function status(page: Page) {
   return page.locator('main [role="status"]');
-}
-
-function undoButton(page: Page, label: string) {
-  return page.getByRole("button", { name: label, exact: true });
 }
 
 function sizeNames(page: Page): Promise<string[]> {
@@ -282,7 +278,7 @@ test("a switch to Market price that lands ties its sentence to the group and its
   await expectDescribed();
 });
 
-test("a size named from the suggestions commits once and keeps its field's name in Chrome while focused, a taken name is refused unsent, and a removed size comes back in its place", async ({
+test("a size named from the suggestions commits once and keeps its field's name in Chrome while focused, a taken name is refused unsent, and a size is removed on one press with focus on the next size's name", async ({
   page,
 }) => {
   await openDish(page, "sizes");
@@ -365,24 +361,7 @@ test("a size named from the suggestions commits once and keeps its field's name 
     sizeName(page, "Bowl"),
     "focus goes to the next size's name",
   ).toBeFocused();
-  await undoButton(
-    page,
-    fill(strings.undo.sizeDeleted, { size: "Pint" }),
-  ).click();
-  await expect
-    .poll(() => said(page, fill(strings.undo.sizeRestored, { size: "Pint" })))
-    .toBe(1);
-  expect(await sizeNames(page), "back in its place").toEqual([
-    "Cup",
-    "Pint",
-    "Bowl",
-  ]);
-
-  // As it was.
-  await sizeButton(page, strings.price.removeSize, "Pint").click();
-  await expect
-    .poll(() => said(page, fill(strings.price.sizeRemoved, { size: "Pint" })))
-    .toBe(2);
+  await expectNoMissingIds(page);
 });
 
 test("a size's price change does not move its row while the page is open, and price order applies after a reload", async ({
@@ -412,12 +391,14 @@ test("a size's price change does not move its row while the page is open, and pr
   expect(await sizeNames(page)).toEqual(["Cup", "Bowl"]);
 });
 
-test("the move reads the new title and then its sentence, the page stays, and Undo after a reload puts the dish back", async ({
+test("the move reads the new title and then its sentence, the page stays, and a move back after a reload lands the dish last, where it was", async ({
   page,
 }) => {
+  // The section's last dish moves, so the move back, which lands a dish
+  // last, puts it where it was.
   const { withSections, withDishes, emptySection, dishes } = ownerFixture();
-  const dish = dishes.sizes.name;
-  await openDish(page, "sizes");
+  const dish = dishes.market.name;
+  await openDish(page, "market");
   const restaurant = await restaurantName(page);
   await page
     .getByRole("button", { name: new RegExp(strings.move.label) })
@@ -455,23 +436,36 @@ test("the move reads the new title and then its sentence, the page stays, and Un
       }),
     "it is the last dish there",
   ).toHaveCount(1);
-  expect(page.url()).toContain(dishPath("sizes"));
+  expect(page.url()).toContain(dishPath("market"));
 
+  // As it was.
   await reload(page);
-  await undoButton(
-    page,
-    fill(strings.move.undo.moved, { dish, section: emptySection.name }),
-  ).click();
-  const back = fill(strings.move.undo.movedBack, {
+  await page
+    .getByRole("button", { name: new RegExp(strings.move.label) })
+    .click();
+  await page
+    .getByRole("option", { name: withDishes.name, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: strings.move.submit, exact: true })
+    .click();
+  const back = fill(strings.move.moved, {
     dish,
     section: withDishes.name,
-    position: 1,
-    total: 3,
+    menu: withSections.name,
   });
   await expect.poll(() => said(page, back)).toBe(1);
   await expect(page).toHaveTitle(
     pageTitle(en, dish, restaurant, [withDishes.name, withSections.name]),
   );
+  await expect(
+    page
+      .locator("main")
+      .getByText(fill(strings.next.last, { section: withDishes.name }), {
+        exact: true,
+      }),
+    "it is the last dish there again",
+  ).toHaveCount(1);
 });
 
 test("the link to the next dish arrives with the whole title", async ({
@@ -495,7 +489,7 @@ test("the link to the next dish arrives with the whole title", async ({
   );
 });
 
-test("a failed save keeps the text and is said once, Try again lands it with All changes saved., and Undo after a reload takes it back", async ({
+test("a failed save keeps the text and is said once, Try again lands it with All changes saved., and the note cleared after a reload saves once", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -519,9 +513,10 @@ test("a failed save keeps the text and is said once, Try again lands it with All
 
   await reload(page);
   await expect(field(page, strings.noteLabel)).toHaveValue("Hot from the oven");
-  await undoButton(page, fill(strings.undo.note, { dish })).click();
-  await expect
-    .poll(() => said(page, fill(strings.undo.noteBack, { dish })))
-    .toBe(1);
+
+  // As it was.
+  await field(page, strings.noteLabel).fill("");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => said(page, saved)).toBe(1);
   await expect(field(page, strings.noteLabel)).toHaveValue("");
 });

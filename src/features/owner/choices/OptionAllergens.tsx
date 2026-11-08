@@ -11,7 +11,6 @@ import type {
 import type { EditingStrings, TextWords } from "../editing/list-words";
 import type { Editing } from "../editing/useEditing";
 import { optionAllergenHeading } from "./option-words";
-import type { OptionAllergenUndo } from "./option-words";
 import {
   useOptionAllergens,
   type OptionAllergensState,
@@ -25,7 +24,6 @@ type Props = {
   listId: string;
   option: OwnerOption;
   editing: Editing;
-  record: (entry: OptionAllergenUndo) => void;
   words: TextWords;
   gone: string;
   announce: (text: string) => void;
@@ -34,8 +32,9 @@ type Props = {
   suggestions: readonly string[];
   timeZone: string;
   lang: string;
-  // The page keeps one group a row, by option id, for its Undo and Try
-  // again to reach; set after every render and read from handlers only.
+  // The page keeps one group a row, by option id, for its Try again and a
+  // landed rename to reach; set after every render and read from handlers
+  // only.
   register: (id: string, state: OptionAllergensState | null) => void;
 };
 
@@ -50,7 +49,6 @@ export function OptionAllergens({
   listId,
   option,
   editing,
-  record,
   words,
   gone,
   announce,
@@ -67,7 +65,6 @@ export function OptionAllergens({
     listId,
     option,
     editing,
-    record,
     words,
     gone,
     announce,

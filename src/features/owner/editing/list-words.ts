@@ -1,14 +1,12 @@
-import { z } from "zod";
 import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
 import type { Held } from "@/domain/menu";
 
 // Every sentence an editing list shows or speaks, built in one place from
-// copy, and the shape of its Undo entries. The menus of a restaurant, the
-// sections of a menu, and the dishes of a section are one list three times
-// (module rule 12): each hands this file its own slice of copy, the
-// placeholder its sentences carry for a row's name, and the words of its
-// fields. Pure: no React, no network.
+// copy. The menus of a restaurant, the sections of a menu, and the dishes of
+// a section are one list three times (module rule 12): each hands this file
+// its own slice of copy, the placeholder its sentences carry for a row's
+// name, and the words of its fields. Pure: no React, no network.
 
 export type EditingStrings = Copy["owner"]["editing"];
 
@@ -54,23 +52,11 @@ export type ListStrings = {
     // A delete would have taken more than the owner was told about.
     grew?: string;
   };
-  undo: {
-    renamed: string;
-    added: string;
-    deleted: string;
-    moved: string;
-    renamedBack: string;
-    removed: string;
-    restored: string;
-    movedBack: string;
-    textChanged: string;
-    restoreBlocked: string;
-    renameBlocked: string;
-    // An added row that now holds content stays (D-119).
-    addGrew?: string;
-  };
-  // Only a list whose rows hold content asks before a delete (D-119).
+  // For a list whose Delete asks first (D-221): the safe answer, the
+  // question by the row's name alone, and the questions that name what
+  // goes with a row that holds content (D-119).
   keep?: string;
+  deleteAskEmpty?: string;
   deleteAsk?: string;
   deleteAskBoth?: string;
   sectionCount?: Counted;
@@ -92,10 +78,6 @@ export type FieldWords = {
   prefix?: string;
   // "Note for {section} was not saved."
   notSaved: string;
-  // For a text that is not the name: the Undo control's words for a change
-  // to it, and what Undo says once it is as it was.
-  changed?: string;
-  back?: string;
 };
 
 // The words a text needs to be committed, failed, and said, whatever page
@@ -118,97 +100,6 @@ export type ListWords<Field extends string = string> = {
   fields: Readonly<Record<Field, FieldWords>>;
 };
 
-// One change the owner can take back. A delete and a move remember the order
-// before them, so Undo puts the list back as it was. A changed text that is
-// not the name remembers both texts, and is taken back only while the field
-// still holds the one that change wrote: "text" for a row's own field, and
-// "own" for a text of the page's own record, such as a section's note on
-// the section's page (D-135), which shares the list's Undo.
-type TextChange = {
-  field: string;
-  id: string;
-  name: string;
-  from: string;
-  to: string;
-};
-
-export type ListUndo =
-  | { kind: "rename"; id: string; from: string; to: string }
-  | ({ kind: "text" } & TextChange)
-  | ({ kind: "own" } & TextChange)
-  | { kind: "add"; id: string; name: string }
-  | { kind: "delete"; id: string; name: string; order: string[] }
-  | { kind: "move"; id: string; name: string; order: string[] };
-
-const LIST_KINDS: readonly string[] = [
-  "rename",
-  "text",
-  "own",
-  "add",
-  "delete",
-  "move",
-];
-
-// Tells a list's own change from another change the same screen can take
-// back, a section moved to another menu.
-export function isListUndo(entry: { kind: string }): entry is ListUndo {
-  return LIST_KINDS.includes(entry.kind);
-}
-
-// The stored shape of a list's Undo entries. texts are a row's fields besides
-// the name, and own the page's own texts; a list with none of either stores
-// no change of that kind, and a change to a field the list does not have
-// reads as no entry at all.
-export function listUndoSchema(
-  texts: readonly string[],
-  own: readonly string[] = [],
-): z.ZodType<ListUndo> {
-  const rename = z.object({
-    kind: z.literal("rename"),
-    id: z.string(),
-    from: z.string(),
-    to: z.string(),
-  });
-  const add = z.object({
-    kind: z.literal("add"),
-    id: z.string(),
-    name: z.string(),
-  });
-  const remove = z.object({
-    kind: z.literal("delete"),
-    id: z.string(),
-    name: z.string(),
-    order: z.array(z.string()),
-  });
-  const move = z.object({
-    kind: z.literal("move"),
-    id: z.string(),
-    name: z.string(),
-    order: z.array(z.string()),
-  });
-  const change = <Kind extends "text" | "own">(
-    kind: Kind,
-    fields: readonly string[],
-  ) =>
-    z.object({
-      kind: z.literal(kind),
-      field: z.enum(fields as [string, ...string[]]),
-      id: z.string(),
-      name: z.string(),
-      from: z.string(),
-      to: z.string(),
-    });
-  const options = [
-    rename,
-    ...(texts.length > 0 ? [change("text", texts)] : []),
-    ...(own.length > 0 ? [change("own", own)] : []),
-    add,
-    remove,
-    move,
-  ] as const;
-  return z.discriminatedUnion("kind", options) as z.ZodType<ListUndo>;
-}
-
 // Why a save did not land. The first group comes back from the server; the
 // last two are what the browser makes of a call that never got an answer.
 export type ListProblem =
@@ -218,7 +109,6 @@ export type ListProblem =
   | { kind: "gone" }
   // What the list sits in was deleted, or is no longer this owner's.
   | { kind: "parent-gone" }
-  | { kind: "changed" }
   | { kind: "mismatch" }
   // A delete would have taken more than the owner was told about.
   | { kind: "grew" }
@@ -261,24 +151,6 @@ export function fieldSuffix(
   return named(words, words.fields[field]?.suffix ?? "", name);
 }
 
-// The Undo control's whole name, which is also its visible text.
-export function undoLabel(words: ListWords, entry: ListUndo): string {
-  const { undo } = words.strings;
-  switch (entry.kind) {
-    case "rename":
-      return fill(undo.renamed, { from: entry.from, to: entry.to });
-    case "text":
-    case "own":
-      return named(words, words.fields[entry.field]?.changed ?? "", entry.name);
-    case "add":
-      return named(words, undo.added, entry.name);
-    case "delete":
-      return named(words, undo.deleted, entry.name);
-    case "move":
-      return named(words, undo.moved, entry.name);
-  }
-}
-
 export function countText(words: ListWords, count: number): string {
   return counted(words.strings.count, count);
 }
@@ -305,8 +177,9 @@ export function notSavedSentence(
   return named(words, words.fields[field]?.notSaved ?? "", name);
 }
 
-// What a delete asks before it takes content with it (D-119), which is also
-// the confirmation's name: "Delete Lunch, with its 4 sections?", "Delete
+// What a delete asks, which is also the confirmation's name (D-119, D-221):
+// "Delete Kids?" for a row that holds nothing, and for one that holds
+// content what goes with it, "Delete Lunch, with its 4 sections?", "Delete
 // Lunch, with its 4 sections and 12 dishes?", "Delete Starters, with its 3
 // dishes?", "Delete Choose one side, with its 3 options?" (D-166). Dishes
 // are named only when there are some.
@@ -316,6 +189,9 @@ export function deleteQuestion(
   held: Held,
 ): string {
   const { strings } = words;
+  if (held.sections + held.dishes + held.options === 0) {
+    return named(words, strings.deleteAskEmpty ?? "", name);
+  }
   const dishes = strings.dishCount
     ? counted(strings.dishCount, held.dishes)
     : "";
@@ -354,8 +230,6 @@ export function problemText(
       return strings.errors.gone;
     case "parent-gone":
       return strings.errors.parentGone ?? strings.errors.gone;
-    case "changed":
-      return editing.stale;
     case "mismatch":
       return strings.errors.listChanged;
     case "grew":
@@ -419,82 +293,4 @@ export function edgeSentence(
     direction === "up" ? strings.alreadyFirst : strings.alreadyLast,
     name,
   );
-}
-
-// What Undo says once it has put a change back.
-export function undoneSentence(
-  words: ListWords,
-  entry: ListUndo,
-  position: number,
-  total: number,
-): string {
-  const { undo } = words.strings;
-  switch (entry.kind) {
-    case "rename":
-      return fill(undo.renamedBack, { from: entry.from });
-    case "text":
-    case "own":
-      return named(words, words.fields[entry.field]?.back ?? "", entry.name);
-    case "add":
-      return named(words, undo.removed, entry.name);
-    case "delete":
-      return named(words, undo.restored, entry.name, { position, total });
-    case "move":
-      return named(words, undo.movedBack, entry.name, { position, total });
-  }
-}
-
-// What an Undo that could not be applied does to its entry: a taken name
-// keeps it, a change that no longer stands drops it, and so does an added
-// row that holds content by now; anything else is an ordinary failure, and
-// the entry stays for another try.
-export function undoOutcome(
-  problem: ListProblem,
-): "blocked" | "stale" | "failed" {
-  switch (problem.kind) {
-    case "name-taken":
-      return "blocked";
-    case "changed":
-    case "gone":
-    case "mismatch":
-    case "grew":
-      return "stale";
-    default:
-      return "failed";
-  }
-}
-
-// What Undo says when it could not: a taken name keeps the entry, a change
-// that no longer stands drops it, and anything else is an ordinary failure.
-// An added row that now holds content no longer stands as the change it
-// was: Undo never deletes content, so it says where the Delete button is.
-export function notUndoneSentence(
-  words: ListWords,
-  entry: ListUndo,
-  problem: ListProblem,
-): string {
-  const { strings, editing } = words;
-  if (problem.kind === "grew" && entry.kind === "add" && strings.undo.addGrew) {
-    return named(words, strings.undo.addGrew, entry.name);
-  }
-  if (problem.kind === "name-taken") {
-    return entry.kind === "rename"
-      ? fill(strings.undo.renameBlocked, { from: entry.from })
-      : named(words, strings.undo.restoreBlocked, entry.name);
-  }
-  if (
-    problem.kind === "changed" &&
-    (entry.kind === "rename" || entry.kind === "text" || entry.kind === "own")
-  ) {
-    return strings.undo.textChanged;
-  }
-  if (
-    problem.kind === "changed" ||
-    problem.kind === "gone" ||
-    problem.kind === "mismatch"
-  ) {
-    return editing.stale;
-  }
-  const name = entry.kind === "rename" ? entry.to : entry.name;
-  return failureSentence(editing.notUndone, problemText(words, problem, name));
 }

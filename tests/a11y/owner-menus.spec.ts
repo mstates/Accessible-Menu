@@ -31,8 +31,8 @@ import { expectWrites, guardWrites } from "./write-guard";
 // here runs behind the write guard. The row tests every list shares run
 // from listRowChecks in owner-lists.ts; this file holds what is the menus
 // page's own. Typing, real saves and the "Saved." they say (D-118), add, a
-// delete that lands, Undo with something to undo, and a name that is taken
-// are covered by the unit tests and by hand. The shared page checks for
+// delete that lands, and a name that is taken are covered by the unit tests
+// and by hand. The shared page checks for
 // this page run from owner-pages.spec.ts. The line under each name that
 // says whether the menu is published (Q-115) is read here too, against the
 // states the setup wrote.
@@ -65,10 +65,10 @@ listRowChecks({
   words: strings,
   path: () => menusPath,
   h1: () => strings.heading,
-  // The name field and Move up, Move down, and Delete; the add field, Add,
-  // and Undo.
+  // The name field and Move up, Move down, and Delete; the add field and
+  // Add.
   rowControls: 4,
-  pageControls: 3,
+  pageControls: 2,
   rowLink: {
     label: strings.editSections,
     target: () => {
@@ -89,7 +89,14 @@ listRowChecks({
         question: deleteQuestion(withSections),
       };
     },
-    empty: () => ownerFixture().empty.name,
+    // A menu that holds nothing asks by its name alone (D-221).
+    empty: () => {
+      const { empty } = ownerFixture();
+      return {
+        name: empty.name,
+        question: fill(strings.deleteAskEmpty, { menu: empty.name }),
+      };
+    },
   },
 });
 

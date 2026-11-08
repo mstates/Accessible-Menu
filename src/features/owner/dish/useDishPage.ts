@@ -4,7 +4,6 @@ import { startTransition, useMemo, useOptimistic, useState } from "react";
 import { useAnnounce } from "@/core/a11y/announcer";
 import type { OwnerChoiceList } from "@/domain/choices";
 import type { DietaryCopy } from "@/domain/dietary";
-import type { Hours } from "@/domain/hours";
 import type { ScheduleCopy } from "@/domain/schedule";
 import type { TimeCopy } from "@/domain/time";
 import {
@@ -22,63 +21,35 @@ import {
   type SizeText,
 } from "@/domain/dish";
 import { nameTaken } from "@/domain/menu";
-import {
-  problemText,
-  type EditingStrings,
-  type ListProblem,
-} from "../editing/list-words";
+import { problemText, type EditingStrings } from "../editing/list-words";
 import {
   commitText,
   textOf,
-  type TextEditor,
   type TextHome,
   type TextState,
 } from "../editing/texts";
-import {
-  afterUndo,
-  newestUndo,
-  pushUndo,
-  type UndoOutcome,
-} from "../editing/undo";
 import { useEditing } from "../editing/useEditing";
 import { useFocusNext } from "../editing/useFocusNext";
-import { useUndoStack } from "../editing/useUndoStack";
 import {
   addSize as addSizeAction,
-  moveDishBack,
   removeSize as removeSizeAction,
-  restoreSize,
   setDishPriceKind,
   setDishText,
   setSizeText,
 } from "./actions";
 import type { SameNamedPlace } from "../allergens/allergen-words";
-import {
-  choiceListUndoLabel,
-  readListEntry,
-  wrapListEntry,
-  type ChoiceStrings,
-} from "../choices/choice-words";
+import type { ChoiceStrings } from "../choices/choice-words";
 import { useChoiceListRows } from "../choices/useChoiceListRows";
 import {
-  dishUndoSchema,
   dishWords,
   kindNotSavedSentence,
-  moveNotUndone,
-  moveUndoneSentence,
   notAddedSentence,
   notRemovedSentence,
-  notUndoneSentence,
   sizeAddedSentence,
   sizeLabel,
   sizeRemovedSentence,
-  showingUndoLabel,
   sizeWords,
-  undoLabel,
-  undoneSentence,
   type DishStrings,
-  type DishUndo,
-  type TextUndo,
 } from "./dish-words";
 import type { ShowingNow } from "./schedule-words";
 import { useDishAllergens } from "./useDishAllergens";
@@ -92,16 +63,16 @@ import { useDishTags } from "./useDishTags";
 // useDishAllergens), its tags, its availability, and its schedule (task 5,
 // useDishTags, useDishAvailability, useDishSchedule), its Cooked to order
 // mark and its choice lists (task 7, useDishCookedToOrder,
-// useChoiceListRows), and its Undo. The page's own texts take no list; it
-// composes the same editing state, the same Undo stack, and the same
-// text-commit path (texts.ts) the lists use, and its choice lists share
-// them (D-145), so it keeps one queue, one saved status, and one Undo for
-// everything on it. The price choice saves on change and says "Saved." once, as a field
-// does (D-118); the other choices' values stay stored and come back on
-// switching back (Michael, October 7, 2026). A size is added blank and
-// takes focus in its name once it lands; a remove takes effect at once,
-// with Undo. Sizes keep the places the page showed them in while the page
-// is open (holdSizeOrder).
+// useChoiceListRows). The page's own texts take no list; it composes the
+// same editing state and the same text-commit path (texts.ts) the lists
+// use, and its choice lists share them (D-145), so it keeps one queue and
+// one saved status for everything on it. The price choice saves on change
+// and says "Saved." once, as a field does (D-118); the other choices'
+// values stay stored and come back on switching back (Michael, October 7,
+// 2026). A size is added blank and takes focus in its name once it lands; a
+// remove takes effect at once, on the press, since a size is a part of the
+// dish's form (D-221). Sizes keep the places the page showed them in while
+// the page is open (holdSizeOrder).
 
 type Props = {
   strings: DishStrings;
@@ -118,13 +89,10 @@ type Props = {
   // The live dishes elsewhere in the restaurant with this dish's name whose
   // lists differ, or which are not checked (D-129).
   sameNamed: SameNamedPlace[];
-  // Says a sentence once the page shows the dish in that section.
-  sayOnceIn: (sectionId: string, sentence: string) => void;
   // What the server decided the dish's availability is at this render
-  // (D-160), the restaurant's hours and zone it decided it from, and its
-  // clock, which every time-dependent line on the page reads.
+  // (D-160), the restaurant's zone it decided it in, and its clock, which
+  // every time-dependent line on the page reads.
   showing: ShowingNow;
-  hours: Hours | null;
   timeZone: string;
   lang: string;
   now: string;
@@ -148,8 +116,6 @@ type Order = {
   sizes: OwnerSize[];
   // The ids in the order the page shows.
   ids: string[];
-  // An order to return to once the server shows a restored size again.
-  wanted: string[] | null;
 };
 
 export function useDishPage({
@@ -161,9 +127,7 @@ export function useDishPage({
   lists,
   sizes,
   sameNamed,
-  sayOnceIn,
   showing,
-  hours,
   timeZone,
   lang,
   now,
@@ -173,8 +137,6 @@ export function useDishPage({
 }: Props) {
   const announce = useAnnounce();
   const editing = useEditing(editingStrings);
-  const undo = useUndoStack(`undo:${code}:dish:${dish.id}`, dishUndoSchema);
-  const editor: TextEditor<DishUndo> = { editing, undo };
   const words = useMemo(
     () => dishWords(strings, editingStrings),
     [strings, editingStrings],
@@ -197,14 +159,9 @@ export function useDishPage({
   const [order, setOrder] = useState<Order>(() => ({
     sizes,
     ids: sizes.map((size) => size.id),
-    wanted: null,
   }));
   if (order.sizes !== sizes) {
-    setOrder({
-      sizes,
-      ids: holdSizeOrder(order.wanted ?? order.ids, sizes),
-      wanted: null,
-    });
+    setOrder({ sizes, ids: holdSizeOrder(order.ids, sizes) });
   }
   const bySize = new Map(sizes.map((size) => [size.id, size]));
   const ordered = order.ids.flatMap((id) => {
@@ -222,38 +179,35 @@ export function useDishPage({
   // just added, a neighbor's name after a remove, as the list hook does.
   const focusNextRef = useFocusNext();
 
-  // The allergen group shares the page's editing state, Undo, and focus.
+  // The allergen group shares the page's editing state and focus.
   const allergens = useDishAllergens({
     strings,
     editingStrings,
     code,
     dish,
-    editor,
+    editing,
     words,
     announce,
     focusNextRef,
     sameNamed,
   });
 
-  // The showing groups share the page's editing state and Undo (task 5).
+  // The showing groups share the page's editing state (task 5).
   const tags = useDishTags({
     strings,
-    editingStrings,
     code,
     dish,
-    editor,
+    editing,
     words,
     names: dietaryCopy,
   });
   const availability = useDishAvailability({
     strings,
-    editingStrings,
     code,
     dish,
-    editor,
+    editing,
     words,
     showing,
-    hours,
     timeZone,
     lang,
     now,
@@ -261,10 +215,9 @@ export function useDishPage({
   });
   const schedule = useDishSchedule({
     strings,
-    editingStrings,
     code,
     dish,
-    editor,
+    editing,
     words,
     announce,
     timeZone,
@@ -275,25 +228,20 @@ export function useDishPage({
   });
   const cookedToOrder = useDishCookedToOrder({
     strings,
-    editingStrings,
     code,
     dish,
-    editor,
+    editing,
     words,
   });
 
-  // The choice lists share the page's editing state and Undo (D-145,
-  // D-166): their entries sit on the page's stack, wrapped.
-  const choices = useChoiceListRows<DishUndo>({
+  // The choice lists share the page's editing state (D-145, D-166).
+  const choices = useChoiceListRows({
     strings: choiceStrings,
     editingStrings,
     code,
     home: { kind: "dish", id: dish.id },
     lists,
-    shared: {
-      editor: { editing, undo },
-      entries: { make: wrapListEntry, read: readListEntry },
-    },
+    shared: editing,
   });
 
   function labelOf(size: OwnerSize, index: number): string {
@@ -301,7 +249,7 @@ export function useDishPage({
   }
 
   // The dish's own texts live on the page and save through its actions.
-  function ownHome(): TextHome<DishText, DishUndo> {
+  function ownHome(): TextHome<DishText> {
     return {
       row: { id: dish.id, name: dish.name },
       words,
@@ -312,24 +260,13 @@ export function useDishPage({
       rule: dishTextProblem,
       taken: () => null,
       send: (field, value) => setDishText(code, dish.id, field, value),
-      entry: (field, from, to) => ({
-        kind: "own",
-        field,
-        id: dish.id,
-        name: dish.name,
-        from,
-        to,
-      }),
     };
   }
 
   // A size's texts live in its row. A name another size of the dish has is
   // refused before it is sent, as a row's name is; a blank name is no name
   // and collides with nothing.
-  function sizeHome(
-    size: OwnerSize,
-    label: string,
-  ): TextHome<SizeText, DishUndo> {
+  function sizeHome(size: OwnerSize, label: string): TextHome<SizeText> {
     return {
       row: { id: size.id, name: label },
       words: sizeTextWords,
@@ -343,14 +280,6 @@ export function useDishPage({
           ? nameTaken(shownSizes, size.id, value)
           : null,
       send: (field, value) => setSizeText(code, dish.id, size.id, field, value),
-      entry: (field, from, to) => ({
-        kind: "size-text",
-        field,
-        id: size.id,
-        size: label,
-        from,
-        to,
-      }),
     };
   }
 
@@ -386,15 +315,6 @@ export function useDishPage({
           return;
         }
         editing.landedField(KIND_KEY, null);
-        undo.replace(
-          pushUndo(undo.peek(), {
-            kind: "kind",
-            id: dish.id,
-            name: dish.name,
-            from: saved,
-            to: result.value.priceKind,
-          }),
-        );
       });
     });
   }
@@ -414,24 +334,17 @@ export function useDishPage({
           force: true,
         };
         editing.landed();
-        undo.replace(
-          pushUndo(undo.peek(), {
-            kind: "size-add",
-            id: size.id,
-            size: sizeLabel(strings, size, total),
-          }),
-        );
         announce(sizeAddedSentence(strings, total));
       });
     });
   }
 
-  // A size goes at once, with Undo. Focus goes to the next size's name, or
-  // to Add a size when none is left; a remove that fails puts it back on
+  // A size goes at once, on the press: it is a part of the dish's form, and
+  // is typed again in a moment (D-221). Focus goes to the next size's name,
+  // or to Add a size when none is left; a remove that fails puts it back on
   // the button that asked.
   function removeSize(size: OwnerSize, index: number) {
     const label = labelOf(size, index);
-    const ids = shownSizes.map((entry) => entry.id);
     const neighbor = shownSizes[index + 1] ?? shownSizes[index - 1];
     focusNextRef.current = {
       id: neighbor ? sizeFieldId(neighbor.id, "name") : ADD_SIZE_ID,
@@ -442,7 +355,7 @@ export function useDishPage({
       dropSize(size.id);
       await editing.run(async () => {
         const result = await editing.call(() =>
-          removeSizeAction(code, dish.id, size.id, false),
+          removeSizeAction(code, dish.id, size.id),
         );
         if (!result.ok) {
           focusNextRef.current = { id: sizeButtonId(size.id), force: true };
@@ -454,168 +367,6 @@ export function useDishPage({
         for (const field of SIZE_TEXTS)
           editing.dropField(sizeKey(size.id, field));
         editing.landed();
-        undo.replace(
-          pushUndo(undo.peek(), {
-            kind: "size-remove",
-            id: size.id,
-            size: label,
-            order: ids,
-          }),
-        );
-      });
-    });
-  }
-
-  type Reversed =
-    | { ok: true; sentence: string | null }
-    | { ok: false; outcome: Exclude<UndoOutcome, "applied">; sentence: string };
-
-  function notReversed(entry: TextUndo, problem: ListProblem): Reversed {
-    return {
-      ok: false,
-      ...notUndoneSentence(strings, editingStrings, words, entry, problem),
-    };
-  }
-
-  // The inverse of one change.
-  async function reverse(entry: DishUndo): Promise<Reversed> {
-    switch (entry.kind) {
-      case "own": {
-        const result = await editing.call(() =>
-          setDishText(code, dish.id, entry.field, entry.from, entry.to),
-        );
-        return result.ok
-          ? { ok: true, sentence: undoneSentence(strings, entry) }
-          : notReversed(entry, result.problem);
-      }
-      case "kind": {
-        const result = await editing.call(() =>
-          setDishPriceKind(code, dish.id, entry.from, entry.to),
-        );
-        return result.ok
-          ? { ok: true, sentence: undoneSentence(strings, entry) }
-          : notReversed(entry, result.problem);
-      }
-      case "size-text": {
-        const result = await editing.call(() =>
-          setSizeText(
-            code,
-            dish.id,
-            entry.id,
-            entry.field,
-            entry.from,
-            entry.to,
-          ),
-        );
-        return result.ok
-          ? { ok: true, sentence: undoneSentence(strings, entry) }
-          : notReversed(entry, result.problem);
-      }
-      case "size-add": {
-        // Undo never deletes content: the size goes only while it is
-        // blank, and the database says if it holds something now (D-119).
-        const result = await editing.call(() =>
-          removeSizeAction(code, dish.id, entry.id, true),
-        );
-        if (!result.ok) return notReversed(entry, result.problem);
-        for (const field of SIZE_TEXTS)
-          editing.dropField(sizeKey(entry.id, field));
-        return { ok: true, sentence: undoneSentence(strings, entry) };
-      }
-      case "size-remove": {
-        const result = await editing.call(() =>
-          restoreSize(code, dish.id, entry.id),
-        );
-        if (!result.ok) return notReversed(entry, result.problem);
-        // Back in the place the page showed it, once the server shows it.
-        setOrder((current) => ({
-          sizes: current.sizes,
-          ids: holdSizeOrder(entry.order, current.sizes),
-          wanted: entry.order,
-        }));
-        return { ok: true, sentence: undoneSentence(strings, entry) };
-      }
-      case "relocate": {
-        const result = await editing.call(() =>
-          moveDishBack(code, dish.id, entry.from.id, entry.from.order),
-        );
-        if (!result.ok) {
-          return {
-            ok: false,
-            ...moveNotUndone(
-              strings.move,
-              editingStrings,
-              strings.errors.parentGone,
-              entry,
-              result.problem,
-            ),
-          };
-        }
-        sayOnceIn(
-          entry.from.id,
-          moveUndoneSentence(
-            strings.move,
-            entry,
-            result.value.position || entry.from.order.indexOf(entry.id) + 1,
-            result.value.total || entry.from.order.length,
-          ),
-        );
-        return { ok: true, sentence: null };
-      }
-      case "allergen":
-      case "others":
-      case "check":
-      case "apply":
-        return allergens.reverse(entry);
-      case "tags":
-        return tags.reverse(entry);
-      case "availability":
-        return availability.reverse(entry);
-      case "schedule":
-        return schedule.reverse(entry);
-      case "cooked-to-order":
-        return cookedToOrder.reverse(entry);
-      case "choice-list": {
-        const result = await choices.undoShared(entry);
-        if (!result) {
-          return {
-            ok: false,
-            outcome: "stale",
-            sentence: editingStrings.stale,
-          };
-        }
-        return result.outcome === "applied"
-          ? { ok: true, sentence: result.sentence }
-          : { ok: false, outcome: result.outcome, sentence: result.sentence };
-      }
-    }
-  }
-
-  // Undo waits for saves on their way, then takes back the newest change,
-  // in the same queue as every save. A change that no longer stands is
-  // dropped; one blocked by a taken name keeps its entry; either way it
-  // says so.
-  function undoNewest() {
-    if (editing.peek().inFlight === 0 && !newestUndo(undo.peek())) {
-      announce(editingStrings.nothingToUndo);
-      return;
-    }
-    startTransition(async () => {
-      await editing.run(async () => {
-        const entry = newestUndo(undo.peek());
-        if (!entry) {
-          announce(editingStrings.nothingToUndo);
-          return;
-        }
-        const result = await reverse(entry);
-        if (result.ok) {
-          undo.replace(afterUndo(undo.peek(), "applied"));
-          editing.landed();
-          if (result.sentence !== null) announce(result.sentence);
-          return;
-        }
-        undo.replace(afterUndo(undo.peek(), result.outcome));
-        editing.failChange(result.sentence);
       });
     });
   }
@@ -642,7 +393,7 @@ export function useDishPage({
       }
       const own = DISH_TEXTS.find((field) => ownKey(field) === key);
       if (own) {
-        commitText(editor, ownHome(), own, true);
+        commitText(editing, ownHome(), own, true);
         continue;
       }
       shownSizes.forEach((size, index) => {
@@ -650,33 +401,23 @@ export function useDishPage({
           (candidate) => sizeKey(size.id, candidate) === key,
         );
         if (field) {
-          commitText(editor, sizeHome(size, labelOf(size, index)), field, true);
+          commitText(
+            editing,
+            sizeHome(size, labelOf(size, index)),
+            field,
+            true,
+          );
         }
       });
     }
   }
 
-  const newest = newestUndo(undo.stack);
-  const undoText = newest
-    ? newest.kind === "tags" ||
-      newest.kind === "availability" ||
-      newest.kind === "schedule"
-      ? showingUndoLabel(
-          strings,
-          { tag: dietaryCopy.names, box: schedule.boxName },
-          newest,
-        )
-      : newest.kind === "choice-list"
-        ? choiceListUndoLabel(choices.words, newest)
-        : undoLabel(strings, newest)
-    : null;
-
   return {
     editing,
     words,
-    undoText,
     own: {
-      fieldOf: (field: DishText): TextState => textOf(editor, ownHome(), field),
+      fieldOf: (field: DishText): TextState =>
+        textOf(editing, ownHome(), field),
     },
     kind: {
       value: shownKind,
@@ -687,7 +428,7 @@ export function useDishPage({
       shown: shownSizes,
       labelOf,
       fieldOf: (size: OwnerSize, index: number, field: SizeText): TextState =>
-        textOf(editor, sizeHome(size, labelOf(size, index)), field),
+        textOf(editing, sizeHome(size, labelOf(size, index)), field),
       add: addSize,
       remove: removeSize,
     },
@@ -697,11 +438,7 @@ export function useDishPage({
     schedule,
     cookedToOrder,
     choices,
-    undoNewest,
     tryAgain,
-    // A change the page made that is not a text's goes on the same Undo
-    // stack: the move.
-    record: (entry: DishUndo) => undo.replace(pushUndo(undo.peek(), entry)),
   };
 }
 

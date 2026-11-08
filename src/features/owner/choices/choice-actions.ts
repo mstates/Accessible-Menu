@@ -6,14 +6,11 @@ import {
   addOwnerChoiceList,
   addOwnerOption,
   deleteOwnerChoiceList,
-  listOwnerChoiceLists,
-  listOwnerOptions,
+  removeOwnerOption,
   renameOwnerOption,
-  restoreOwnerChoiceList,
   setOwnerChoiceListLead,
   setOwnerChoiceListOrder,
   setOwnerOptionCalories,
-  setOwnerOptionDeleted,
   setOwnerOptionOrder,
   setOwnerOptionPrice,
   type ChoiceWriteError,
@@ -30,16 +27,16 @@ import {
   type OwnerChoiceList,
   type OwnerOption,
 } from "@/domain/choices";
-import { mergeOrder, type Held } from "@/domain/menu";
+import type { Held } from "@/domain/menu";
 import { parsePrice } from "@/domain/money";
 import type { ListProblem } from "../editing/list-words";
 import { dishScope, listScope, sectionScope } from "../owner-scope";
 
 // Choice lists save through these (D-166): the rows on a dish's or a
-// section's page, added by lead, moved, deleted with their options after
-// the question (D-119), and restored; and on the list's own page, the lead,
-// and the options, added by name, their three texts, moved, removed, and
-// restored. Nothing here redirects: a missing session comes back as a
+// section's page, added by lead, moved, and deleted with their options
+// after the question (D-119, D-221); and on the list's own page, the lead,
+// and the options, added by name, their three texts, moved, and removed.
+// Nothing here redirects: a missing session comes back as a
 // result and the typed text stays on screen. Every call that reached the
 // database with a live session ends with refresh(). The code, the home or
 // the list, and the ids are user input: they are checked here and in the
@@ -76,11 +73,10 @@ function refuse(problem: ServerProblem): { ok: false; problem: ServerProblem } {
 const gone = refuse({ kind: "gone" });
 const failed = refuse({ kind: "failed" });
 
-// A row that is not there is "gone" for an ordinary save, and "changed" for
-// an Undo, whose change no longer stands.
+// A row that is not there is "gone"; for an add, what it would go in is.
 function fromWrite(
   error: ChoiceWriteError,
-  missing: "gone" | "parent-gone" | "changed",
+  missing: "gone" | "parent-gone",
 ): ServerProblem {
   switch (error.kind) {
     case "name-taken":
@@ -140,9 +136,10 @@ export async function addChoiceList(
   };
 }
 
-// Marks the list deleted, with its options (D-119): the database counts
-// the live options in the statement that marks it and refuses a delete
-// that would take more than the owner was told about (migration 11).
+// Marks the list deleted after the question (D-119, D-221), with its
+// options: the database counts the live options in the statement that
+// marks it and refuses a delete that would take more than the owner was
+// told about (migration 11).
 export async function deleteChoiceList(
   rawCode: string,
   rawHome: unknown,
@@ -167,49 +164,6 @@ export async function deleteChoiceList(
   refresh();
   if (!result.ok) return refuse(fromWrite(result.error, "gone"));
   return { ok: true, value: null };
-}
-
-// Brings a deleted list back, with its options, then puts the rows in the
-// order they had before the delete. If the order cannot be set, because
-// the rows changed since, the list is back all the same and says where it
-// landed.
-export async function restoreChoiceList(
-  rawCode: string,
-  rawHome: unknown,
-  rawId: string,
-  rawOrder: string[],
-): Promise<ChoiceActionResult<{ position: number; total: number }>> {
-  const scope = await homeScope(rawCode, rawHome);
-  if (!scope.ok) return scope;
-  const id = idSchema.safeParse(rawId);
-  const order = orderSchema.safeParse(rawOrder);
-  if (!id.success || !order.success) return refuse({ kind: "changed" });
-  const result = await restoreOwnerChoiceList(
-    scope.client,
-    scope.home,
-    id.data,
-  );
-  refresh();
-  if (!result.ok) return refuse(fromWrite(result.error, "changed"));
-
-  let live: string[];
-  try {
-    const lists = await listOwnerChoiceLists(scope.client, scope.home);
-    live = lists.map((list) => list.id);
-  } catch {
-    return { ok: true, value: { position: 0, total: 0 } };
-  }
-  const wanted = mergeOrder(order.data, live);
-  const placed = await setOwnerChoiceListOrder(
-    scope.client,
-    scope.home,
-    wanted,
-  );
-  const final = placed.ok ? wanted : live;
-  return {
-    ok: true,
-    value: { position: final.indexOf(id.data) + 1, total: final.length },
-  };
 }
 
 export async function orderChoiceLists(
@@ -239,14 +193,11 @@ export async function renameChoiceListRow(): Promise<
   return failed;
 }
 
-// The list's lead, from the top of its own page (D-135). With expected,
-// the write is an Undo: it happens only if the lead is still the one the
-// change wrote, and never writes over a newer change.
+// The list's lead, from the top of its own page (D-135).
 export async function setChoiceListLead(
   rawCode: string,
   rawList: string,
   rawLead: string,
-  expected?: string,
 ): Promise<ChoiceActionResult<{ lead: string }>> {
   const scope = await listScope(rawCode, rawList);
   if (!scope.ok) return scope;
@@ -257,17 +208,9 @@ export async function setChoiceListLead(
     scope.home,
     scope.listId,
     lead.lead,
-    typeof expected === "string" ? expected : undefined,
   );
   refresh();
-  if (!result.ok) {
-    return refuse(
-      fromWrite(
-        result.error,
-        expected === undefined ? "parent-gone" : "changed",
-      ),
-    );
-  }
+  if (!result.ok) return refuse(fromWrite(result.error, "parent-gone"));
   return { ok: true, value: { lead: result.value.lead } };
 }
 
@@ -301,17 +244,14 @@ export async function addChoiceOption(
 
 // Writes an option's name, added price, or calories. A rename answers with
 // the whole option, so the page learns the check the database cleared with
-// it (D-153, Michael, October 10, 2026). With expected, the write is an
-// Undo: it happens only if the text is still the one the change wrote. A
-// price or calories travel as the field's text and are read here, on both
-// sides.
+// it (D-153, Michael, October 10, 2026). A price or calories travel as the
+// field's text and are read here, on both sides.
 export async function setOptionText(
   rawCode: string,
   rawList: string,
   rawOption: string,
   rawField: string,
   rawValue: string,
-  expected?: string,
 ): Promise<
   ChoiceActionResult<Record<OptionText, string> & { option: OwnerOption }>
 > {
@@ -324,29 +264,24 @@ export async function setOptionText(
   const value = cleanOptionText(field.data, rawValue);
   const rule = optionTextProblem(field.data, value);
   if (rule) return refuse({ kind: "invalid", rule });
-  const was = typeof expected === "string" ? expected : undefined;
   let result;
   if (field.data === "price") {
     const price = parsePrice(value);
-    const wasPrice = was === undefined ? undefined : parsePrice(was);
-    if (!price.ok || (wasPrice && !wasPrice.ok)) return failed;
+    if (!price.ok) return failed;
     result = await setOwnerOptionPrice(
       scope.client,
       scope.listId,
       id.data,
       price.cents,
-      wasPrice?.cents,
     );
   } else if (field.data === "calories") {
     const calories = parseCalories(value);
-    const wasCalories = was === undefined ? undefined : parseCalories(was);
-    if (!calories.ok || (wasCalories && !wasCalories.ok)) return failed;
+    if (!calories.ok) return failed;
     result = await setOwnerOptionCalories(
       scope.client,
       scope.listId,
       id.data,
       calories.calories,
-      wasCalories?.calories,
     );
   } else {
     result = await renameOwnerOption(
@@ -355,24 +290,19 @@ export async function setOptionText(
       id.data,
       scope.userId,
       value,
-      was,
     );
   }
   refresh();
-  if (!result.ok) {
-    return refuse(
-      fromWrite(result.error, was === undefined ? "gone" : "changed"),
-    );
-  }
+  if (!result.ok) return refuse(fromWrite(result.error, "gone"));
   return {
     ok: true,
     value: { ...textsOf(result.value), option: result.value },
   };
 }
 
-// Marks the option removed. The row stays, so Undo can bring it back with
-// its lists and its check. An option always holds its name, so a remove
-// asks nothing and counts nothing (D-119).
+// Marks the option removed: the row stays, marked by deleted_at, with its
+// lists and its check. An option is a part of the list's form, so a remove
+// asks nothing and counts nothing (D-119, D-221).
 export async function removeChoiceOption(
   rawCode: string,
   rawList: string,
@@ -382,53 +312,10 @@ export async function removeChoiceOption(
   if (!scope.ok) return scope;
   const id = idSchema.safeParse(rawOption);
   if (!id.success) return gone;
-  const result = await setOwnerOptionDeleted(
-    scope.client,
-    scope.listId,
-    id.data,
-    true,
-  );
+  const result = await removeOwnerOption(scope.client, scope.listId, id.data);
   refresh();
   if (!result.ok) return refuse(fromWrite(result.error, "gone"));
   return { ok: true, value: null };
-}
-
-// Brings a removed option back, then puts the list in the order it had
-// before the remove.
-export async function restoreChoiceOption(
-  rawCode: string,
-  rawList: string,
-  rawOption: string,
-  rawOrder: string[],
-): Promise<ChoiceActionResult<{ position: number; total: number }>> {
-  const scope = await listScope(rawCode, rawList);
-  if (!scope.ok) return scope;
-  const id = idSchema.safeParse(rawOption);
-  const order = orderSchema.safeParse(rawOrder);
-  if (!id.success || !order.success) return refuse({ kind: "changed" });
-  const result = await setOwnerOptionDeleted(
-    scope.client,
-    scope.listId,
-    id.data,
-    false,
-  );
-  refresh();
-  if (!result.ok) return refuse(fromWrite(result.error, "changed"));
-
-  let live: string[];
-  try {
-    const options = await listOwnerOptions(scope.client, scope.listId);
-    live = options.map((option) => option.id);
-  } catch {
-    return { ok: true, value: { position: 0, total: 0 } };
-  }
-  const wanted = mergeOrder(order.data, live);
-  const placed = await setOwnerOptionOrder(scope.client, scope.listId, wanted);
-  const final = placed.ok ? wanted : live;
-  return {
-    ok: true,
-    value: { position: final.indexOf(id.data) + 1, total: final.length },
-  };
 }
 
 export async function orderChoiceOptions(

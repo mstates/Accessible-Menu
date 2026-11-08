@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
 import {
@@ -9,18 +8,11 @@ import {
   type ChoiceHome,
   type OptionText,
 } from "@/domain/choices";
-import {
-  listUndoSchema,
-  undoLabel,
-  type EditingStrings,
-  type ListUndo,
-  type ListWords,
-} from "../editing/list-words";
+import type { EditingStrings, ListWords } from "../editing/list-words";
 
 // Every sentence the choice lists say, built in one place from copy (D-166):
-// the rows on a dish's or a section's page, the list's own page with its
-// lead and its options, and the entry the rows leave on their home page's
-// Undo stack. Pure: no React, no network.
+// the rows on a dish's or a section's page, and the list's own page with
+// its lead and its options. Pure: no React, no network.
 
 export type ChoiceStrings = Copy["owner"]["choices"];
 
@@ -60,33 +52,6 @@ export const choiceListRows = {
   clean: (_field: never, value: string) => cleanLead(value),
   rule: (_field: never, value: string) => leadProblem(value),
 };
-
-// The rows' entries as a home page keeps them on its one Undo stack
-// (D-145): the list's own entries, wrapped under one kind the page's
-// other entries never use.
-export const choiceListEntrySchema = z.object({
-  kind: z.literal("choice-list"),
-  entry: listUndoSchema([]),
-});
-
-export type ChoiceListEntry = z.infer<typeof choiceListEntrySchema>;
-
-export function wrapListEntry(entry: ListUndo): ChoiceListEntry {
-  return { kind: "choice-list", entry };
-}
-
-export function readListEntry(entry: { kind: string }): ListUndo | null {
-  return entry.kind === "choice-list" ? (entry as ChoiceListEntry).entry : null;
-}
-
-// The Undo control's whole name for one of the rows' entries, which is also
-// its visible text.
-export function choiceListUndoLabel(
-  words: ListWords,
-  entry: ChoiceListEntry,
-): string {
-  return undoLabel(words, entry.entry);
-}
 
 // The lead over the rows: the dish's or the section's.
 export function choiceListsLead(
@@ -130,8 +95,6 @@ export function leadWords(
         suffix: "",
         hint: page.leadHint,
         notSaved: page.notSaved.lead,
-        changed: page.undo.lead,
-        back: page.undo.leadBack,
       },
     },
   };
@@ -170,16 +133,12 @@ export function optionWords(
         inputMode: "decimal",
         prefix: "$",
         notSaved: options.notSaved.price,
-        changed: options.undo.price,
-        back: options.undo.priceBack,
       },
       calories: {
         label: options.caloriesLabel,
         suffix: options.labelFor,
         hint: options.caloriesHint,
         notSaved: options.notSaved.calories,
-        changed: options.undo.calories,
-        back: options.undo.caloriesBack,
       },
     },
   };

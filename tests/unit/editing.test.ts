@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { en } from "../../src/copy";
-import { cleanMenuName } from "../../src/domain/menu";
+import { cleanMenuName, HOLDS_NOTHING } from "../../src/domain/menu";
 import { commitOf } from "../../src/features/owner/editing/commit";
 import { afterHold, leaveOf } from "../../src/features/owner/editing/leave";
 import {
@@ -9,29 +9,15 @@ import {
 } from "../../src/features/owner/editing/spoken";
 import { statusOf } from "../../src/features/owner/editing/status";
 import {
-  afterUndo,
-  newestUndo,
-  pushUndo,
-  readUndo,
-  UNDO_LIMIT,
-} from "../../src/features/owner/editing/undo";
-import {
   addedSentence,
   countText,
   deleteQuestion,
   edgeSentence,
   failureSentence,
-  isListUndo,
-  listUndoSchema,
   movedSentence,
   notSavedSentence,
-  notUndoneSentence,
   problemText,
-  undoLabel,
-  undoneSentence,
-  undoOutcome,
   type ListProblem,
-  type ListUndo,
 } from "../../src/features/owner/editing/list-words";
 import { choiceListWords } from "../../src/features/owner/choices/choice-words";
 import {
@@ -42,13 +28,8 @@ import {
   sectionTexts,
 } from "../../src/features/owner/lists";
 import {
-  moveNotUndone,
   movedSentence as sectionMovedSentence,
-  moveUndoLabel,
-  moveUndoneSentence,
   notMovedSentence,
-  sectionMoveSchema,
-  type SectionMove,
 } from "../../src/features/owner/section-move";
 import { cleanSectionText } from "../../src/domain/section";
 
@@ -64,12 +45,6 @@ const sectionWords = sectionList.words(sections, editing);
 const dishWords = dishList.words(dishes, editing);
 // A section's note and every-dish line, on its own page (D-135).
 const ownWords = sectionTexts.words(sections, dishes, editing);
-
-// The stored shape of each list's Undo entries. A section's page keeps the
-// section's own texts on its dishes' stack.
-const menuUndoSchema = listUndoSchema([]);
-const sectionUndoSchema = listUndoSchema([]);
-const sectionPageUndoSchema = listUndoSchema([], SECTION_OWN_TEXTS);
 
 describe("when a field saves (D-111)", () => {
   const untouched = {
@@ -215,7 +190,7 @@ describe("what a landed save says (D-118)", () => {
     expect(saysSavedAgain(false, "saved")).toBe(false);
   });
 
-  it("adds nothing to what an add, a move, a delete, or an Undo says", () => {
+  it("adds nothing to what an add, a move, or a delete says", () => {
     expect(saysSaved({ kind: "change", ...quiet })).toBe(false);
     expect(saysSaved({ kind: "change", ...quiet, owed: true })).toBe(false);
     expect(saysSaved({ kind: "change", ...quiet, waiting: 1 })).toBe(false);
@@ -269,93 +244,7 @@ describe("an owner link on an editing screen", () => {
   });
 });
 
-const renamed: ListUndo = {
-  kind: "rename",
-  id: "a",
-  from: "Dinner",
-  to: "Supper",
-};
-const added: ListUndo = { kind: "add", id: "b", name: "Lunch" };
-const deleted: ListUndo = {
-  kind: "delete",
-  id: "a",
-  name: "Dinner",
-  order: ["a", "b"],
-};
-const moved: ListUndo = {
-  kind: "move",
-  id: "b",
-  name: "Lunch",
-  order: ["a", "b"],
-};
-
-describe("the Undo stack", () => {
-  it("names the newest change and nothing when empty", () => {
-    expect(newestUndo([])).toBeNull();
-    expect(newestUndo(pushUndo<ListUndo>([renamed], added))).toEqual(added);
-  });
-
-  it("keeps the last twenty changes", () => {
-    let stack: ListUndo[] = [];
-    for (let index = 0; index < UNDO_LIMIT + 5; index += 1) {
-      stack = pushUndo(stack, { kind: "add", id: String(index), name: "x" });
-    }
-    expect(stack).toHaveLength(UNDO_LIMIT);
-    expect(stack[0]).toMatchObject({ id: "5" });
-    expect(newestUndo(stack)).toMatchObject({ id: String(UNDO_LIMIT + 4) });
-  });
-
-  it("replays strictly in order, newest first", () => {
-    let stack = pushUndo<ListUndo>(
-      pushUndo<ListUndo>([deleted], added),
-      renamed,
-    );
-    expect(newestUndo(stack)).toEqual(renamed);
-    stack = afterUndo(stack, "applied");
-    expect(newestUndo(stack)).toEqual(added);
-    stack = afterUndo(stack, "applied");
-    expect(newestUndo(stack)).toEqual(deleted);
-  });
-
-  it("drops an entry that no longer applies", () => {
-    expect(afterUndo([deleted, renamed], "stale")).toEqual([deleted]);
-  });
-
-  it("keeps an entry blocked by a taken name, and one whose save failed", () => {
-    expect(afterUndo([deleted, renamed], "blocked")).toEqual([
-      deleted,
-      renamed,
-    ]);
-    expect(afterUndo([deleted, renamed], "failed")).toEqual([deleted, renamed]);
-  });
-
-  it("survives the trip through storage", () => {
-    const stack = [renamed, added, deleted, moved];
-    expect(readUndo(JSON.stringify(stack), menuUndoSchema)).toEqual(stack);
-  });
-
-  it.each([
-    [null],
-    [""],
-    ["not json"],
-    ['{"kind":"rename"}'],
-    ['[{"kind":"rename","id":"a"}]'],
-    ['[{"kind":"shuffle","id":"a","name":"x"}]'],
-  ])("reads %j as an empty stack", (raw) => {
-    expect(readUndo(raw, menuUndoSchema)).toEqual([]);
-  });
-});
-
 describe("what the menus list says", () => {
-  it("names each kind of change on the Undo control", () => {
-    expect(undoLabel(menuWords, renamed)).toBe(
-      "Undo: renamed Dinner to Supper",
-    );
-    expect(undoLabel(menuWords, added)).toBe("Undo: added Lunch");
-    expect(undoLabel(menuWords, deleted)).toBe("Undo: deleted Dinner");
-    expect(undoLabel(menuWords, moved)).toBe("Undo: moved Lunch");
-  });
-
   it("counts menus in words", () => {
     expect(countText(menuWords, 1)).toBe("1 menu");
     expect(countText(menuWords, 3)).toBe("3 menus");
@@ -395,7 +284,6 @@ describe("what the menus list says", () => {
     [{ kind: "signed-out" }, editing.problems.signedOut],
     [{ kind: "invalid", rule: "nameLength" }, strings.errors.nameLength],
     [{ kind: "gone" }, strings.errors.gone],
-    [{ kind: "changed" }, editing.stale],
     [{ kind: "mismatch" }, strings.errors.listChanged],
     [{ kind: "grew" }, strings.errors.grew],
     [{ kind: "failed" }, editing.problems.failed],
@@ -403,73 +291,6 @@ describe("what the menus list says", () => {
     [{ kind: "out-of-date" }, editing.problems.outOfDate],
   ])("has words for %j", (problem, text) => {
     expect(problemText(menuWords, problem, "Dinner")).toBe(text);
-  });
-
-  it("says what Undo put back", () => {
-    expect(undoneSentence(menuWords, renamed, 0, 0)).toBe(
-      "Undone. The name is Dinner again.",
-    );
-    expect(undoneSentence(menuWords, added, 0, 0)).toBe(
-      "Undone. Lunch is removed.",
-    );
-    expect(undoneSentence(menuWords, deleted, 2, 3)).toBe(
-      "Undone. Dinner is back, 2 of 3.",
-    );
-    expect(undoneSentence(menuWords, moved, 1, 3)).toBe(
-      "Undone. Lunch is back at 1 of 3.",
-    );
-  });
-
-  it("says why Undo could not, when a name is taken", () => {
-    expect(notUndoneSentence(menuWords, deleted, { kind: "name-taken" })).toBe(
-      "Dinner cannot come back while another menu is called Dinner.",
-    );
-    expect(notUndoneSentence(menuWords, renamed, { kind: "name-taken" })).toBe(
-      "The name Dinner is taken by another menu, so this was not undone.",
-    );
-  });
-
-  it("says when a change can no longer be undone", () => {
-    expect(notUndoneSentence(menuWords, renamed, { kind: "changed" })).toBe(
-      strings.undo.textChanged,
-    );
-    expect(notUndoneSentence(menuWords, added, { kind: "gone" })).toBe(
-      editing.stale,
-    );
-    expect(notUndoneSentence(menuWords, moved, { kind: "mismatch" })).toBe(
-      editing.stale,
-    );
-  });
-
-  it("says when the Undo itself did not get through", () => {
-    expect(notUndoneSentence(menuWords, deleted, { kind: "unreachable" })).toBe(
-      `${editing.notUndone} ${editing.problems.unreachable}`,
-    );
-  });
-});
-
-describe("what becomes of an Undo that could not be applied", () => {
-  it("keeps an entry a taken name is in the way of", () => {
-    expect(undoOutcome({ kind: "name-taken" })).toBe("blocked");
-  });
-
-  it.each<ListProblem>([
-    { kind: "changed" },
-    { kind: "gone" },
-    { kind: "mismatch" },
-    { kind: "grew" },
-  ])("drops an entry whose change no longer stands: %j", (problem) => {
-    expect(undoOutcome(problem)).toBe("stale");
-  });
-
-  it.each<ListProblem>([
-    { kind: "failed" },
-    { kind: "unreachable" },
-    { kind: "out-of-date" },
-    { kind: "signed-out" },
-    { kind: "parent-gone" },
-  ])("keeps an entry for another try after %j", (problem) => {
-    expect(undoOutcome(problem)).toBe("failed");
   });
 });
 
@@ -555,28 +376,25 @@ describe("what a delete asks and when it is refused (D-119)", () => {
     );
   });
 
-  it("says an added menu stays once it holds sections, since Undo never deletes content", () => {
-    expect(notUndoneSentence(menuWords, added, { kind: "grew" })).toBe(
-      "Lunch has sections now, so it stays. To delete it, use its Delete button.",
+  // D-221: every delete asks first, a row that holds nothing by its name
+  // alone, whatever the list.
+  it("asks by the name alone when the row holds nothing (D-221)", () => {
+    expect(deleteQuestion(menuWords, "Lunch", HOLDS_NOTHING)).toBe(
+      "Delete Lunch?",
     );
-  });
-
-  it("says an added section stays once it holds dishes", () => {
+    expect(deleteQuestion(sectionWords, "Starters", HOLDS_NOTHING)).toBe(
+      "Delete Starters?",
+    );
+    expect(deleteQuestion(dishWords, "Soup of the day", HOLDS_NOTHING)).toBe(
+      "Delete Soup of the day?",
+    );
     expect(
-      notUndoneSentence(
-        sectionWords,
-        { kind: "add", id: "c", name: "Desserts" },
-        { kind: "grew" },
+      deleteQuestion(
+        choiceListWords(choices, editing, "dish"),
+        "Add on",
+        HOLDS_NOTHING,
       ),
-    ).toBe(
-      "Desserts has dishes now, so it stays. To delete it, use its Delete button.",
-    );
-  });
-
-  it("drops that entry, so Undo moves on to the change before", () => {
-    expect(afterUndo([renamed, added], undoOutcome({ kind: "grew" }))).toEqual([
-      renamed,
-    ]);
+    ).toBe("Delete Add on?");
   });
 });
 
@@ -618,50 +436,7 @@ describe("when an optional field saves", () => {
   });
 });
 
-const sectionRenamed: ListUndo = {
-  kind: "rename",
-  id: "a",
-  from: "Mains",
-  to: "Entrees",
-};
-const sectionNoted: ListUndo = {
-  kind: "own",
-  field: "note",
-  id: "a",
-  name: "Starters",
-  from: "",
-  to: "Fried in peanut oil.",
-};
-const sectionAdded: ListUndo = {
-  kind: "add",
-  id: "c",
-  name: "Desserts",
-};
-const sectionDeleted: ListUndo = {
-  kind: "delete",
-  id: "a",
-  name: "Starters",
-  order: ["a", "b", "c"],
-};
-const sectionMoved: ListUndo = {
-  kind: "move",
-  id: "a",
-  name: "Starters",
-  order: ["a", "b", "c"],
-};
-
 describe("what the sections list says", () => {
-  it("names each kind of change on the Undo control", () => {
-    expect(undoLabel(sectionWords, sectionRenamed)).toBe(
-      "Undo: renamed Mains to Entrees",
-    );
-    expect(undoLabel(sectionWords, sectionAdded)).toBe("Undo: added Desserts");
-    expect(undoLabel(sectionWords, sectionDeleted)).toBe(
-      "Undo: deleted Starters",
-    );
-    expect(undoLabel(sectionWords, sectionMoved)).toBe("Undo: moved Starters");
-  });
-
   it("counts sections in words", () => {
     expect(countText(sectionWords, 1)).toBe("1 section");
     expect(countText(sectionWords, 3)).toBe("3 sections");
@@ -700,7 +475,6 @@ describe("what the sections list says", () => {
     [{ kind: "invalid", rule: "nameLength" }, sections.errors.nameLength],
     [{ kind: "gone" }, sections.errors.gone],
     [{ kind: "parent-gone" }, sections.errors.parentGone],
-    [{ kind: "changed" }, editing.stale],
     [{ kind: "mismatch" }, sections.errors.listChanged],
     [{ kind: "grew" }, sections.errors.grew],
     [{ kind: "failed" }, editing.problems.failed],
@@ -708,75 +482,6 @@ describe("what the sections list says", () => {
     [{ kind: "out-of-date" }, editing.problems.outOfDate],
   ])("has words for %j", (problem, text) => {
     expect(problemText(sectionWords, problem, "Mains")).toBe(text);
-  });
-
-  it("says what Undo put back", () => {
-    expect(undoneSentence(sectionWords, sectionRenamed, 0, 0)).toBe(
-      "Undone. The name is Mains again.",
-    );
-    expect(undoneSentence(sectionWords, sectionAdded, 0, 0)).toBe(
-      "Undone. Desserts is removed.",
-    );
-    expect(undoneSentence(sectionWords, sectionDeleted, 1, 3)).toBe(
-      "Undone. Starters is back, 1 of 3.",
-    );
-    expect(undoneSentence(sectionWords, sectionMoved, 1, 3)).toBe(
-      "Undone. Starters is back at 1 of 3.",
-    );
-  });
-
-  it("says why Undo could not, when a name is taken", () => {
-    expect(
-      notUndoneSentence(sectionWords, sectionDeleted, { kind: "name-taken" }),
-    ).toBe(
-      "Starters cannot come back while another section is called Starters.",
-    );
-    expect(
-      notUndoneSentence(sectionWords, sectionRenamed, { kind: "name-taken" }),
-    ).toBe(
-      "The name Mains is taken by another section, so this was not undone.",
-    );
-  });
-
-  it("says when a name was changed again since, so nothing is written over", () => {
-    expect(
-      notUndoneSentence(sectionWords, sectionRenamed, { kind: "changed" }),
-    ).toBe(sections.undo.textChanged);
-  });
-
-  it("says when a change can no longer be undone", () => {
-    expect(
-      notUndoneSentence(sectionWords, sectionAdded, { kind: "gone" }),
-    ).toBe(editing.stale);
-    expect(
-      notUndoneSentence(sectionWords, sectionMoved, { kind: "mismatch" }),
-    ).toBe(editing.stale);
-  });
-
-  it("says when the Undo itself did not get through", () => {
-    expect(
-      notUndoneSentence(sectionWords, sectionDeleted, { kind: "unreachable" }),
-    ).toBe(`${editing.notUndone} ${editing.problems.unreachable}`);
-    expect(
-      notUndoneSentence(sectionWords, sectionRenamed, { kind: "parent-gone" }),
-    ).toBe(`${editing.notUndone} ${sections.errors.parentGone}`);
-  });
-
-  it("keeps its Undo stack through storage", () => {
-    const stack = [sectionRenamed, sectionAdded, sectionDeleted, sectionMoved];
-    expect(readUndo(JSON.stringify(stack), sectionUndoSchema)).toEqual(stack);
-  });
-
-  it("reads a stack holding a note changed on a menu's page, before D-135, as empty", () => {
-    expect(
-      readUndo(
-        '[{"kind":"text","field":"note","id":"a","name":"Starters","from":"","to":"y"}]',
-        sectionUndoSchema,
-      ),
-    ).toEqual([]);
-    expect(readUndo(JSON.stringify([sectionNoted]), menuUndoSchema)).toEqual(
-      [],
-    );
   });
 });
 
@@ -795,12 +500,6 @@ describe("what a section's own text says on its page", () => {
     });
   });
 
-  it("names the change on the Undo control", () => {
-    expect(undoLabel(ownWords, sectionNoted)).toBe(
-      "Undo: changed the note for Starters",
-    );
-  });
-
   it("names the field and the problem when a save fails", () => {
     expect(
       failureSentence(
@@ -814,78 +513,11 @@ describe("what a section's own text says on its page", () => {
     expect(problemText(ownWords, { kind: "parent-gone" }, "")).toBe(
       dishes.errors.parentGone,
     );
-    expect(
-      notUndoneSentence(ownWords, sectionNoted, { kind: "parent-gone" }),
-    ).toBe(`${editing.notUndone} ${dishes.errors.parentGone}`);
-  });
-
-  it("says what Undo put back", () => {
-    expect(undoneSentence(ownWords, sectionNoted, 0, 0)).toBe(
-      "Undone. The note for Starters is as it was.",
-    );
-  });
-
-  it("says when a text was changed again since, so nothing is written over", () => {
-    expect(notUndoneSentence(ownWords, sectionNoted, { kind: "changed" })).toBe(
-      sections.undo.textChanged,
-    );
-  });
-
-  it("are kept on the section's page's Undo stack with its dishes' changes", () => {
-    const stack: ListUndo[] = [
-      { kind: "rename", id: "d", from: "Soup", to: "Soup of the day" },
-      sectionNoted,
-      { kind: "add", id: "e", name: "House salad" },
-    ];
-    expect(readUndo(JSON.stringify(stack), sectionPageUndoSchema)).toEqual(
-      stack,
-    );
-    expect(
-      readUndo(JSON.stringify(stack), listUndoSchema([])),
-      "a dishes stack with no own texts reads it as empty",
-    ).toEqual([]);
-    expect(
-      isListUndo(sectionNoted),
-      "a change the list itself takes back",
-    ).toBe(true);
-  });
-
-  it("reads an own change to a field the page does not have as empty", () => {
-    expect(
-      readUndo(
-        '[{"kind":"own","field":"name","id":"a","name":"Starters","from":"","to":"y"}]',
-        sectionPageUndoSchema,
-      ),
-    ).toEqual([]);
   });
 });
 
 // The third list (D-128). It says what the other two say, in its own words.
 describe("what the dishes list says", () => {
-  const dishRenamed: ListUndo = {
-    kind: "rename",
-    id: "a",
-    from: "Soup",
-    to: "Soup of the day",
-  };
-  const dishAdded: ListUndo = { kind: "add", id: "b", name: "House salad" };
-  const dishDeleted: ListUndo = {
-    kind: "delete",
-    id: "a",
-    name: "Garlic bread",
-    order: ["a", "b"],
-  };
-
-  it("names each kind of change on the Undo control", () => {
-    expect(undoLabel(dishWords, dishRenamed)).toBe(
-      "Undo: renamed Soup to Soup of the day",
-    );
-    expect(undoLabel(dishWords, dishAdded)).toBe("Undo: added House salad");
-    expect(undoLabel(dishWords, dishDeleted)).toBe(
-      "Undo: deleted Garlic bread",
-    );
-  });
-
   it("counts dishes in words, and says an add with the count", () => {
     expect(countText(dishWords, 1)).toBe("1 dish");
     expect(countText(dishWords, 3)).toBe("3 dishes");
@@ -894,15 +526,12 @@ describe("what the dishes list says", () => {
     );
   });
 
-  it("says a move, an edge, and what Undo put back", () => {
+  it("says a move and an edge", () => {
     expect(movedSentence(dishWords, "down", "Soup of the day", 2, 3)).toBe(
       "Soup of the day moved down. 2 of 3.",
     );
     expect(edgeSentence(dishWords, "up", "Soup of the day")).toBe(
       "Soup of the day is already first.",
-    );
-    expect(undoneSentence(dishWords, dishDeleted, 1, 2)).toBe(
-      "Undone. Garlic bread is back, 1 of 2.",
     );
   });
 
@@ -922,30 +551,12 @@ describe("what the dishes list says", () => {
       "This section is no longer here. Go back to Menus.",
     );
   });
-
-  it("stores no text change, since a dish has only its name here", () => {
-    const schema = listUndoSchema([]);
-    expect(readUndo(JSON.stringify([dishRenamed, dishAdded]), schema)).toEqual([
-      dishRenamed,
-      dishAdded,
-    ]);
-    expect(readUndo(JSON.stringify([sectionNoted]), schema)).toEqual([]);
-  });
 });
 
-// A section moved to another menu, from its own page (D-129). It shares the
-// page's Undo with the dishes.
+// A section moved to another menu, from its own page (D-129).
 describe("what a section's move says", () => {
   const move = dishes.move;
   const gone = dishes.errors.parentGone;
-  const entry: SectionMove = {
-    kind: "relocate",
-    id: "s",
-    name: "Starters",
-    from: { id: "d", name: "Dinner", order: ["s", "m"] },
-    to: { id: "l", name: "Lunch" },
-  };
-
   it("says the move once, with where the section landed and that the owner is still on this page", () => {
     expect(sectionMovedSentence(move, "Starters", "Lunch")).toBe(
       "Starters moved to Lunch. It is the last section there. You are still on this page.",
@@ -997,55 +608,5 @@ describe("what a section's move says", () => {
         "Lunch",
       ),
     ).toBe(`Starters was not moved. ${editing.problems.outOfDate}`);
-  });
-
-  it("names the move on the Undo control, and says where Undo put the section", () => {
-    expect(moveUndoLabel(move, entry)).toBe("Undo: moved Starters to Lunch");
-    expect(moveUndoneSentence(move, entry, 1, 3)).toBe(
-      "Undone. Starters is back in Dinner, 1 of 3.",
-    );
-  });
-
-  it("keeps the entry when the old menu has taken the name since", () => {
-    expect(
-      moveNotUndone(move, editing, gone, entry, { kind: "name-taken" }),
-    ).toEqual({
-      outcome: "blocked",
-      sentence:
-        "Starters cannot go back while Dinner has another section called Starters.",
-    });
-  });
-
-  it.each([
-    { kind: "menu-gone" },
-    { kind: "gone" },
-    { kind: "parent-gone" },
-    { kind: "changed" },
-  ] as const)(
-    "drops the entry when the move no longer stands: %j",
-    (problem) => {
-      expect(moveNotUndone(move, editing, gone, entry, problem)).toEqual({
-        outcome: "stale",
-        sentence: editing.stale,
-      });
-    },
-  );
-
-  it("keeps the entry for another try when the save did not get through", () => {
-    expect(
-      moveNotUndone(move, editing, gone, entry, { kind: "unreachable" }),
-    ).toEqual({
-      outcome: "failed",
-      sentence: `${editing.notUndone} ${editing.problems.unreachable}`,
-    });
-  });
-
-  it("is told apart from a list's own change, and survives storage beside one", () => {
-    expect(isListUndo(entry)).toBe(false);
-    expect(isListUndo(renamed)).toBe(true);
-    expect(readUndo(JSON.stringify([entry]), sectionMoveSchema)).toEqual([
-      entry,
-    ]);
-    expect(readUndo(JSON.stringify([entry]), listUndoSchema([]))).toEqual([]);
   });
 });
