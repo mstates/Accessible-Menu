@@ -4,15 +4,19 @@ import { useEffect } from "react";
 
 // Next's route announcer kept out of React Aria's hide (Q-127, D-201). After
 // an in-page navigation Next leaves the new page's title in its announcer,
-// an assertive alert at the end of the body, until the next navigation. A
-// Select's list is a modal layer: while it is open React Aria makes
-// everything outside it inert, and on close it gives it all back. VoiceOver
-// on iOS reads an alert that comes back, so the next open of any Select read
-// the page's title after the option. React Aria's ariaHideOutside keeps
-// every element marked data-live-announcer="true" visible, a convention it
-// keeps for its own announcer and does not document, so Next's announcer
-// carries that mark for the life of the page and never loses it. The cost:
-// while a list is open the announcer's text can be reached by a swipe.
+// an assertive alert, until the next navigation. Next appends it to the
+// body while the page hydrates, after the root layout's wrapper, and it
+// stays the body's last element child because every page mounts inside
+// that wrapper (Q-154, D-228). A Select's list is a modal layer: while it
+// is open React Aria makes everything outside it inert, and on close it
+// gives it all back. VoiceOver on iOS reads an alert that comes back, so
+// the next open of any Select read the page's title after the option. React
+// Aria's ariaHideOutside keeps every element marked
+// data-live-announcer="true" visible, a convention it keeps for its own
+// announcer and does not document, so Next's announcer carries that mark
+// for the life of the page and never loses it. The cost: while a list or a
+// dialog is open the announcer's text can be reached by a swipe (Q-149,
+// D-227).
 //
 // Next creates its element in an effect of its own that runs after the root
 // layout's, so on a full load it is not there yet: a watch on the body waits

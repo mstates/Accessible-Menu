@@ -688,6 +688,39 @@ function recordTitles() {
   }).observe(document, { subtree: true, childList: true, characterData: true });
 }
 
+// Where Next's route announcer sits once a page has arrived (Q-154, D-228):
+// a child of the body after the element that holds main, the root layout's
+// wrapper, with nothing after it but script elements and, on a preview,
+// Vercel's toolbar, which the gate's other checks pass over too. Before the
+// wrapper every link press appended the new page's frame after the
+// announcer, so the swipe after the skip link read the title just
+// announced.
+function announcerPlace(page: Page) {
+  return page.evaluate(() => {
+    const announcer = document.querySelector("next-route-announcer");
+    const holder = document.querySelector("main")?.closest("body > *");
+    if (!announcer || !holder) return null;
+    const after: string[] = [];
+    for (
+      let node = announcer.nextElementSibling;
+      node;
+      node = node.nextElementSibling
+    ) {
+      const name = node.localName;
+      if (name === "script" || name.startsWith("vercel-")) continue;
+      after.push(name);
+    }
+    return {
+      afterHolder:
+        announcer.parentElement === document.body &&
+        (holder.compareDocumentPosition(announcer) &
+          Node.DOCUMENT_POSITION_FOLLOWING) !==
+          0,
+      after,
+    };
+  });
+}
+
 function titlesSeen(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const w = window as unknown as { __arrivalTitles: string[] };
@@ -704,7 +737,9 @@ function titlesSeen(page: Page): Promise<string[]> {
 // page nav (D-222). The walk reaches each by the link an owner would press,
 // and comes back to a menu's page and a section's page a second time, at
 // another menu and another section, once the client already knows those
-// routes.
+// routes. After the dashboard's load and after each arrival, the announcer
+// comes after the wrapper that holds every page, with only scripts after it
+// (Q-154, D-228).
 // The title the page commits with is the whole title, never an empty one
 // for an instant. Owner links never prefetch: a link pressed while its own
 // prefetch was on its way arrived with an empty title, so the walk checks
@@ -734,6 +769,12 @@ for (const pace of ["at once", "after a pause"] as const) {
           .textContent()
       )?.trim();
       expect(name, "the dashboard names the restaurant").toBeTruthy();
+      await expect
+        .poll(() => announcerPlace(page), {
+          message:
+            "after the dashboard's load the route announcer comes after the wrapper, with only scripts after it",
+        })
+        .toEqual({ afterHolder: true, after: [] });
       const restaurant = name ?? "";
       const menusPath = restaurantMenusPath(code);
       const menuPage = (menu: { id: string }) =>
@@ -844,6 +885,10 @@ for (const pace of ["at once", "after a pause"] as const) {
           await titlesSeen(page),
           `arriving at ${step.path}, the page commits with its whole title and never an empty one`,
         ).toEqual([step.title]);
+        expect(
+          await announcerPlace(page),
+          `arriving at ${step.path}, the route announcer comes after the wrapper, with only scripts after it`,
+        ).toEqual({ afterHolder: true, after: [] });
         if (pace === "after a pause") await page.waitForTimeout(1000);
       }
       expect(prefetches, "no owner link prefetches its page").toEqual([]);

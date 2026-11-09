@@ -27,7 +27,10 @@ export default function RootLayout({
         >
           {en.skipLink}
         </a>
-        {children}
+        {/* Every page mounts inside this one element, which stays across
+            navigations, so a link press never puts a page after Next's
+            route announcer at the end of the body (Q-154, D-228). */}
+        <div>{children}</div>
       </body>
     </html>
   );

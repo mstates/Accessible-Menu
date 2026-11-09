@@ -74,7 +74,7 @@ export function ownerPages(code: string) {
 // sit inside main (D-222). It marks a link as current, as the page or,
 // inside a menu, as the part of the nav the page sits in (D-122).
 export async function restaurantName(page: Page): Promise<string> {
-  const nav = page.locator("body > nav");
+  const nav = page.locator("header + nav");
   const labelId = await nav.getAttribute("aria-labelledby");
   if (!labelId) throw new Error("the restaurant nav has no visible label");
   const label = await page.locator(`[id="${labelId}"]`).textContent();
