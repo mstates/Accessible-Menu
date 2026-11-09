@@ -2,10 +2,6 @@
 
 import { startTransition, useMemo, useOptimistic, useState } from "react";
 import { useAnnounce } from "@/core/a11y/announcer";
-import type { OwnerChoiceList } from "@/domain/choices";
-import type { DietaryCopy } from "@/domain/dietary";
-import type { ScheduleCopy } from "@/domain/schedule";
-import type { TimeCopy } from "@/domain/time";
 import {
   cleanDishText,
   cleanSizeText,
@@ -37,9 +33,6 @@ import {
   setDishText,
   setSizeText,
 } from "./actions";
-import type { SameNamedPlace } from "../allergens/allergen-words";
-import type { ChoiceStrings } from "../choices/choice-words";
-import { useChoiceListRows } from "../choices/useChoiceListRows";
 import {
   dishWords,
   kindNotSavedSentence,
@@ -51,54 +44,28 @@ import {
   sizeWords,
   type DishStrings,
 } from "./dish-words";
-import type { ShowingNow } from "./schedule-words";
-import { useDishAllergens } from "./useDishAllergens";
-import { useDishAvailability } from "./useDishAvailability";
-import { useDishCookedToOrder } from "./useDishCookedToOrder";
-import { useDishSchedule } from "./useDishSchedule";
-import { useDishTags } from "./useDishTags";
 
-// A dish's own page (D-111, D-128, D-139): the state and the handlers
-// behind its texts, its price choice, its sizes, its allergens (D-148,
-// useDishAllergens), its tags, its availability, and its schedule (task 5,
-// useDishTags, useDishAvailability, useDishSchedule), its Cooked to order
-// mark and its choice lists (task 7, useDishCookedToOrder,
-// useChoiceListRows). The page's own texts take no list; it composes the
-// same editing state and the same text-commit path (texts.ts) the lists
-// use, and its choice lists share them (D-145), so it keeps one queue and
-// one saved status for everything on it. The price choice saves on change
-// and says "Saved." once, as a field does (D-118); the other choices'
-// values stay stored and come back on switching back (Michael, October 7,
-// 2026). A size is added blank and takes focus in its name once it lands; a
+// A dish's General page (D-111, D-128, D-139, D-222): the state and the
+// handlers behind its texts, its price choice, and its sizes. The page's
+// own texts take no list; it composes the same editing state and the same
+// text-commit path (texts.ts) the lists use, so it keeps one queue and one
+// saved status for everything on it. The price choice saves on change and
+// says "Saved." once, as a field does (D-118); the other choices' values
+// stay stored and come back on switching back (Michael, October 7, 2026).
+// A size is added blank and takes focus in its name once it lands; a
 // remove takes effect at once, on the press, since a size is a part of the
 // dish's form (D-221). Sizes keep the places the page showed them in while
-// the page is open (holdSizeOrder).
+// the page is open (holdSizeOrder). The dish's other groups live on their
+// own pages (dish-pages.ts), each with its own editing state.
 
 type Props = {
   strings: DishStrings;
-  choiceStrings: ChoiceStrings;
   editing: EditingStrings;
   code: string;
   dish: OwnerDishDetail;
-  // The dish's choice lists, in order, each with how many options it
-  // holds (D-166).
-  lists: OwnerChoiceList[];
   // The sizes as the server holds them, in price order. Every save ends
   // with a refresh, so this is always the truth.
   sizes: OwnerSize[];
-  // The live dishes elsewhere in the restaurant with this dish's name whose
-  // lists differ, or which are not checked (D-129).
-  sameNamed: SameNamedPlace[];
-  // What the server decided the dish's availability is at this render
-  // (D-160), the restaurant's zone it decided it in, and its clock, which
-  // every time-dependent line on the page reads.
-  showing: ShowingNow;
-  timeZone: string;
-  lang: string;
-  now: string;
-  dietaryCopy: DietaryCopy;
-  scheduleCopy: ScheduleCopy;
-  timeCopy: TimeCopy;
 };
 
 const KIND_KEY = "kind";
@@ -118,22 +85,12 @@ type Order = {
   ids: string[];
 };
 
-export function useDishPage({
+export function useDishGeneral({
   strings,
-  choiceStrings,
   editing: editingStrings,
   code,
   dish,
-  lists,
   sizes,
-  sameNamed,
-  showing,
-  timeZone,
-  lang,
-  now,
-  dietaryCopy,
-  scheduleCopy,
-  timeCopy,
 }: Props) {
   const announce = useAnnounce();
   const editing = useEditing(editingStrings);
@@ -178,71 +135,6 @@ export function useDishPage({
   // Where focus belongs after the page next changes: the name of a size
   // just added, a neighbor's name after a remove, as the list hook does.
   const focusNextRef = useFocusNext();
-
-  // The allergen group shares the page's editing state and focus.
-  const allergens = useDishAllergens({
-    strings,
-    editingStrings,
-    code,
-    dish,
-    editing,
-    words,
-    announce,
-    focusNextRef,
-    sameNamed,
-  });
-
-  // The showing groups share the page's editing state (task 5).
-  const tags = useDishTags({
-    strings,
-    code,
-    dish,
-    editing,
-    words,
-    names: dietaryCopy,
-  });
-  const availability = useDishAvailability({
-    strings,
-    code,
-    dish,
-    editing,
-    words,
-    showing,
-    timeZone,
-    lang,
-    now,
-    timeCopy,
-  });
-  const schedule = useDishSchedule({
-    strings,
-    code,
-    dish,
-    editing,
-    words,
-    announce,
-    timeZone,
-    lang,
-    now,
-    scheduleCopy,
-    timeCopy,
-  });
-  const cookedToOrder = useDishCookedToOrder({
-    strings,
-    code,
-    dish,
-    editing,
-    words,
-  });
-
-  // The choice lists share the page's editing state (D-145, D-166).
-  const choices = useChoiceListRows({
-    strings: choiceStrings,
-    editingStrings,
-    code,
-    home: { kind: "dish", id: dish.id },
-    lists,
-    shared: editing,
-  });
 
   function labelOf(size: OwnerSize, index: number): string {
     return sizeLabel(strings, size, index + 1);
@@ -378,12 +270,6 @@ export function useDishPage({
     editing.focusFirstFailed();
     const { failures } = editing.peek();
     for (const key of Object.keys(failures)) {
-      if (allergens.tryAgain(key, failures[key]?.value ?? "")) continue;
-      if (tags.tryAgain(key, failures[key]?.value ?? "")) continue;
-      if (availability.tryAgain(key, failures[key]?.value ?? "")) continue;
-      if (schedule.tryAgain(key, failures[key]?.value ?? "")) continue;
-      if (cookedToOrder.tryAgain(key, failures[key]?.value ?? "")) continue;
-      if (choices.tryAgainKey(key, failures[key]?.value ?? "")) continue;
       if (key === KIND_KEY) {
         const failed = failures[key]?.value;
         if (failed === "one" || failed === "sizes" || failed === "market") {
@@ -432,14 +318,8 @@ export function useDishPage({
       add: addSize,
       remove: removeSize,
     },
-    allergens,
-    tags,
-    availability,
-    schedule,
-    cookedToOrder,
-    choices,
     tryAgain,
   };
 }
 
-export type DishPageState = ReturnType<typeof useDishPage>;
+export type DishGeneralState = ReturnType<typeof useDishGeneral>;

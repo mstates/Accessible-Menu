@@ -18,6 +18,7 @@ import {
   type TextWords,
 } from "../editing/list-words";
 import type { Editing } from "../editing/useEditing";
+import { DISH_PAGE_HEADING_IDS } from "./dish-pages";
 import type { DishStrings } from "./dish-words";
 import { setDishTags } from "./schedule-actions";
 
@@ -41,7 +42,9 @@ type Props = {
   names: DietaryCopy;
 };
 
-export const TAGS_HEADING_ID = "dish-tags-heading";
+// The heading's id is the page's (dish-pages.ts, D-225): on the Dietary
+// tags page the h1 is the group's heading.
+export const TAGS_HEADING_ID = DISH_PAGE_HEADING_IDS.tags;
 export const TAGS_SENTENCE_ID = "dish-tags-sentence";
 export const tagBoxId = (id: DietaryTagId) => `dish-tag-${id}`;
 const tagKey = (id: DietaryTagId) => `tag:${id}`;

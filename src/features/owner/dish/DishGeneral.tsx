@@ -2,24 +2,15 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { Announcer, useAnnounce } from "@/core/a11y/announcer";
-import type { AllergenCopy } from "@/domain/allergens";
-import type { DietaryCopy } from "@/domain/dietary";
 import type { OwnerDish, OwnerDishDetail, OwnerSize } from "@/domain/dish";
-import type { ScheduleCopy } from "@/domain/schedule";
-import type { TimeCopy } from "@/domain/time";
 import { Button } from "@/ui/Button";
 import { ComboBox, suggestionItems } from "@/ui/ComboBox";
 import { PageLink } from "@/ui/PageLink";
 import { Radio, RadioGroup } from "@/ui/RadioGroup";
 import type { SelectGroup } from "@/ui/Select";
-import type { OwnerChoiceList } from "@/domain/choices";
-import { AllergenGroup } from "../allergens/AllergenGroup";
-import type { SameNamedPlace } from "../allergens/allergen-words";
-import type { ChoiceStrings } from "../choices/choice-words";
-import { ChoiceListRows } from "../choices/ChoiceListRows";
 import { AutosaveTextField } from "../editing/AutosaveTextField";
 import type { EditingStrings } from "../editing/list-words";
-import { SavedStatus } from "../editing/SavedStatus";
+import { PageSavedStatus } from "../editing/SavedStatus";
 import { restaurantDishPath } from "../paths";
 import {
   lastDishSentence,
@@ -28,52 +19,28 @@ import {
   sizeSuffix,
   type DishStrings,
 } from "./dish-words";
-import { DishAvailability } from "./DishAvailability";
-import { DishCookedToOrder } from "./DishCookedToOrder";
-import { DishSchedule } from "./DishSchedule";
-import { DishTags } from "./DishTags";
 import { MoveDish } from "./MoveDish";
-import type { ShowingNow } from "./schedule-words";
-import { ADD_SIZE_ID, KIND_ID, sizeButtonId, useDishPage } from "./useDishPage";
+import {
+  ADD_SIZE_ID,
+  KIND_ID,
+  sizeButtonId,
+  useDishGeneral,
+} from "./useDishGeneral";
 
 type Props = {
   strings: DishStrings;
-  choiceStrings: ChoiceStrings;
   editing: EditingStrings;
   code: string;
   dish: OwnerDishDetail;
   section: { id: string; name: string };
   // The dish's sizes, in price order, as the server holds them.
   sizes: OwnerSize[];
-  // The dish's choice lists, in order, with how many options each holds
-  // (D-166).
-  lists: OwnerChoiceList[];
   // The size names the restaurant's dishes already use, most used first.
   sizeNames: string[];
   // The dish after this one in its section, or null at the last.
   next: OwnerDish | null;
   // The sections the dish can move to, under their menus.
   targets: SelectGroup[];
-  // The diner-facing allergen words, for the sentence diners will read.
-  allergenCopy: AllergenCopy;
-  // The other allergens the restaurant's dishes and options already name,
-  // most used first.
-  otherNames: string[];
-  // The same-named dishes and options the allergen check names (D-129).
-  sameNamed: SameNamedPlace[];
-  // The restaurant's time zone, which a check's date is read in, and the
-  // page's language.
-  timeZone: string;
-  lang: string;
-  // What the server decided the dish's availability is at this render
-  // (D-160), and its clock as an instant, which every time-dependent line
-  // reads (task 5).
-  showing: ShowingNow;
-  now: string;
-  dietaryCopy: DietaryCopy;
-  // The diner-facing schedule words, with the singular day names.
-  scheduleCopy: ScheduleCopy;
-  timeCopy: TimeCopy;
 };
 
 // How long after the page shows the dish in its new section its move is
@@ -83,43 +50,30 @@ const AFTER_THE_TITLE_MS = 100;
 
 const PRICE_HEADING_ID = "dish-price-heading";
 
-// A dish's own page (D-128, D-139, D-148, D-159, D-160, D-166, D-167): the
-// lead, the description, the price group under its heading with calories
-// beside each price, the note, the allergen group under its heading, the
-// dietary tags, availability, the schedule, the Cooked to order box, and
-// the choice lists each under theirs, the saved status, the link to the
-// next dish, and the move to another section (D-129). Everything on it
-// shares one queue and one status (D-111).
-export function DishPage(props: Props) {
+// A dish's General page (D-128, D-139, D-167, D-222): the description, the
+// price group under its heading with calories beside each price, the note,
+// the saved status, the link to the next dish, and the move to another
+// section (D-129). Everything on it shares one queue and one status
+// (D-111). The dish's allergens, tags, availability with its schedule, and
+// choice lists are on their own pages, under the page nav.
+export function DishGeneral(props: Props) {
   return (
     <Announcer>
-      <DishEditor {...props} />
+      <GeneralEditor {...props} />
     </Announcer>
   );
 }
 
-function DishEditor({
+function GeneralEditor({
   strings,
-  choiceStrings,
   editing,
   code,
   dish,
   section,
   sizes,
-  lists,
   sizeNames,
   next,
   targets,
-  allergenCopy,
-  otherNames,
-  sameNamed,
-  timeZone,
-  lang,
-  showing,
-  now,
-  dietaryCopy,
-  scheduleCopy,
-  timeCopy,
 }: Props) {
   // A move changes the page's title, since the title names the section and
   // the menu, and Next's route announcer reads a changed title at once and
@@ -142,23 +96,7 @@ function DishEditor({
     owed.current = { sectionId, sentence };
   }
 
-  const page = useDishPage({
-    strings,
-    choiceStrings,
-    editing,
-    code,
-    dish,
-    lists,
-    sizes,
-    sameNamed,
-    showing,
-    timeZone,
-    lang,
-    now,
-    dietaryCopy,
-    scheduleCopy,
-    timeCopy,
-  });
+  const page = useDishGeneral({ strings, editing, code, dish, sizes });
 
   // The restaurant's own size names first, then the starter list, each
   // once (D-139).
@@ -171,18 +109,6 @@ function DishEditor({
       ),
     ];
   }, [sizeNames, strings.price.suggestions]);
-
-  // The restaurant's own other allergens first, then the starter list,
-  // each once (D-148), as the size names are suggested.
-  const otherSuggestions = useMemo(() => {
-    const seen = new Set(otherNames.map((name) => name.toLowerCase()));
-    return [
-      ...otherNames,
-      ...strings.allergens.suggestions.filter(
-        (name) => !seen.has(name.toLowerCase()),
-      ),
-    ];
-  }, [otherNames, strings.allergens.suggestions]);
 
   const description = page.own.fieldOf("description");
   const price = page.own.fieldOf("price");
@@ -350,48 +276,11 @@ function DishEditor({
         />
       </div>
 
-      <AllergenGroup
-        strings={strings.allergens}
-        allergenCopy={allergenCopy}
-        group={page.allergens}
-        heading={strings.allergens.heading}
-        lead={strings.allergens.groupHint}
-        suggestions={otherSuggestions}
-        timeZone={timeZone}
-        lang={lang}
+      <PageSavedStatus
+        strings={editing}
+        editing={page.editing}
+        onRetry={page.tryAgain}
       />
-
-      <DishTags strings={strings.tags} names={dietaryCopy} tags={page.tags} />
-
-      <DishAvailability
-        strings={strings.availability}
-        availability={page.availability}
-      />
-
-      <DishSchedule
-        strings={strings.schedule}
-        dayNames={scheduleCopy.day}
-        lang={lang}
-        schedule={page.schedule}
-      />
-
-      <DishCookedToOrder
-        strings={strings.cookedToOrder}
-        cookedToOrder={page.cookedToOrder}
-      />
-
-      <ChoiceListRows rows={page.choices} />
-
-      <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
-        <SavedStatus
-          strings={editing}
-          status={page.editing.status}
-          notice={page.editing.notice}
-          canRetry={Object.keys(page.editing.failures).length > 0}
-          outOfDate={page.editing.outOfDate}
-          onRetry={page.tryAgain}
-        />
-      </div>
 
       {/* The next dish in the section, so typing a section is one pass
           (D-128). The link waits for saves on their way, as every owner

@@ -30,6 +30,7 @@ import { ChoiceListPage } from "@/features/owner/choices/ChoiceListPage";
 import { loadRestaurant } from "@/features/owner/load-restaurant";
 import {
   dashboardPath,
+  restaurantDishPagePath,
   restaurantDishPath,
   restaurantMenuPath,
   restaurantMenusPath,
@@ -112,7 +113,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 // named for the lead, in the title and in the h1, and the title names every
 // level inside it, nearest first. Menus stays marked in the restaurant's
 // nav as the part this page sits inside, and the breadcrumb above the h1
-// leads back to the home, the section, the menu, and Menus. The options,
+// leads back to the home (a dish's Choice lists page, then the dish), the
+// section, the menu, and Menus. The options,
 // the home's other lists, the other allergens in use, and each option's
 // same-named dishes and options are read on every render, and every save
 // ends with a refresh, so what the page shows is what the server holds.
@@ -187,11 +189,18 @@ export default async function RestaurantChoiceListPage({ params }: Props) {
       href: restaurantSectionPath(restaurant.code, section.id),
       label: section.name,
     },
+    // A dish's list sits under the dish's Choice lists page (D-222), so the
+    // trail passes through it; a section's list sits on the section's page
+    // until the section has pages of its own (D-225).
     ...(dish
       ? [
           {
             href: restaurantDishPath(restaurant.code, dish.id),
             label: dish.name,
+          },
+          {
+            href: restaurantDishPagePath(restaurant.code, dish.id, "choices"),
+            label: strings.heading,
           },
         ]
       : []),

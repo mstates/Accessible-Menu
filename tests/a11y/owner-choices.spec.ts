@@ -14,6 +14,7 @@ import {
 import { optionGroupPrefix } from "../../src/features/owner/choices/useOptionAllergens";
 import {
   restaurantChoiceListPath,
+  restaurantDishPagePath,
   restaurantDishPath,
   restaurantMenuPath,
   restaurantMenusPath,
@@ -71,15 +72,15 @@ function listPath(which: Which): string {
   return restaurantChoiceListPath(code, ownerFixture().lists[which].id);
 }
 
-// The breadcrumb's links: Menus, the menu, the section, and the dish for a
-// dish's list.
+// The breadcrumb's links: Menus, the menu, the section, and for a dish's
+// list the dish and its Choice lists page, the list's home (D-222).
 function trailOf(which: Which): string[] {
   const { withSections, withDishes, dishes } = ownerFixture();
   return [
     nav.menus,
     withSections.name,
     withDishes.name,
-    ...(which === "dish" ? [dishes.one.name] : []),
+    ...(which === "dish" ? [dishes.one.name, strings.heading] : []),
   ];
 }
 
@@ -227,7 +228,7 @@ test("a list's page is named for its lead, its title names every level inside it
   await expect(page.locator('a[aria-current="page"]')).toHaveCount(0);
 
   const trail = breadcrumb(page);
-  await expect(trail.locator("ol > li")).toHaveCount(5);
+  await expect(trail.locator("ol > li")).toHaveCount(6);
   const links = trail.getByRole("link");
   await expect(links).toHaveText(trailOf("dish"));
   await expect(links.nth(0)).toHaveAttribute("href", menusPath);
@@ -242,6 +243,10 @@ test("a list's page is named for its lead, its title names every level inside it
   await expect(links.nth(3)).toHaveAttribute(
     "href",
     restaurantDishPath(code, dishes.one.id),
+  );
+  await expect(links.nth(4)).toHaveAttribute(
+    "href",
+    restaurantDishPagePath(code, dishes.one.id, "choices"),
   );
   await expect(trail.locator('[aria-current="page"]')).toHaveText(
     lists.dish.lead,

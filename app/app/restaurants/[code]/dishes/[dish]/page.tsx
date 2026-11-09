@@ -1,148 +1,61 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { cache } from "react";
-import { z } from "zod";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
-import {
-  listOwnerChoiceLists,
-  listOwnerOptionOtherAllergenNames,
-  listOwnerSameNamedOptions,
-} from "@/core/supabase/choices";
-import {
-  findOwnerDish,
-  listOwnerDishes,
-  listOwnerDishNames,
-  listOwnerOtherAllergenNames,
-  listOwnerSameNamedDishes,
-} from "@/core/supabase/dishes";
-import { findOwnerMenu, listOwnerMenuNames } from "@/core/supabase/menus";
-import {
-  findOwnerSection,
-  listOwnerSectionNames,
-} from "@/core/supabase/sections";
+import { listOwnerDishes } from "@/core/supabase/dishes";
+import { listOwnerMenuNames } from "@/core/supabase/menus";
+import { listOwnerSectionNames } from "@/core/supabase/sections";
 import { listOwnerSizeNames, listOwnerSizes } from "@/core/supabase/sizes";
-import { rankOtherAllergenNames } from "@/domain/allergens";
-import { availabilityAt } from "@/domain/availability";
 import { nextDish } from "@/domain/dish";
-import { dishPlaces, optionPlaces } from "@/features/owner/allergens/places";
-import { placeIn } from "@/features/owner/choices/choice-words";
-import { DishPage } from "@/features/owner/dish/DishPage";
-import { loadRestaurant } from "@/features/owner/load-restaurant";
-import {
-  dashboardPath,
-  restaurantMenuPath,
-  restaurantMenusPath,
-  restaurantSectionPath,
-} from "@/features/owner/paths";
-import { RestaurantNav } from "@/features/owner/RestaurantNav";
-import { Breadcrumb } from "@/ui/Breadcrumb";
-import { PageFrame } from "@/ui/PageFrame";
+import { dishPageTitle } from "@/features/owner/dish/dish-pages";
+import { DishGeneral } from "@/features/owner/dish/DishGeneral";
+import { DishPageFrame } from "@/features/owner/dish/DishPageFrame";
+import { loadDish } from "@/features/owner/dish/load-dish";
+import { signInPath } from "@/features/owner/paths";
 import type { SelectGroup } from "@/ui/Select";
 
 type Props = { params: Promise<{ code: string; dish: string }> };
 
 const strings = en.owner.dish;
-
-// One read per request, shared by the metadata and the page. The dish's id
-// in the path is user input: it must be a uuid before any query, the dish
-// must be one of this restaurant's that is not deleted, and so must the
-// section it is in and that section's menu. Row level security hides a dish
-// that is not this owner's, so a wrong owner, a deleted dish, a dish of a
-// deleted section or menu, and an id that matches nothing all get the 404
-// page (D-122). A read that failed is thrown to the owner error page, never
-// shown as a missing dish. The address names the dish and not its section,
-// so it stays good when the dish moves (D-128, D-129); the section and the
-// menu are read from the dish every time.
-const loadDish = cache(async (rawCode: string, rawDish: string) => {
-  const { supabase, email, userId, restaurant } = await loadRestaurant(rawCode);
-  const nothing = {
-    supabase,
-    email,
-    restaurant,
-    dish: null,
-    section: null,
-    menu: null,
-  };
-  if (!email || !restaurant) return nothing;
-  const id = z.uuid().safeParse(rawDish);
-  if (!id.success) return nothing;
-  const dish = await findOwnerDish(supabase, restaurant.id, id.data, userId);
-  if (dish === "failed") throw new Error("the dish could not be read");
-  if (dish === "not-found") return nothing;
-  const section = await findOwnerSection(
-    supabase,
-    restaurant.id,
-    dish.sectionId,
-  );
-  if (section === "failed") throw new Error("the section could not be read");
-  if (section === "not-found") return nothing;
-  const menu = await findOwnerMenu(supabase, restaurant.id, section.menuId);
-  if (menu === "failed") throw new Error("the menu could not be read");
-  if (menu === "not-found") return nothing;
-  return { supabase, email, restaurant, dish, section, menu };
-});
+const PAGE = "general";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { code, dish: dishId } = await params;
-  const { restaurant, dish, section, menu } = await loadDish(code, dishId);
-  if (!restaurant || !dish || !section || !menu) {
+  const { restaurant, found } = await loadDish(code, dishId);
+  if (!restaurant || !found) {
     return { title: pageTitle(en, en.notFound.title) };
   }
   return {
-    title: pageTitle(en, dish.name, restaurant.name, [section.name, menu.name]),
+    title: dishPageTitle(en, PAGE, {
+      dish: found.dish.name,
+      section: found.section.name,
+      menu: found.menu.name,
+      restaurant: restaurant.name,
+    }),
   };
 }
 
-// One dish's own page (D-128): its description, its price (D-139), and its
-// note, its sizes, its allergens and their check (D-148), its calories and
-// its Cooked to order mark (D-167), its choice lists (D-166), the link to
-// the next dish, and its move to another section (D-129). The page is
-// named for the dish, in the title and in the h1, and the title names its
-// section and its menu right after it. Menus stays marked in the
-// restaurant's nav as the part this page sits inside, and the breadcrumb
-// above the h1 leads back to the section, the menu, and Menus. The sizes,
-// the choice lists, the section's dishes, the restaurant's menus and
-// sections, the size names in use, the other allergens in use on dishes
-// and on options, and the same-named dishes and options are read on every
-// render, and every save ends with a refresh, so what the page shows is
-// what the server holds.
+// A dish's General page, at the dish's own address (D-128, D-222): its
+// description, its price (D-139) with calories (D-167), its note, its
+// sizes, the link to the next dish, and its move to another section
+// (D-129). The page is named for the dish, in the title and in the h1, and
+// the title names its section and its menu right after it. The dish's
+// other pages sit under the page nav (D-222). The sizes, the section's
+// dishes, the restaurant's menus and sections, and the size names in use
+// are read on every render, and every save ends with a refresh, so what
+// the page shows is what the server holds.
 export default async function RestaurantDishPage({ params }: Props) {
   const { code, dish: dishId } = await params;
-  const { supabase, email, restaurant, dish, section, menu } = await loadDish(
-    code,
-    dishId,
-  );
-  if (!email) redirect("/app/sign-in");
-  if (!restaurant || !dish || !section || !menu) notFound();
-  const [
-    sizes,
-    lists,
-    dishes,
-    menus,
-    sections,
-    sizeNames,
-    dishOtherNames,
-    optionOtherNames,
-    namesakes,
-    sameOptions,
-  ] = await Promise.all([
+  const { supabase, email, restaurant, found } = await loadDish(code, dishId);
+  if (!email) redirect(signInPath);
+  if (!restaurant || !found) notFound();
+  const { dish, section, menu, lists, showing } = found;
+  const [sizes, dishes, menus, sections, sizeNames] = await Promise.all([
     listOwnerSizes(supabase, dish.id),
-    listOwnerChoiceLists(supabase, { kind: "dish", id: dish.id }),
     listOwnerDishes(supabase, section.id),
     listOwnerMenuNames(supabase, restaurant.id),
     listOwnerSectionNames(supabase, restaurant.id),
     listOwnerSizeNames(supabase, restaurant.id),
-    listOwnerOtherAllergenNames(supabase, restaurant.id),
-    listOwnerOptionOtherAllergenNames(supabase, restaurant.id),
-    listOwnerSameNamedDishes(supabase, restaurant.id, dish.id, dish.name),
-    listOwnerSameNamedOptions(supabase, restaurant.id, dish.name, null),
-  ]);
-  // The restaurant's own other allergens, on dishes and on options, most
-  // used first (D-149, D-166).
-  const otherNames = rankOtherAllergenNames([
-    ...dishOtherNames,
-    ...optionOtherNames,
   ]);
   // Every other live section of a live menu, under its menu (D-129).
   const targets: SelectGroup[] = menus
@@ -154,120 +67,31 @@ export default async function RestaurantDishPage({ params }: Props) {
         .map((entry) => ({ id: entry.id, label: entry.name })),
     }))
     .filter((group) => group.items.length > 0);
-  // The same-named dishes and options the allergen check names (D-129,
-  // D-166): live ones, in live sections of live menus, whose lists differ
-  // from this dish's as a diner reads them, or which are not checked. Where
-  // each one is comes from the same reads the move targets use, and from
-  // the dishes the options' lists hang under.
-  const ownLists = { allergens: dish.allergens, others: dish.otherAllergens };
-  const homeDishes = await listOwnerDishNames(
-    supabase,
-    restaurant.id,
-    sameOptions
-      .filter((other) => other.home.kind === "dish")
-      .map((other) => other.home.id),
-  );
-  const context = {
-    sections,
-    menus,
-    dishes: homeDishes,
-    placeIn: (lead: string, home: string) =>
-      placeIn(en.owner.choices, lead, home),
-  };
-  const sameNamed = [
-    ...dishPlaces(namesakes, ownLists, context),
-    ...optionPlaces(sameOptions, ownLists, context),
-  ];
-
-  // What the dish's availability is now (D-160), decided once here from
-  // the row, the restaurant's hours and zone, and this render's clock,
-  // which the page's time-dependent lines read too.
-  const now = new Date();
-  const showing = availabilityAt(
-    { available: dish.available, soldOutAt: dish.soldOutAt },
-    now,
-    restaurant.hours,
-    restaurant.timezone,
-  );
 
   return (
-    <PageFrame
-      siteName={en.site.name}
-      homeHref={dashboardPath}
-      loadingLabel={en.ui.loading}
-      nav={
-        <RestaurantNav
-          copy={en}
-          name={restaurant.name}
-          code={restaurant.code}
-          current="dish"
-        />
-      }
+    <DishPageFrame
+      copy={en}
+      restaurant={restaurant}
+      dish={dish}
+      section={section}
+      menu={menu}
+      lists={lists}
+      showing={showing}
+      page={PAGE}
     >
-      <Breadcrumb
-        label={en.ui.breadcrumb}
-        trail={[
-          {
-            href: restaurantMenusPath(restaurant.code),
-            label: en.owner.restaurants.nav.menus,
-          },
-          {
-            href: restaurantMenuPath(restaurant.code, menu.id),
-            label: menu.name,
-          },
-          {
-            href: restaurantSectionPath(restaurant.code, section.id),
-            label: section.name,
-          },
-        ]}
-        current={dish.name}
-      />
-      <h1 className="mt-2 text-3xl font-bold">{dish.name}</h1>
       {/* Said before the first field it governs (WCAG 3.3.2). */}
       <p className="mt-6 text-foreground-muted">{strings.lead}</p>
-      <DishPage
+      <DishGeneral
         strings={strings}
-        choiceStrings={en.owner.choices}
         editing={en.owner.editing}
         code={restaurant.code}
-        dish={{
-          id: dish.id,
-          name: dish.name,
-          description: dish.description,
-          note: dish.note,
-          priceKind: dish.priceKind,
-          price: dish.price,
-          calories: dish.calories,
-          cookedToOrder: dish.cookedToOrder,
-          allergens: dish.allergens,
-          otherAllergens: dish.otherAllergens,
-          check: dish.check,
-          tags: dish.tags,
-          available: dish.available,
-          soldOutAt: dish.soldOutAt,
-          schedule: dish.schedule,
-        }}
+        dish={dish}
         section={{ id: section.id, name: section.name }}
         sizes={sizes}
-        lists={lists}
         sizeNames={sizeNames}
         next={nextDish(dishes, dish.id)}
         targets={targets}
-        allergenCopy={en.allergens}
-        otherNames={otherNames}
-        sameNamed={sameNamed}
-        timeZone={restaurant.timezone}
-        lang={en.lang}
-        showing={{
-          state: showing.state,
-          until:
-            showing.state === "sold-out" ? showing.until.toISOString() : null,
-        }}
-        now={now.toISOString()}
-        dietaryCopy={en.dietary}
-        scheduleCopy={{ ...en.schedule, day: en.owner.restaurants.days }}
-        timeCopy={en.time}
       />
-    </PageFrame>
+    </DishPageFrame>
   );
 }

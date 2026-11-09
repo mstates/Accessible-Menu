@@ -1,5 +1,5 @@
 import type { Copy } from "@/copy";
-import { PageNav, type PageNavLink } from "@/ui/PageNav";
+import { TopNav, type TopNavLink } from "@/ui/TopNav";
 import { restaurantDetailsPath, restaurantMenusPath } from "./paths";
 
 // The page that renders the nav says where it is: on Details, on Menus, or
@@ -26,7 +26,7 @@ type Props = {
 // (D-122).
 export function RestaurantNav({ copy, name, code, current }: Props) {
   const labels = copy.owner.restaurants.nav;
-  const links: PageNavLink[] = [
+  const links: TopNavLink[] = [
     {
       href: restaurantDetailsPath(code),
       label: labels.details,
@@ -38,5 +38,5 @@ export function RestaurantNav({ copy, name, code, current }: Props) {
       current: current === "menus" ? "page" : current !== "details" && "true",
     },
   ];
-  return <PageNav label={name} links={links} />;
+  return <TopNav label={name} links={links} />;
 }

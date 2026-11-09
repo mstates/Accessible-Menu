@@ -1,0 +1,118 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+  - status
+- navigation "CI Diner (test restaurant, not real)":
+  - paragraph: CI Diner (test restaurant, not real)
+  - list:
+    - listitem:
+      - link "Details"
+    - listitem:
+      - link "Menus"
+- main:
+  - navigation "Breadcrumb":
+    - list:
+      - listitem:
+        - link "Menus"
+      - listitem:
+        - link "Dinner"
+      - listitem:
+        - link "Starters"
+      - listitem:
+        - link "Soup of the day"
+  - heading "Availability" [level=1]
+  - navigation "Soup of the day":
+    - list:
+      - listitem:
+        - link "General"
+      - listitem:
+        - link "Allergens Confirmed"
+      - listitem:
+        - link "Dietary tags None"
+      - listitem:
+        - link "Availability Available, schedule set"
+      - listitem:
+        - link "Choice lists None"
+  - radiogroup "Availability":
+    - radio "Available" [checked]
+    - text: Available
+    - radio "Sold out today"
+    - text: Sold out today Diners read Sold out today. It comes back on its own at the end of your day.
+    - radio "Off the menu for now"
+    - text: Off the menu for now Diners do not see this dish until you choose Available again.
+  - heading "Schedule" [level=2]
+  - paragraph: Set a schedule to make this dish a special. Diners see it only on the days you choose, from the start of the day until its hours end. Leave everything blank for a dish that is always on the menu.
+  - group "Days":
+    - text: Days
+    - checkbox "Monday"
+    - text: Monday
+    - checkbox "Tuesday"
+    - text: Tuesday
+    - checkbox "Wednesday"
+    - text: Wednesday
+    - checkbox "Thursday"
+    - text: Thursday
+    - checkbox "Friday"
+    - text: Friday
+    - checkbox "Saturday"
+    - text: Saturday
+    - checkbox "Sunday"
+    - text: Sunday
+  - group "Hours":
+    - text: Hours
+    - paragraph: /For example, \d+ am, 5:\d+ pm, or \d+:\d+\. Leave both blank for all day\./
+    - text: Starts
+    - textbox "Starts": 4 pm
+    - text: Ends
+    - textbox "Ends": 9 pm
+  - button "Today only"
+  - text: First day
+  - textbox "First day"
+  - text: /For example, October \d+ or \d+\/\d+\/\d+\. Last day/
+  - textbox "Last day"
+  - text: /For example, October \d+ or \d+\/\d+\/\d+\./
+  - paragraph: Which of the month's Fridays, for a special on the first Friday of each month. Needs a day above.
+  - group "Weeks of the month":
+    - text: Weeks of the month
+    - checkbox "First"
+    - text: First
+    - checkbox "Second"
+    - text: Second
+    - checkbox "Third"
+    - text: Third
+    - checkbox "Fourth"
+    - text: Fourth
+    - checkbox "Last"
+    - text: Last
+  - paragraph: For a special that comes back each year, like a soup from September to April.
+  - group "Months of the year":
+    - text: Months of the year
+    - checkbox "January"
+    - text: January
+    - checkbox "February"
+    - text: February
+    - checkbox "March"
+    - text: March
+    - checkbox "April"
+    - text: April
+    - checkbox "May"
+    - text: May
+    - checkbox "June"
+    - text: June
+    - checkbox "July"
+    - text: July
+    - checkbox "August"
+    - text: August
+    - checkbox "September"
+    - text: September
+    - checkbox "October"
+    - text: October
+    - checkbox "November"
+    - text: November
+    - checkbox "December"
+    - text: December
+  - paragraph: "/Diners read: \"Every day, 4 to 9 pm\\.\" (Shows now, [^.]+|Next shows [^.]+)\\./"
+  - status: All changes saved
+  - log
+- contentinfo: Accessible Menu
+- alert

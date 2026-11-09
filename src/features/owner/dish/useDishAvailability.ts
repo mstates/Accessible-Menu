@@ -12,6 +12,7 @@ import {
 } from "../editing/list-words";
 import type { Editing } from "../editing/useEditing";
 import { setDishAvailability } from "./actions";
+import { DISH_PAGE_HEADING_IDS } from "./dish-pages";
 import type { DishStrings } from "./dish-words";
 import { availabilityLine, type ShowingNow } from "./schedule-words";
 
@@ -38,7 +39,9 @@ type Props = {
 };
 
 export const AVAILABILITY_ID = "dish-availability";
-export const AVAILABILITY_HEADING_ID = "dish-availability-heading";
+// The heading's id is the page's (dish-pages.ts, D-225): on the
+// Availability page the h1 is the group's heading.
+export const AVAILABILITY_HEADING_ID = DISH_PAGE_HEADING_IDS.availability;
 const KEY = "availability";
 
 function isChoice(value: string): value is Availability {

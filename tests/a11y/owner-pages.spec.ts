@@ -7,6 +7,7 @@ import {
   dashboardPath,
   fieldId,
   restaurantDetailsPath,
+  restaurantDishPagePath,
   restaurantDishPath,
   restaurantMenuPath,
   restaurantMenusPath,
@@ -697,9 +698,10 @@ function titlesSeen(page: Page): Promise<string[]> {
 }
 
 // Q-51 and D-134: a page that arrives by a link is read by Next's route
-// announcer with its whole title, never its h1 alone, on all five owner
+// announcer with its whole title, never its h1 alone, on the six owner
 // pages a restaurant has: Details, Menus, a menu's page, a section's page,
-// and a dish's page. The walk reaches each by the link an owner would press,
+// a dish's General page, and a dish's Allergens page, reached through the
+// page nav (D-222). The walk reaches each by the link an owner would press,
 // and comes back to a menu's page and a section's page a second time, at
 // another menu and another section, once the client already knows those
 // routes.
@@ -740,6 +742,8 @@ for (const pace of ["at once", "after a pause"] as const) {
         restaurantSectionPath(code, section.id);
       const dishPage = (dish: { id: string }) =>
         restaurantDishPath(code, dish.id);
+      const dishSubPage = (dish: { id: string }, slug: "allergens") =>
+        restaurantDishPagePath(code, dish.id, slug);
       const breadcrumbTo = (href: string) =>
         page
           .locator("main")
@@ -776,6 +780,15 @@ for (const pace of ["at once", "after a pause"] as const) {
           link: inMain(dishPage(dishes.sizes)),
           path: dishPage(dishes.sizes),
           title: pageTitle(en, dishes.sizes.name, restaurant, [
+            withDishes.name,
+            withSections.name,
+          ]),
+        },
+        {
+          link: inMain(dishSubPage(dishes.sizes, "allergens")),
+          path: dishSubPage(dishes.sizes, "allergens"),
+          title: pageTitle(en, en.owner.dish.allergens.heading, restaurant, [
+            dishes.sizes.name,
             withDishes.name,
             withSections.name,
           ]),

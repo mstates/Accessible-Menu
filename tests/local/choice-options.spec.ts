@@ -15,7 +15,7 @@ import {
 import { optionGroupPrefix } from "../../src/features/owner/choices/useOptionAllergens";
 import {
   restaurantChoiceListPath,
-  restaurantDishPath,
+  restaurantDishPagePath,
 } from "../../src/features/owner/paths";
 import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture, ownerStatePath } from "../a11y/owner-env";
@@ -576,7 +576,7 @@ test("Apply from a checked option gives the same-named dish this list and the ch
 
     // From the dish's side: Ranch the dish, checked with none, offers the
     // option in Choose a dressing for House salad.
-    await page.goto(restaurantDishPath(code, addedDish.id));
+    await page.goto(restaurantDishPagePath(code, addedDish.id, "allergens"));
     await page.waitForLoadState("networkidle");
     await hearLog(page);
     await page.getByText(group.checkLabel, { exact: true }).click();
@@ -614,7 +614,7 @@ test("Apply from a checked option gives the same-named dish this list and the ch
         checked: true,
       });
     }
-    await page.goto(restaurantDishPath(code, addedDish.id));
+    await page.goto(restaurantDishPagePath(code, addedDish.id, "allergens"));
     await page.waitForLoadState("networkidle");
     // The dish is deleted from its section's page, through the dialog
     // (D-221).

@@ -126,7 +126,7 @@ function named(
   return fill(template, { [words.noun]: name, ...more });
 }
 
-function counted(words: Counted, count: number): string {
+export function counted(words: Counted, count: number): string {
   return fill(count === 1 ? words.one : words.other, { count });
 }
 

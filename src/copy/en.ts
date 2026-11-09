@@ -566,6 +566,26 @@ export const en = {
     // on its own. A size's texts are named for their size.
     dish: {
       lead: "Each change saves when you leave its field.",
+      // The dish's pages (D-222): General first, then the pages named by
+      // their group headings, so a nav item, an h1, and a title's first part
+      // are the same words. The state words sit inside each nav link after
+      // the page's name, so the link's name says the page and where it
+      // stands: "Allergens Not confirmed yet".
+      pages: {
+        general: "General",
+        state: {
+          allergensConfirmed: "Confirmed",
+          allergensNotConfirmed: "Not confirmed yet",
+          none: "None",
+          tagCount: {
+            one: "{count} tag",
+            other: "{count} tags",
+          },
+          availability: "{choice}, {schedule}",
+          scheduleSet: "schedule set",
+          scheduleNone: "no schedule",
+        },
+      },
       descriptionLabel: "Description",
       descriptionHint:
         "What is in it and how it is made. Diners read it in full.",

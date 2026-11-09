@@ -16,7 +16,10 @@ import {
   type Schedule,
 } from "../../src/domain/schedule";
 import { formatTime } from "../../src/domain/time";
-import { restaurantDishPath } from "../../src/features/owner/paths";
+import {
+  restaurantDishPagePath,
+  type DishPageSlug,
+} from "../../src/features/owner/paths";
 import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
@@ -48,12 +51,18 @@ const words = { ...en.schedule, day: en.owner.restaurants.days };
 
 type Priced = "sizes" | "one" | "market";
 
-function dishPath(which: Priced): string {
-  return restaurantDishPath(code, ownerFixture().dishes[which].id);
+// The tags live on the dish's Dietary tags page, availability and the
+// schedule on its Availability page (D-222).
+function dishPath(which: Priced, at: DishPageSlug): string {
+  return restaurantDishPagePath(code, ownerFixture().dishes[which].id, at);
 }
 
-async function openDish(page: Page, which: Priced): Promise<void> {
-  await page.goto(dishPath(which));
+async function openDish(
+  page: Page,
+  which: Priced,
+  at: DishPageSlug,
+): Promise<void> {
+  await page.goto(dishPath(which, at));
   await page.waitForLoadState("networkidle");
   await hearLog(page);
 }
@@ -163,7 +172,7 @@ test("a tag tick says Saved. once, reads under the group, holds after a reload, 
 }) => {
   const { dishes } = ownerFixture();
   const vegan = en.dietary.names.vegan;
-  await openDish(page, "market");
+  await openDish(page, "market", "tags");
   await expect(box(page, vegan)).not.toBeChecked();
   await expect(tagsLine(page)).toHaveCount(0);
   await press(page, vegan);
@@ -191,7 +200,7 @@ test("a tick on a page whose tags moved under it is refused once, with no Try ag
   page,
 }) => {
   const { dishes } = ownerFixture();
-  await openDish(page, "market");
+  await openDish(page, "market", "tags");
   await knob("set-tags", { id: dishes.market.id, tags: "vegetarian" });
   await press(page, en.dietary.names.vegan);
   await expect.poll(() => said(page, tags.tagsMoved)).toBe(1);
@@ -209,7 +218,7 @@ test("a tick that fails is said once with Try again, and Try again lands it", as
 }) => {
   const { dishes } = ownerFixture();
   const vegan = en.dietary.names.vegan;
-  await openDish(page, "market");
+  await openDish(page, "market", "tags");
   await knob("fail", { times: "1" });
   await press(page, vegan);
   const failure = `${fill(tags.notSaved, { dish: dishes.market.name })} ${editing.problems.failed}`;
@@ -235,7 +244,7 @@ test("Sold out today says Saved. once, the group's line says when it comes back,
   // Diner's hours, so they are taken away for this check and put back at
   // its end.
   await knob("set-hours", { hours: "null" });
-  await openDish(page, "one");
+  await openDish(page, "one", "availability");
   await expect(radio(page, availability.available)).toBeChecked();
   await expect(availabilityGroup(page)).toHaveAccessibleDescription("");
   await press(page, availability.soldOut);
@@ -270,7 +279,7 @@ test("the line reads the end of the restaurant's day from its hours: today by it
   const weekday = dayKeyOf(today);
   const inThreeDays = shiftDay(today, 3);
   try {
-    await openDish(page, "one");
+    await openDish(page, "one", "availability");
 
     await knob("set-hours", {
       hours: JSON.stringify({
@@ -340,7 +349,7 @@ test("Off the menu for now says Saved. once and that diners do not see the dish,
   page,
 }) => {
   const { dishes } = ownerFixture();
-  await openDish(page, "sizes");
+  await openDish(page, "sizes", "availability");
   await press(page, availability.off);
   await expect(radio(page, availability.off)).toBeChecked();
   await expect.poll(() => said(page, saved)).toBe(1);
@@ -366,7 +375,7 @@ test("a sold-out mark whose day has ended reads as available, and a new mark lan
     sold_out_at: yesterday,
   });
   try {
-    await openDish(page, "one");
+    await openDish(page, "one", "availability");
     await expect(radio(page, availability.available)).toBeChecked();
     await expect(availabilityGroup(page)).toHaveAccessibleDescription("");
     await press(page, availability.soldOut);
@@ -387,7 +396,7 @@ test("a day tick says Saved. once, the sentence and the next day read under the 
 }) => {
   const { dishes } = ownerFixture();
   const tuesday = en.owner.restaurants.days.tue;
-  await openDish(page, "one");
+  await openDish(page, "one", "availability");
   await expect(scheduleLine(page)).toHaveText(schedule.none);
   await press(page, tuesday);
   await expect(box(page, tuesday)).toBeChecked();
@@ -413,7 +422,7 @@ test("the two time fields commit together: Tab between them sends nothing, Enter
   page,
 }) => {
   const { dishes } = ownerFixture();
-  await openDish(page, "one");
+  await openDish(page, "one", "availability");
   const starts = field(page, schedule.starts);
   const ends = field(page, schedule.ends);
   await expect(starts).toHaveAccessibleDescription(schedule.hoursHint);
@@ -490,7 +499,7 @@ test("the hours pair left with two problems shows both at once, each under its o
   page,
 }) => {
   const { dishes } = ownerFixture();
-  await openDish(page, "one");
+  await openDish(page, "one", "availability");
   const starts = field(page, schedule.starts);
   const ends = field(page, schedule.ends);
   const notSaved = fill(schedule.notSaved.hours, { dish: dishes.one.name });
@@ -579,7 +588,7 @@ test("a date reads in each of its forms and comes back with its year, a day-firs
 }) => {
   const { dishes } = ownerFixture();
   const today = todayIn(zone, new Date());
-  await openDish(page, "one");
+  await openDish(page, "one", "availability");
   const first = field(page, schedule.firstDay);
   const last = field(page, schedule.lastDay);
   await expect(first).toHaveAccessibleDescription(schedule.dateHint);
@@ -660,7 +669,7 @@ test("a week with no day is refused unsent, lands after a day with Try again, an
   const { dishes } = ownerFixture();
   const monday = en.owner.restaurants.days.mon;
   const first = schedule.weeks.first;
-  await openDish(page, "one");
+  await openDish(page, "one", "availability");
   const sent = await writesSoFar();
   await press(page, first);
   const refused = `${fill(schedule.notSaved.weeks, { dish: dishes.one.name })} ${schedule.errors.weeksNeedDay}`;
@@ -698,7 +707,7 @@ test("a month tick lands and reads, and a tick on a page whose schedule moved un
   const { dishes } = ownerFixture();
   const january = "January";
   const monday = en.owner.restaurants.days.mon;
-  await openDish(page, "one");
+  await openDish(page, "one", "availability");
   await press(page, january);
   await expect.poll(() => said(page, saved)).toBe(1);
   await expect(scheduleLine(page)).toHaveText(reads({ months: ["jan"] }));

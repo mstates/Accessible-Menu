@@ -2,25 +2,35 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
 import { pageTitle } from "../../src/copy/title";
-import { CHOICE_LISTS_HEADING_ID } from "../../src/features/owner/choices/useChoiceListRows";
+import { CHOICE_LISTS_HEADING_ID } from "../../src/features/owner/choices/choice-words";
+import { DISH_PAGE_HEADING_IDS } from "../../src/features/owner/dish/dish-pages";
 import {
   restaurantChoiceListPath,
+  restaurantDishPagePath,
   restaurantDishPath,
   restaurantMenuPath,
   restaurantMenusPath,
   restaurantSectionPath,
+  type DishPageSlug,
 } from "../../src/features/owner/paths";
 import {
+  expectForcedEdge,
   expectNoAxeViolations,
   expectNoHorizontalScroll,
   expectNoMissingIds,
+  expectRootAtLargest,
   open,
   pageChecks,
+  setLargestText,
 } from "./checks";
 import {
   breadcrumbMarks,
   checkboxMarks,
-  dishControls,
+  dishAllergensControls,
+  dishAvailabilityControls,
+  dishChoicesControls,
+  dishGeneralControls,
+  dishTagsControls,
   formMarks,
   radioMarks,
 } from "./owner-controls";
@@ -35,8 +45,8 @@ import { ownerEnv, ownerFixture } from "./owner-env";
 import { restaurantName } from "./pages";
 import { expectWrites, guardWrites } from "./write-guard";
 
-// A dish's own page (D-128, D-139, D-148, D-159, D-160), signed in as the
-// test owner (D-100), on the three dishes the data file priced one way
+// A dish's five pages (D-128, D-139, D-148, D-159, D-160, D-222), signed in
+// as the test owner (D-100), on the three dishes the data file priced one way
 // each: by size, at one price, and at market price, which it also listed
 // one way each: the first checked with milk, wheat, and celery, the second
 // checked with none, the third not checked, and a second Soup of the day
@@ -57,6 +67,11 @@ import { expectWrites, guardWrites } from "./write-guard";
 // dish that really moves are covered by
 // tests/local, by the unit tests, by the boundary scripts, and by hand.
 //
+// A dish is edited on five pages under one page nav (D-222, D-225): General
+// at the dish's own address, then Allergens, Dietary tags with Cooked to
+// order, Availability with Schedule, and Choice lists, each at its own
+// address under the dish's. Each test here opens the page its group is on.
+//
 // A dish's page is named by its id, which the setup finds and writes down,
 // so every path here is read when a test runs, never when this file loads.
 
@@ -75,42 +90,104 @@ const dayNames = en.owner.restaurants.days;
 guardWrites();
 
 type Priced = "sizes" | "one" | "market";
+// A dish's five pages (D-222): General at the dish's own address, the rest
+// under it by slug.
+type DishPage = "general" | DishPageSlug;
+const dishPages: readonly DishPage[] = [
+  "general",
+  "allergens",
+  "tags",
+  "availability",
+  "choices",
+];
 
-function dishPath(which: Priced): string {
-  return restaurantDishPath(code, ownerFixture().dishes[which].id);
+function dishPath(which: Priced, at: DishPage = "general"): string {
+  const id = ownerFixture().dishes[which].id;
+  return at === "general"
+    ? restaurantDishPath(code, id)
+    : restaurantDishPagePath(code, id, at);
 }
 
-const controls = (page: Page) =>
-  dishControls(
+const generalControls = (page: Page) =>
+  dishGeneralControls(
     page,
     ownerFixture().withSections.name,
     ownerFixture().withDishes.name,
   );
-// Every dish's page draws a check mark: the first two are checked, and the
-// third is cooked to order (D-167).
-const checks = {
-  controls,
-  marks: [...breadcrumbMarks, ...formMarks, ...radioMarks, ...checkboxMarks],
+const subPageControls =
+  (which: Priced, controlsOf: typeof dishTagsControls) => (page: Page) =>
+    controlsOf(
+      page,
+      ownerFixture().withSections.name,
+      ownerFixture().withDishes.name,
+      ownerFixture().dishes[which].name,
+    );
+
+// General draws the price radios' dot and the move's Select arrow, and no
+// box. A page with a checked box draws its mark: Allergens on the soup
+// (milk, wheat, and the check), Dietary tags on the salad (two tags). The
+// soup's Availability page has no box checked, since its special runs
+// every day, and draws the radios' dot.
+const generalChecks = {
+  controls: generalControls,
+  marks: [...breadcrumbMarks, ...formMarks, ...radioMarks],
 };
 
-// The sized dish holds labels of one node, its size fields (D-193): axe
-// also leaves nothing to review on it.
-test.describe("a dish's page, priced by size", () => {
+// The sized dish holds labels of one node, its size fields and its other
+// allergen's field (D-193): axe also leaves nothing to review on its General
+// and Allergens pages.
+test.describe("a dish's General page, priced by size", () => {
   pageChecks(() => dishPath("sizes"), {
-    ...checks,
+    ...generalChecks,
     review: true,
     snapshot: "dishes-sizes",
   });
 });
 
-test.describe("a dish's page, at one price", () => {
-  pageChecks(() => dishPath("one"), { ...checks, snapshot: "dishes-one" });
+test.describe("a dish's General page, at one price", () => {
+  pageChecks(() => dishPath("one"), {
+    ...generalChecks,
+    snapshot: "dishes-one",
+  });
 });
 
-test.describe("a dish's page, at market price", () => {
+test.describe("a dish's General page, at market price", () => {
   pageChecks(() => dishPath("market"), {
-    ...checks,
+    ...generalChecks,
     snapshot: "dishes-market",
+  });
+});
+
+test.describe("a dish's Allergens page", () => {
+  pageChecks(() => dishPath("sizes", "allergens"), {
+    controls: subPageControls("sizes", dishAllergensControls),
+    marks: [...breadcrumbMarks, ...checkboxMarks],
+    review: true,
+    snapshot: "dishes-sizes-allergens",
+  });
+});
+
+test.describe("a dish's Dietary tags page", () => {
+  pageChecks(() => dishPath("one", "tags"), {
+    controls: subPageControls("one", dishTagsControls),
+    marks: [...breadcrumbMarks, ...checkboxMarks],
+    snapshot: "dishes-one-tags",
+  });
+});
+
+test.describe("a dish's Availability page", () => {
+  pageChecks(() => dishPath("sizes", "availability"), {
+    controls: subPageControls("sizes", dishAvailabilityControls),
+    marks: [...breadcrumbMarks, ...radioMarks],
+    snapshot: "dishes-sizes-availability",
+  });
+});
+
+test.describe("a dish's Choice lists page", () => {
+  pageChecks(() => dishPath("one", "choices"), {
+    controls: subPageControls("one", dishChoicesControls),
+    marks: breadcrumbMarks,
+    snapshot: "dishes-one-choices",
   });
 });
 
@@ -178,10 +255,11 @@ function cookedBox(page: Page) {
   return page.getByRole("checkbox", { name: cookedToOrder.label, exact: true });
 }
 
+// The Choice lists page's h1, which names the rows' list (D-222).
 function choiceHeading(page: Page) {
   return page
     .locator("main")
-    .getByRole("heading", { level: 2, name: choiceCopy.heading });
+    .getByRole("heading", { level: 1, name: choiceCopy.heading });
 }
 
 function choiceRows(page: Page) {
@@ -315,9 +393,88 @@ function moveSelect(page: Page) {
   return page.getByRole("button", { name: new RegExp(strings.move.label) });
 }
 
-async function openDish(page: Page, which: Priced): Promise<void> {
-  await open(page, dishPath(which));
+async function openDish(
+  page: Page,
+  which: Priced,
+  at: DishPage = "general",
+): Promise<void> {
+  await open(page, dishPath(which, at));
   await page.waitForLoadState("networkidle");
+}
+
+// The page nav (D-222), named by the dish.
+function pageNav(page: Page, dish: string) {
+  return page
+    .locator("main")
+    .getByRole("navigation", { name: dish, exact: true });
+}
+
+// What the page nav's five links are named on each dish, from the data
+// file: the page's name and, after it, the page's state line. The soup is
+// checked, has no tag, is available with a special's hours, and has no
+// list; the salad is checked, has two tags, is available with no schedule,
+// and has one list; the bread is not checked, has no tag, is off the menu
+// with no schedule, and has no list.
+function navNames(which: Priced): string[] {
+  const state = strings.pages.state;
+  const showing = (choice: string, schedule: string) =>
+    fill(state.availability, { choice, schedule });
+  const lines = {
+    sizes: [
+      state.allergensConfirmed,
+      state.none,
+      showing(availability.available, state.scheduleSet),
+      state.none,
+    ],
+    one: [
+      state.allergensConfirmed,
+      fill(state.tagCount.other, { count: 2 }),
+      showing(availability.available, state.scheduleNone),
+      fill(choiceCopy.lists.count.one, { count: 1 }),
+    ],
+    market: [
+      state.allergensNotConfirmed,
+      state.none,
+      showing(availability.off, state.scheduleNone),
+      state.none,
+    ],
+  }[which];
+  return [
+    strings.pages.general,
+    `${allergens.heading} ${lines[0]}`,
+    `${tags.heading} ${lines[1]}`,
+    `${availability.heading} ${lines[2]}`,
+    `${choiceCopy.heading} ${lines[3]}`,
+  ];
+}
+
+// The page nav on one of a dish's pages: one nav named by the dish's name
+// alone, five links in D-222's order, each named by its page and its state
+// and leading to its page, the current page's marked and no other.
+async function expectPageNav(page: Page, which: Priced, current: DishPage) {
+  const dish = ownerFixture().dishes[which].name;
+  const nav = pageNav(page, dish);
+  await expect(nav).toHaveCount(1);
+  await expect(
+    nav,
+    "named by the dish's name alone, with no label of its own",
+  ).toHaveAttribute("aria-label", dish);
+  const links = nav.getByRole("link");
+  await expect(links).toHaveCount(5);
+  const names = navNames(which);
+  for (const [index, at] of dishPages.entries()) {
+    const link = links.nth(index);
+    await expect(
+      link,
+      `link ${index + 1} is named by its page, then its state`,
+    ).toHaveAccessibleName(names[index] ?? "");
+    await expect(link).toHaveAttribute("href", dishPath(which, at));
+    if (at === current) {
+      await expect(link).toHaveAttribute("aria-current", "page");
+    } else {
+      await expect(link).not.toHaveAttribute("aria-current");
+    }
+  }
 }
 
 // Each locator comes after the one before it in the document.
@@ -342,7 +499,7 @@ async function expectInOrder(locators: Locator[], message: string) {
   }
 }
 
-test("a dish's page is named for its dish, its title names its section and its menu, the breadcrumb leads back three levels, and the nav marks Menus as the part it sits in", async ({
+test("a dish's General page is named for its dish, its title names its section and its menu, the breadcrumb leads back three levels, the nav marks Menus as the part it sits in, and the page nav marks General", async ({
   page,
 }) => {
   const { withSections, withDishes, dishes } = ownerFixture();
@@ -361,10 +518,6 @@ test("a dish's page is named for its dish, its title names its section and its m
   await expect(marked).toHaveCount(1);
   await expect(marked).toHaveAttribute("aria-current", "true");
   await expect(marked).toHaveText(nav.menus);
-  await expect(
-    page.locator('a[aria-current="page"]'),
-    "no link points to this page, so none says it is the current page",
-  ).toHaveCount(0);
 
   const trail = breadcrumb(page);
   await expect(trail).toHaveCount(1);
@@ -388,19 +541,234 @@ test("a dish's page is named for its dish, its title names its section and its m
     trail.locator('[aria-current="page"]'),
     "the page itself is last, and is not a link",
   ).toHaveText(dishes.sizes.name);
+
+  // The page nav (D-222): the one link on the page that says it is this
+  // page is its General.
+  await expectPageNav(page, "sizes", "general");
+  const current = page.locator('a[aria-current="page"]');
+  await expect(current).toHaveCount(1);
+  await expect(current).toHaveText(strings.pages.general);
   await expectInOrder(
-    [trail, page.locator("main h1")],
-    "the breadcrumb comes before the h1",
+    [
+      trail,
+      page.locator("main h1"),
+      pageNav(page, dishes.sizes.name),
+      page.locator("main").getByText(strings.lead, { exact: true }),
+    ],
+    "the breadcrumb, the h1, the page nav, then the lead",
   );
 });
 
-// D-128, D-139, and D-148, and WCAG 3.3.2: the sentence that says how the
-// page saves comes right after the h1, then the description, the price
-// heading naming its group, the choice's own fields, the note, the allergen
-// heading, its group of nine, the other-allergen rows and Add another
-// allergen, the check and its sentence, the status, the next dish, and the
-// move.
-test("the page reads in order: the lead, the description, the price group under its heading with three choices, the sizes, the note, the allergens under their heading, the status, the next dish, and the move", async ({
+// D-222, D-225: a sub page is named for the page. Its title puts the page
+// first, then the dish and what the dish sits inside; its breadcrumb ends
+// with the dish as a link and marks nothing, since a breadcrumb only goes
+// up and the page nav marks the page; its h1 carries the id its first
+// group is labelled by, so the group has no heading of its own.
+test("a dish's sub page is named for the page, its title names the page first, the breadcrumb ends with the dish as a link and marks nothing, the h1 labels the first group, and the page nav marks the page", async ({
+  page,
+}) => {
+  const { withSections, withDishes, dishes } = ownerFixture();
+  await openDish(page, "sizes", "allergens");
+  const name = await restaurantName(page);
+  await expect(page).toHaveTitle(
+    pageTitle(en, allergens.heading, name, [
+      dishes.sizes.name,
+      withDishes.name,
+      withSections.name,
+    ]),
+  );
+  await expect(page.locator("main h1")).toHaveText(allergens.heading);
+  const restaurantNav = page.getByRole("navigation", { name, exact: true });
+  await expect(
+    restaurantNav.locator("a[aria-current]"),
+    "Menus stays marked as the part the page sits in",
+  ).toHaveText(nav.menus);
+
+  const trail = breadcrumb(page);
+  await expect(trail.locator("ol > li")).toHaveCount(4);
+  const links = trail.getByRole("link");
+  await expect(
+    links,
+    "Menus, the menu, the section, then the dish, every one a link",
+  ).toHaveText([
+    nav.menus,
+    withSections.name,
+    withDishes.name,
+    dishes.sizes.name,
+  ]);
+  await expect(links.nth(3)).toHaveAttribute("href", dishPath("sizes"));
+  await expect(
+    trail.locator("[aria-current]"),
+    "a breadcrumb only goes up; the page nav marks the page",
+  ).toHaveCount(0);
+
+  await expectPageNav(page, "sizes", "allergens");
+  await expect(page.locator('a[aria-current="page"]')).toHaveCount(1);
+  await expect(
+    page
+      .locator("main")
+      .getByRole("heading", { level: 2, name: allergens.heading }),
+    "the group takes the h1 as its heading",
+  ).toHaveCount(0);
+  await expectInOrder(
+    [
+      trail,
+      page.locator("main h1"),
+      pageNav(page, dishes.sizes.name),
+      page.locator("main").getByText(allergens.groupHint, { exact: true }),
+    ],
+    "the breadcrumb, the h1, the page nav, then the group's lead",
+  );
+
+  // The other sub pages: the title, the h1 with the id its group is
+  // labelled by, no h2 repeating it, and the nav marking the page, with the
+  // salad's states on its pages.
+  const others = [
+    ["one", "tags", tags.heading, DISH_PAGE_HEADING_IDS.tags],
+    [
+      "sizes",
+      "availability",
+      availability.heading,
+      DISH_PAGE_HEADING_IDS.availability,
+    ],
+    ["one", "choices", choiceCopy.heading, DISH_PAGE_HEADING_IDS.choices],
+  ] as const;
+  for (const [which, at, heading, id] of others) {
+    await openDish(page, which, at);
+    await expect(page).toHaveTitle(
+      pageTitle(en, heading, name, [
+        dishes[which].name,
+        withDishes.name,
+        withSections.name,
+      ]),
+    );
+    const h1 = page.locator("main h1");
+    await expect(h1).toHaveText(heading);
+    await expect(h1).toHaveAttribute("id", id);
+    await expect(
+      page.locator("main").getByRole("heading", { level: 2, name: heading }),
+    ).toHaveCount(0);
+    await expectPageNav(page, which, at);
+  }
+  // The bread's states: not checked, no tag, off the menu, no list.
+  await openDish(page, "market", "tags");
+  await expectPageNav(page, "market", "tags");
+});
+
+// D-222's layout: once main has 36rem of room at the root's font size, the
+// page nav takes a left column with the content beside it, their tops
+// level; narrower, one column, the nav under the h1 and the content under
+// the nav, each the width of the other. The break is a container query in
+// rem on main's width, so it follows the root's size however the size was
+// raised, and at the largest text the columns stack wherever the room runs
+// out, in every engine, which is the right reflow; both are measured, at
+// every size, and the room is read the way the query reads it.
+async function expectLayout(page: Page) {
+  const dish = ownerFixture().dishes.sizes.name;
+  const boxes = await page.evaluate((dish) => {
+    const nav = document.querySelector(
+      `main nav[aria-label="${CSS.escape(dish)}"]`,
+    );
+    const h1 = document.querySelector("main h1");
+    const content = nav?.nextElementSibling;
+    const container = nav?.parentElement?.parentElement;
+    if (!nav || !h1 || !content || !container) {
+      throw new Error("the page nav, the h1, or the content is missing");
+    }
+    const box = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+      };
+    };
+    return {
+      root: parseFloat(getComputedStyle(document.documentElement).fontSize),
+      width: container.getBoundingClientRect().width,
+      nav: box(nav),
+      h1: box(h1),
+      content: box(content),
+    };
+  }, dish);
+  const wide = boxes.width >= 36 * boxes.root;
+  const where = `${Math.round(boxes.width)}px of room at a ${boxes.root}px root`;
+  expect(
+    boxes.nav.top,
+    `${where}: the nav starts under the h1`,
+  ).toBeGreaterThanOrEqual(boxes.h1.bottom - 0.5);
+  if (wide) {
+    expect(
+      boxes.nav.right,
+      `${where}: the nav ends before the content starts`,
+    ).toBeLessThanOrEqual(boxes.content.left + 0.5);
+    expect(
+      Math.abs(boxes.nav.top - boxes.content.top),
+      `${where}: the nav's and the content's tops are level`,
+    ).toBeLessThanOrEqual(1);
+  } else {
+    expect(
+      boxes.content.top,
+      `${where}: the content starts under the nav`,
+    ).toBeGreaterThanOrEqual(boxes.nav.bottom - 0.5);
+    expect(
+      Math.abs(boxes.nav.width - boxes.content.width),
+      `${where}: the nav spans the content's width`,
+    ).toBeLessThanOrEqual(1);
+  }
+}
+
+test(
+  "the page nav sits left of the content once main has 36rem of room and under the h1 below that, at the default and the largest text",
+  { tag: "@arrival" },
+  async ({ page }) => {
+    const path = dishPath("sizes", "allergens");
+    await open(page, path);
+    await page.waitForLoadState("networkidle");
+    await expectLayout(page);
+    await setLargestText(page);
+    await open(page, path);
+    await page.waitForLoadState("networkidle");
+    await expectRootAtLargest(page);
+    await expectLayout(page);
+  },
+);
+
+// D-222's marker in forced colors: the current link's bar is its own left
+// border, drawn in a system color with 3:1 against what is behind it, and
+// no other link has one, since the others take the bar's width as padding
+// and not as a transparent border, which would paint there. Tailwind's
+// preflight gives every element a zero-width solid border, so the width
+// alone says whether a bar is drawn.
+test(
+  "in forced colors the page nav's current link keeps its bar and no other link draws one",
+  { tag: "@forced" },
+  async ({ page }) => {
+    await openDish(page, "sizes", "allergens");
+    const dish = ownerFixture().dishes.sizes.name;
+    await expectForcedEdge(
+      page,
+      `main nav[aria-label="${dish}"] a[aria-current="page"]`,
+      "left",
+      4,
+    );
+    const others = pageNav(page, dish).locator("a:not([aria-current])");
+    await expect(others).toHaveCount(4);
+    const bars = await others.evaluateAll((links) =>
+      links.map((link) => parseFloat(getComputedStyle(link).borderLeftWidth)),
+    );
+    expect(bars, "no other link draws a bar").toEqual([0, 0, 0, 0]);
+  },
+);
+
+// D-128, D-139, and WCAG 3.3.2: on General the sentence that says how the
+// page saves comes right after the page nav, then the description, the
+// price heading naming its group, the choice's own fields, the note, the
+// status, the next dish, and the move. The dish's other groups are on
+// their own pages (D-222).
+test("General reads in order: the lead, the description, the price group under its heading with three choices, the sizes, the note, the status, the next dish, and the move, and holds no other group", async ({
   page,
 }) => {
   await openDish(page, "sizes");
@@ -433,6 +801,7 @@ test("the page reads in order: the lead, the description, the price group under 
   await expectInOrder(
     [
       main.locator("h1"),
+      pageNav(page, ownerFixture().dishes.sizes.name),
       main.getByText(strings.lead, { exact: true }),
       descriptionField(page),
       main.getByRole("heading", { level: 2, name: strings.price.heading }),
@@ -440,42 +809,30 @@ test("the page reads in order: the lead, the description, the price group under 
       sizeRows(page).first(),
       addSizeButton(page),
       noteField(page),
-      main.getByRole("heading", { level: 2, name: allergens.heading }),
-      main.getByText(allergens.groupHint, { exact: true }),
-      majorGroup(page),
-      otherRows(page).first(),
-      addOtherButton(page),
-      checkBox(page),
-      sentenceLine(page),
-      main.getByRole("heading", { level: 2, name: tags.heading }),
-      tagsGroup(page),
-      main.getByRole("heading", { level: 2, name: availability.heading }),
-      availabilityGroup(page),
-      main.getByRole("heading", { level: 2, name: schedule.heading }),
-      main.getByText(schedule.lead, { exact: true }),
-      boxGroup(page, schedule.daysLabel),
-      boxGroup(page, schedule.hoursLabel),
-      scheduleField(page, schedule.starts),
-      scheduleField(page, schedule.ends),
-      todayButton(page),
-      scheduleField(page, schedule.firstDay),
-      scheduleField(page, schedule.lastDay),
-      main.getByText(schedule.weeksLead, { exact: true }),
-      boxGroup(page, schedule.weeksLabel),
-      main.getByText(schedule.monthsLead, { exact: true }),
-      boxGroup(page, schedule.monthsLabel),
-      scheduleLine(page),
-      main.getByRole("heading", { level: 2, name: cookedToOrder.heading }),
-      cookedBox(page),
-      choiceHeading(page),
-      main.getByText(choiceCopy.leadDish, { exact: true }),
-      newListField(page),
       savedStatus(page),
-      main.locator('a[href*="/dishes/"]'),
+      main.locator('p a[href*="/dishes/"]'),
       main.getByRole("heading", { level: 2, name: strings.move.heading }),
     ],
-    "the h1, the lead, the description, the price heading, its group, the sizes, Add a size, the note, the allergen heading, the nine, the other allergens, Add another allergen, the check, its sentence, the tags under their heading, availability under its, the schedule under its with its lead, days, hours, Today only, the two days, the weeks with their lead, the months with theirs, and its sentence, Cooked to order under its heading, the choice lists under theirs with their lead and add field, the status, the next dish, then the move, in that order",
+    "the h1, the page nav, the lead, the description, the price heading, its group, the sizes, Add a size, the note, the status, the next dish, then the move, in that order",
   );
+  for (const heading of [
+    allergens.heading,
+    tags.heading,
+    availability.heading,
+    schedule.heading,
+    cookedToOrder.heading,
+    choiceCopy.heading,
+  ]) {
+    await expect(
+      main.getByRole("heading", { name: heading, exact: true }),
+      `${heading} is on its own page`,
+    ).toHaveCount(0);
+  }
+  await expect(majorGroup(page)).toHaveCount(0);
+  await expect(tagsGroup(page)).toHaveCount(0);
+  await expect(availabilityGroup(page)).toHaveCount(0);
+  await expect(choiceRows(page)).toHaveCount(0);
+  await expect(newListField(page)).toHaveCount(0);
   // Each size's row holds its name, its price, and its calories, in that
   // order (D-167).
   const first = sizeRows(page).first();
@@ -491,6 +848,123 @@ test("the page reads in order: the lead, the description, the price group under 
     ],
     "a size's name, then its price, then its calories",
   );
+});
+
+// D-148 on its own page (D-222): the h1, the group's lead, the nine, the
+// other-allergen rows and Add another allergen, the check and its sentence,
+// the same-named line, and the status.
+test("Allergens reads in order: the h1, the lead, the nine, the other allergens and Add another allergen, the check and its sentence, the same-named line, and the status", async ({
+  page,
+}) => {
+  const { dishes } = ownerFixture();
+  await openDish(page, "sizes", "allergens");
+  const main = page.locator("main");
+  await expectInOrder(
+    [
+      main.locator("h1"),
+      main.getByText(allergens.groupHint, { exact: true }),
+      majorGroup(page),
+      otherRows(page).first(),
+      addOtherButton(page),
+      checkBox(page),
+      sentenceLine(page),
+      main.getByText(new RegExp(`^${escape(dishes.sizes.name)} is also in `)),
+      savedStatus(page),
+    ],
+    "the h1, the lead, the nine, the other allergens, Add another allergen, the check, its sentence, the same-named line, then the status, in that order",
+  );
+  await expect(
+    main.getByText(strings.lead, { exact: true }),
+    "General's lead is General's",
+  ).toHaveCount(0);
+  await expect(descriptionField(page)).toHaveCount(0);
+  await expect(priceGroup(page)).toHaveCount(0);
+});
+
+// D-66 and D-167 on their own page (D-222): the three boxes under the h1,
+// the sentence diners read, Cooked to order under its own heading, and the
+// status.
+test("Dietary tags reads in order: the h1, the three boxes, the sentence diners read, Cooked to order under its heading, and the status", async ({
+  page,
+}) => {
+  await openDish(page, "one", "tags");
+  const main = page.locator("main");
+  await expectInOrder(
+    [
+      main.locator("h1"),
+      tagsGroup(page),
+      tagsLine(page),
+      main.getByRole("heading", { level: 2, name: cookedToOrder.heading }),
+      cookedBox(page),
+      savedStatus(page),
+    ],
+    "the h1, the tags, their sentence, Cooked to order under its heading, its box, then the status, in that order",
+  );
+  await expect(
+    main.getByRole("heading", { level: 2 }),
+    "one h2, Cooked to order",
+  ).toHaveCount(1);
+});
+
+// D-159 and D-160 on their own page (D-222): the three radios under the h1,
+// the schedule under its own heading with its lead, days, hours, Today
+// only, the two days, the weeks with their lead, the months with theirs,
+// and its sentence, and the status.
+test("Availability reads in order: the h1, the three radios, the schedule under its heading with its parts and its sentence, and the status", async ({
+  page,
+}) => {
+  await openDish(page, "sizes", "availability");
+  const main = page.locator("main");
+  await expectInOrder(
+    [
+      main.locator("h1"),
+      availabilityGroup(page),
+      main.getByRole("heading", { level: 2, name: schedule.heading }),
+      main.getByText(schedule.lead, { exact: true }),
+      boxGroup(page, schedule.daysLabel),
+      boxGroup(page, schedule.hoursLabel),
+      scheduleField(page, schedule.starts),
+      scheduleField(page, schedule.ends),
+      todayButton(page),
+      scheduleField(page, schedule.firstDay),
+      scheduleField(page, schedule.lastDay),
+      main.getByText(schedule.weeksLead, { exact: true }),
+      boxGroup(page, schedule.weeksLabel),
+      main.getByText(schedule.monthsLead, { exact: true }),
+      boxGroup(page, schedule.monthsLabel),
+      scheduleLine(page),
+      savedStatus(page),
+    ],
+    "the h1, the radios, the schedule heading, its lead, days, hours, Today only, the two days, the weeks with their lead, the months with theirs, its sentence, then the status, in that order",
+  );
+  await expect(
+    main.getByRole("heading", { level: 2 }),
+    "one h2, Schedule",
+  ).toHaveCount(1);
+});
+
+// D-166 on its own page (D-222): the lead under the h1, the rows as h2s,
+// the add field, and the status.
+test("Choice lists reads in order: the h1, the lead, the rows as h2s, the add field, and the status", async ({
+  page,
+}) => {
+  const { lists } = ownerFixture();
+  await openDish(page, "one", "choices");
+  const main = page.locator("main");
+  await expectInOrder(
+    [
+      main.locator("h1"),
+      main.getByText(choiceCopy.leadDish, { exact: true }),
+      choiceRows(page).first(),
+      newListField(page),
+      savedStatus(page),
+    ],
+    "the h1, the lead, the rows, the add field, then the status, in that order",
+  );
+  await expect(
+    choiceRows(page).first().getByRole("heading", { level: 2 }),
+  ).toHaveText(lists.dish.lead);
+  await expect(main.locator("h3"), "no heading below the rows'").toHaveCount(0);
 });
 
 // Task 7, D-167: calories one field a place, as the data file gives them:
@@ -529,12 +1003,12 @@ test("calories read beside each price: one field a size, one after the one price
   await expectNoAxeViolations(page);
 });
 
-// Task 7, D-167: the box under its own heading after Schedule, with its
-// hint, ticked on the bread alone.
+// Task 7, D-167: the box under its own heading on the Dietary tags page
+// (D-222), with its hint, ticked on the bread alone.
 test("Cooked to order reads as one box under its heading with its hint, ticked on the dish the data file marked", async ({
   page,
 }) => {
-  await openDish(page, "market");
+  await openDish(page, "market", "tags");
   const box = cookedBox(page);
   await expect(box).toHaveCount(1);
   await expect(box).toBeChecked();
@@ -544,24 +1018,24 @@ test("Cooked to order reads as one box under its heading with its hint, ticked o
       .locator("main")
       .getByRole("heading", { level: 2, name: cookedToOrder.heading }),
   ).toHaveCount(1);
-  await openDish(page, "one");
+  await openDish(page, "one", "tags");
   await expect(cookedBox(page)).not.toBeChecked();
-  await openDish(page, "sizes");
+  await openDish(page, "sizes", "tags");
   await expect(cookedBox(page)).not.toBeChecked();
 });
 
-// Task 7, D-166: the dish's choice lists as rows under their heading, the
-// salad with its dressing list and the others with none.
+// Task 7, D-166: the dish's choice lists as rows under the h1 of their page
+// (D-222), the salad with its dressing list and the others with none.
 test("the choice lists block shows the salad's dressing list as a row with its link and buttons, and none on the other dishes", async ({
   page,
 }) => {
   const { lists } = ownerFixture();
   const lead = lists.dish.lead;
-  await openDish(page, "one");
+  await openDish(page, "one", "choices");
   await expect(choiceHeading(page)).toHaveCount(1);
   await expect(choiceRows(page)).toHaveCount(1);
   await expect(
-    choiceRows(page).first().getByRole("heading", { level: 3 }),
+    choiceRows(page).first().getByRole("heading", { level: 2 }),
   ).toHaveText(lead);
   const link = page.getByRole("link", {
     name: fill(choiceCopy.lists.rowAction, {
@@ -593,7 +1067,7 @@ test("the choice lists block shows the salad's dressing list as a row with its l
   await expectNoAxeViolations(page);
 
   for (const which of ["sizes", "market"] as const) {
-    await openDish(page, which);
+    await openDish(page, which, "choices");
     await expect(choiceHeading(page)).toHaveCount(1);
     await expect(choiceRows(page)).toHaveCount(0);
     await expect(
@@ -609,7 +1083,7 @@ test("a Cooked to order tick shows at once, is refused once when it cannot land,
 }) => {
   const writes = expectWrites(page, { hold: true });
   const { dishes } = ownerFixture();
-  await openDish(page, "one");
+  await openDish(page, "one", "tags");
   await page
     .locator("#dish-cooked-to-order")
     .getByText(cookedToOrder.label, { exact: true })
@@ -662,7 +1136,7 @@ test("calories in the wrong shape are refused in the field with nothing sent, sa
 test("the dietary tags read as three boxes with their hints, and the sentence diners read follows a tagged dish", async ({
   page,
 }) => {
-  await openDish(page, "one");
+  await openDish(page, "one", "tags");
   const group = tagsGroup(page);
   await expect(group).toHaveCount(1);
   await expect(group).toHaveAccessibleDescription("");
@@ -686,7 +1160,7 @@ test("the dietary tags read as three boxes with their hints, and the sentence di
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 
-  await openDish(page, "sizes");
+  await openDish(page, "sizes", "tags");
   for (const name of Object.values(names)) {
     await expect(box(page, name)).not.toBeChecked();
   }
@@ -699,7 +1173,7 @@ test("the dietary tags read as three boxes with their hints, and the sentence di
 test("availability reads as three radios with the two hints, a dish off the menu says it is hidden, and an available dish says nothing", async ({
   page,
 }) => {
-  await openDish(page, "market");
+  await openDish(page, "market", "availability");
   const group = availabilityGroup(page);
   await expect(group).toHaveCount(1);
   const choices = group.getByRole("radio");
@@ -725,7 +1199,7 @@ test("availability reads as three radios with the two hints, a dish off the menu
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 
-  await openDish(page, "one");
+  await openDish(page, "one", "availability");
   await expect(radio(page, availability.available)).toBeChecked();
   await expect(availabilityGroup(page)).toHaveAccessibleDescription("");
   await expect(radio(page, availability.available)).toHaveAccessibleDescription(
@@ -743,7 +1217,7 @@ test("availability reads as three radios with the two hints, a dish off the menu
 test("the schedule reads a special's hours in one format with one hint on both fields, its sentence and when it next shows, and a dish with no schedule says so", async ({
   page,
 }) => {
-  await openDish(page, "sizes");
+  await openDish(page, "sizes", "availability");
   const starts = scheduleField(page, schedule.starts);
   const ends = scheduleField(page, schedule.ends);
   await expect(starts).toHaveValue("4 pm");
@@ -784,7 +1258,7 @@ test("the schedule reads a special's hours in one format with one hint on both f
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 
-  await openDish(page, "one");
+  await openDish(page, "one", "availability");
   await expect(scheduleLine(page)).toHaveText(schedule.none);
   await expect(scheduleField(page, schedule.starts)).toHaveValue("");
 });
@@ -798,7 +1272,7 @@ test("a tag tick shows at once, is refused once when it cannot land, and goes ba
   const writes = expectWrites(page, { hold: true });
   const { dishes } = ownerFixture();
   const vegan = en.dietary.names.vegan;
-  await openDish(page, "market");
+  await openDish(page, "market", "tags");
   await page.getByText(vegan, { exact: true }).click();
   await expect(box(page, vegan)).toBeChecked();
   await expect(tagsLine(page)).toHaveText(
@@ -823,7 +1297,7 @@ test("Sold out today shows at once with no line until it lands, is refused once 
 }) => {
   const writes = expectWrites(page, { hold: true });
   const { dishes } = ownerFixture();
-  await openDish(page, "one");
+  await openDish(page, "one", "availability");
   await page.getByText(availability.soldOut, { exact: true }).click();
   await expect(radio(page, availability.soldOut)).toBeChecked();
   await expect(
@@ -851,7 +1325,7 @@ test("a day tick shows at once with the sentence it would give diners, is refuse
 }) => {
   const writes = expectWrites(page, { hold: true });
   const { dishes } = ownerFixture();
-  await openDish(page, "sizes");
+  await openDish(page, "sizes", "availability");
   await page.getByText(dayNames.tue, { exact: true }).click();
   await expect(box(page, dayNames.tue)).toBeChecked();
   await expect(scheduleLine(page)).toContainText(
@@ -879,7 +1353,7 @@ test("a day tick shows at once with the sentence it would give diners, is refuse
 test("Tab and Enter through the unchanged time pair and the unchanged dates send nothing and say nothing", async ({
   page,
 }) => {
-  await openDish(page, "sizes");
+  await openDish(page, "sizes", "availability");
   await scheduleField(page, schedule.starts).focus();
   await page.keyboard.press("Tab");
   await expect(scheduleField(page, schedule.ends)).toBeFocused();
@@ -904,7 +1378,7 @@ test("Today only sends one write, is said once when it cannot land, and keeps fo
 }) => {
   const writes = expectWrites(page, { hold: true });
   const { dishes } = ownerFixture();
-  await openDish(page, "one");
+  await openDish(page, "one", "availability");
   await todayButton(page).focus();
   await page.keyboard.press("Enter");
   await expectNoMissingIds(page);
@@ -928,7 +1402,7 @@ test("a week ticked with no day is refused unsent, said once, with the box back 
   page,
 }) => {
   const { dishes } = ownerFixture();
-  await openDish(page, "one");
+  await openDish(page, "one", "availability");
   await page.getByText(schedule.weeks.first, { exact: true }).click();
   const refused = `${fill(schedule.notSaved.weeks, { dish: dishes.one.name })} ${schedule.errors.weeksNeedDay}`;
   await expect(savedStatus(page)).toHaveText(refused);
@@ -953,7 +1427,7 @@ test("the allergen group shows the nine with their hints, the other allergens as
   page,
 }) => {
   const { dishes } = ownerFixture();
-  await openDish(page, "sizes");
+  await openDish(page, "sizes", "allergens");
   const group = majorGroup(page);
   await expect(group).toHaveCount(1);
   await expect(
@@ -1033,7 +1507,7 @@ test("the allergen group shows the nine with their hints, the other allergens as
     allergens.sameNamed.apply,
   );
 
-  await openDish(page, "one");
+  await openDish(page, "one", "allergens");
   for (const id of US_MAJOR_ALLERGENS) {
     await expect(box(page, allergens.names[id])).not.toBeChecked();
   }
@@ -1044,7 +1518,7 @@ test("the allergen group shows the nine with their hints, the other allergens as
   );
   await expect(page.locator('main button[id^="dish-apply-"]')).toHaveCount(0);
 
-  await openDish(page, "market");
+  await openDish(page, "market", "allergens");
   await expect(checkBox(page)).not.toBeChecked();
   await expect(checkBox(page)).toHaveAccessibleDescription(
     checkDescription(
@@ -1067,7 +1541,7 @@ test("a tick shows at once, is refused once when it cannot land, goes back, and 
 }) => {
   const writes = expectWrites(page, { hold: true });
   const { dishes } = ownerFixture();
-  await openDish(page, "market");
+  await openDish(page, "market", "allergens");
   await page.getByText(allergens.names.milk, { exact: true }).click();
   await expect(box(page, allergens.names.milk)).toBeChecked();
   await expect(
@@ -1107,7 +1581,7 @@ test("a tick on a checked dish clears the check at once and says so in the sente
   page,
 }) => {
   const writes = expectWrites(page, { hold: true });
-  await openDish(page, "sizes");
+  await openDish(page, "sizes", "allergens");
   await page.getByText(allergens.names.sesame, { exact: true }).click();
   await expect(box(page, allergens.names.sesame)).toBeChecked();
   await expect(checkBox(page), "the check clears at once").not.toBeChecked();
@@ -1144,7 +1618,7 @@ test("the check shows at once as checked by you, and goes back when it cannot la
 }) => {
   const writes = expectWrites(page, { hold: true });
   const { dishes } = ownerFixture();
-  await openDish(page, "market");
+  await openDish(page, "market", "allergens");
   await page.getByText(allergens.checkLabel, { exact: true }).click();
   await expect(checkBox(page)).toBeChecked();
   await expect(checkBox(page)).toHaveAccessibleDescription(
@@ -1180,7 +1654,7 @@ test("the check shows at once as checked by you, and goes back when it cannot la
 test("Add another allergen adds a blank row with focus in its field and sends nothing, and removing it sends nothing", async ({
   page,
 }) => {
-  await openDish(page, "market");
+  await openDish(page, "market", "allergens");
   await addOtherButton(page).focus();
   await page.keyboard.press("Enter");
   const field = page.getByRole("combobox", {
@@ -1510,7 +1984,10 @@ test("the next dish link names the dish after this one, and the last dish says t
   await expect(next).toHaveAttribute("href", dishPath("one"));
 
   await openDish(page, "market");
-  await expect(page.locator('main a[href*="/dishes/"]')).toHaveCount(0);
+  await expect(
+    page.locator('main p a[href*="/dishes/"]'),
+    "no next-dish link; the page nav's links lead to this dish's pages",
+  ).toHaveCount(0);
   await expect(
     page
       .locator("main")

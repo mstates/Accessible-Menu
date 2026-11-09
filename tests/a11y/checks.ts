@@ -584,184 +584,193 @@ export async function expectControlsShown(
 // with the canvas, and fails contrast.
 type Paint = { what: string; color: string; behind: string };
 
+// The system colors a forced palette is made of, painted in the page to
+// read each one's value there.
+const forcedKeywords = [
+  "Canvas",
+  "CanvasText",
+  "LinkText",
+  "VisitedText",
+  "ActiveText",
+  "ButtonFace",
+  "ButtonText",
+  "ButtonBorder",
+  "Field",
+  "FieldText",
+  "GrayText",
+  "Highlight",
+  "HighlightText",
+  "SelectedItem",
+  "SelectedItemText",
+  "Mark",
+  "MarkText",
+  "AccentColor",
+  "AccentColorText",
+];
+
 async function forcedPaints(
   page: Page,
   marks: readonly Mark[],
 ): Promise<{ palette: string[]; paints: Paint[]; missing: string[] }> {
-  return page.evaluate((marks) => {
-    const keywords = [
-      "Canvas",
-      "CanvasText",
-      "LinkText",
-      "VisitedText",
-      "ActiveText",
-      "ButtonFace",
-      "ButtonText",
-      "ButtonBorder",
-      "Field",
-      "FieldText",
-      "GrayText",
-      "Highlight",
-      "HighlightText",
-      "SelectedItem",
-      "SelectedItemText",
-      "Mark",
-      "MarkText",
-      "AccentColor",
-      "AccentColorText",
-    ];
-    const probe = document.createElement("span");
-    document.body.append(probe);
-    const palette = keywords.map((keyword) => {
-      probe.style.color = keyword;
-      return getComputedStyle(probe).color;
-    });
-    probe.remove();
+  return page.evaluate(
+    ({ marks, keywords }) => {
+      const probe = document.createElement("span");
+      document.body.append(probe);
+      const palette = keywords.map((keyword) => {
+        probe.style.color = keyword;
+        return getComputedStyle(probe).color;
+      });
+      probe.remove();
 
-    const opaque = (color: string) => {
-      const parts = color.match(/[\d.]+/g) ?? [];
-      return parts.length < 4 || Number(parts[3]) > 0;
-    };
-    const behind = (element: Element) => {
-      for (
-        let parent = element.parentElement;
-        parent;
-        parent = parent.parentElement
-      ) {
-        const color = getComputedStyle(parent).backgroundColor;
-        if (opaque(color)) return color;
-      }
-      return palette[0] ?? "rgb(255, 255, 255)";
-    };
-    // Shown means painted: not hidden, not see-through, and not inside a
-    // box of a pixel that clips it, which is how React Aria keeps a native
-    // select or checkbox for forms and autofill out of sight.
-    const shown = (element: Element) => {
-      if (element.closest("[hidden], [inert]")) return false;
-      const box = element.getBoundingClientRect();
-      if (box.width <= 1 || box.height <= 1) return false;
-      for (
-        let node: Element | null = element;
-        node;
-        node = node.parentElement
-      ) {
-        const style = getComputedStyle(node);
-        if (style.visibility === "hidden" || style.opacity === "0") {
-          return false;
+      const opaque = (color: string) => {
+        const parts = color.match(/[\d.]+/g) ?? [];
+        return parts.length < 4 || Number(parts[3]) > 0;
+      };
+      const behind = (element: Element) => {
+        for (
+          let parent = element.parentElement;
+          parent;
+          parent = parent.parentElement
+        ) {
+          const color = getComputedStyle(parent).backgroundColor;
+          if (opaque(color)) return color;
         }
-        const edge = node.getBoundingClientRect();
-        const clips = style.overflow !== "visible" || style.clipPath !== "none";
-        if (clips && (edge.width <= 1 || edge.height <= 1)) return false;
-      }
-      return true;
-    };
-    const named = (element: Element) =>
-      (
-        element.getAttribute("aria-label") ??
-        element.closest("label, button, a, nav")?.textContent ??
-        element.textContent ??
-        ""
-      )
-        .trim()
-        .slice(0, 40);
+        return palette[0] ?? "rgb(255, 255, 255)";
+      };
+      // Shown means painted: not hidden, not see-through, and not inside a
+      // box of a pixel that clips it, which is how React Aria keeps a native
+      // select or checkbox for forms and autofill out of sight.
+      const shown = (element: Element) => {
+        if (element.closest("[hidden], [inert]")) return false;
+        const box = element.getBoundingClientRect();
+        if (box.width <= 1 || box.height <= 1) return false;
+        for (
+          let node: Element | null = element;
+          node;
+          node = node.parentElement
+        ) {
+          const style = getComputedStyle(node);
+          if (style.visibility === "hidden" || style.opacity === "0") {
+            return false;
+          }
+          const edge = node.getBoundingClientRect();
+          const clips =
+            style.overflow !== "visible" || style.clipPath !== "none";
+          if (clips && (edge.width <= 1 || edge.height <= 1)) return false;
+        }
+        return true;
+      };
+      const named = (element: Element) =>
+        (
+          element.getAttribute("aria-label") ??
+          element.closest("label, button, a, nav")?.textContent ??
+          element.textContent ??
+          ""
+        )
+          .trim()
+          .slice(0, 40);
 
-    const paints: { what: string; color: string; behind: string }[] = [];
-    // Edges: every field, button, and checkbox box, on all four sides. A
-    // checkbox's drawn box is the aria-hidden span under its label that
-    // holds the check mark; the box's visible words can be an aria-hidden
-    // span under the same label (D-193), which is text, not a box.
-    const edged = document.querySelectorAll(
-      'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea, select, button, label:has(input[type="checkbox"]) > span[aria-hidden="true"]:has(> svg), label:has(input[type="radio"]) > span[aria-hidden="true"]',
-    );
-    for (const element of edged) {
-      if (element.tagName.toLowerCase().startsWith("vercel-")) continue;
-      if (!shown(element)) continue;
-      const style = getComputedStyle(element);
-      for (const side of ["top", "right", "bottom", "left"] as const) {
-        const what = `the ${side} edge of ${element.tagName.toLowerCase()} "${named(element)}"`;
-        const lineStyle = style.getPropertyValue(`border-${side}-style`);
-        const lineWidth = parseFloat(
-          style.getPropertyValue(`border-${side}-width`),
-        );
-        if (lineStyle === "none" || lineStyle === "hidden" || lineWidth < 1) {
-          paints.push({ what, color: "none", behind: behind(element) });
-          continue;
+      const paints: { what: string; color: string; behind: string }[] = [];
+      // Edges: every field, button, and checkbox box, on all four sides. A
+      // checkbox's drawn box is the aria-hidden span under its label that
+      // holds the check mark; the box's visible words can be an aria-hidden
+      // span under the same label (D-193), which is text, not a box.
+      const edged = document.querySelectorAll(
+        'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea, select, button, label:has(input[type="checkbox"]) > span[aria-hidden="true"]:has(> svg), label:has(input[type="radio"]) > span[aria-hidden="true"]',
+      );
+      for (const element of edged) {
+        if (element.tagName.toLowerCase().startsWith("vercel-")) continue;
+        if (!shown(element)) continue;
+        const style = getComputedStyle(element);
+        for (const side of ["top", "right", "bottom", "left"] as const) {
+          const what = `the ${side} edge of ${element.tagName.toLowerCase()} "${named(element)}"`;
+          const lineStyle = style.getPropertyValue(`border-${side}-style`);
+          const lineWidth = parseFloat(
+            style.getPropertyValue(`border-${side}-width`),
+          );
+          if (lineStyle === "none" || lineStyle === "hidden" || lineWidth < 1) {
+            paints.push({ what, color: "none", behind: behind(element) });
+            continue;
+          }
+          paints.push({
+            what,
+            color: style.getPropertyValue(`border-${side}-color`),
+            behind: behind(element),
+          });
         }
+      }
+      // Marks: every drawn SVG, every piece of text hidden from assistive
+      // technology, like the breadcrumb's slashes and the required asterisks,
+      // and every empty box hidden from it that paints a background or an
+      // edge, the way a spinner made in CSS is drawn.
+      const markOf = (element: Element, what: string) => {
+        const style = getComputedStyle(element);
+        const color =
+          element instanceof SVGElement
+            ? style.stroke !== "none"
+              ? style.stroke
+              : style.fill
+            : style.color;
+        paints.push({ what, color, behind: behind(element) });
+      };
+      const boxOf = (element: Element) => {
+        const style = getComputedStyle(element);
+        const edged =
+          style.borderTopStyle !== "none" &&
+          parseFloat(style.borderTopWidth) >= 1;
+        const color = opaque(style.backgroundColor)
+          ? style.backgroundColor
+          : edged
+            ? style.borderTopColor
+            : null;
+        if (color)
+          paints.push({ what: "a drawn box", color, behind: behind(element) });
+      };
+      for (const element of document.querySelectorAll('[aria-hidden="true"]')) {
+        if (!shown(element)) continue;
+        if (element instanceof SVGSVGElement) {
+          markOf(element, `the drawn mark in "${named(element)}"`);
+        } else if (
+          element.children.length === 0 &&
+          (element.textContent ?? "").trim() !== ""
+        ) {
+          markOf(element, `the mark "${(element.textContent ?? "").trim()}"`);
+        } else if (element.children.length === 0) {
+          boxOf(element);
+        } else {
+          for (const svg of element.querySelectorAll("svg")) {
+            if (shown(svg)) markOf(svg, `the drawn mark in "${named(svg)}"`);
+          }
+        }
+      }
+      // The ring of whatever holds focus while it shows (Q-100). A target that
+      // code focused is no Tab stop, so the keyboard walk never sees it.
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        active !== document.body &&
+        active.matches(":focus-visible")
+      ) {
+        const style = getComputedStyle(active);
+        const drawn =
+          style.outlineStyle !== "none" && parseFloat(style.outlineWidth) >= 1;
         paints.push({
-          what,
-          color: style.getPropertyValue(`border-${side}-color`),
-          behind: behind(element),
+          what: `the focus ring of ${active.tagName.toLowerCase()} "${named(active)}"`,
+          color: drawn ? style.outlineColor : "none",
+          behind: behind(active),
         });
       }
-    }
-    // Marks: every drawn SVG, every piece of text hidden from assistive
-    // technology, like the breadcrumb's slashes and the required asterisks,
-    // and every empty box hidden from it that paints a background or an
-    // edge, the way a spinner made in CSS is drawn.
-    const markOf = (element: Element, what: string) => {
-      const style = getComputedStyle(element);
-      const color =
-        element instanceof SVGElement
-          ? style.stroke !== "none"
-            ? style.stroke
-            : style.fill
-          : style.color;
-      paints.push({ what, color, behind: behind(element) });
-    };
-    const boxOf = (element: Element) => {
-      const style = getComputedStyle(element);
-      const edged =
-        style.borderTopStyle !== "none" &&
-        parseFloat(style.borderTopWidth) >= 1;
-      const color = opaque(style.backgroundColor)
-        ? style.backgroundColor
-        : edged
-          ? style.borderTopColor
-          : null;
-      if (color)
-        paints.push({ what: "a drawn box", color, behind: behind(element) });
-    };
-    for (const element of document.querySelectorAll('[aria-hidden="true"]')) {
-      if (!shown(element)) continue;
-      if (element instanceof SVGSVGElement) {
-        markOf(element, `the drawn mark in "${named(element)}"`);
-      } else if (
-        element.children.length === 0 &&
-        (element.textContent ?? "").trim() !== ""
-      ) {
-        markOf(element, `the mark "${(element.textContent ?? "").trim()}"`);
-      } else if (element.children.length === 0) {
-        boxOf(element);
-      } else {
-        for (const svg of element.querySelectorAll("svg")) {
-          if (shown(svg)) markOf(svg, `the drawn mark in "${named(svg)}"`);
-        }
+      const missing: string[] = [];
+      for (const mark of marks) {
+        const found = [...document.querySelectorAll(mark.selector)].filter(
+          shown,
+        );
+        if (found.length === 0) missing.push(mark.what);
       }
-    }
-    // The ring of whatever holds focus while it shows (Q-100). A target that
-    // code focused is no Tab stop, so the keyboard walk never sees it.
-    const active = document.activeElement;
-    if (
-      active instanceof HTMLElement &&
-      active !== document.body &&
-      active.matches(":focus-visible")
-    ) {
-      const style = getComputedStyle(active);
-      const drawn =
-        style.outlineStyle !== "none" && parseFloat(style.outlineWidth) >= 1;
-      paints.push({
-        what: `the focus ring of ${active.tagName.toLowerCase()} "${named(active)}"`,
-        color: drawn ? style.outlineColor : "none",
-        behind: behind(active),
-      });
-    }
-    const missing: string[] = [];
-    for (const mark of marks) {
-      const found = [...document.querySelectorAll(mark.selector)].filter(shown);
-      if (found.length === 0) missing.push(mark.what);
-    }
-    return { palette, paints, missing };
-  }, marks);
+      return { palette, paints, missing };
+    },
+    { marks, keywords: forcedKeywords },
+  );
 }
 
 function luminance(color: string): number {
@@ -806,6 +815,78 @@ export async function expectForcedColorsKept(
     }),
   ];
   expect(problems, problems.join("\n")).toEqual([]);
+}
+
+// One edge of one element in forced colors: the page nav's current-page
+// bar (D-222), the left border of the one link marked current. Drawn at
+// least the given width, in a color of the forced palette with 3:1 against
+// what is behind it, as every edge above is held to. The selector must
+// match one element.
+export async function expectForcedEdge(
+  page: Page,
+  selector: string,
+  side: "top" | "right" | "bottom" | "left",
+  width: number,
+) {
+  const edge = await page.evaluate(
+    ({ selector, side, keywords }) => {
+      const matches = document.querySelectorAll(selector);
+      if (matches.length !== 1) {
+        throw new Error(
+          `${selector} matches ${matches.length} elements, not one`,
+        );
+      }
+      const element = matches[0] as Element;
+      const probe = document.createElement("span");
+      document.body.append(probe);
+      const palette = keywords.map((keyword) => {
+        probe.style.color = keyword;
+        return getComputedStyle(probe).color;
+      });
+      probe.remove();
+      const opaque = (color: string) => {
+        const parts = color.match(/[\d.]+/g) ?? [];
+        return parts.length < 4 || Number(parts[3]) > 0;
+      };
+      let behind = palette[0] ?? "rgb(255, 255, 255)";
+      for (
+        let parent = element.parentElement;
+        parent;
+        parent = parent.parentElement
+      ) {
+        const color = getComputedStyle(parent).backgroundColor;
+        if (opaque(color)) {
+          behind = color;
+          break;
+        }
+      }
+      const style = getComputedStyle(element);
+      return {
+        palette,
+        behind,
+        lineStyle: style.getPropertyValue(`border-${side}-style`),
+        lineWidth: parseFloat(style.getPropertyValue(`border-${side}-width`)),
+        color: style.getPropertyValue(`border-${side}-color`),
+      };
+    },
+    { selector, side, keywords: forcedKeywords },
+  );
+  const what = `the ${side} edge of ${selector}`;
+  expect(edge.lineStyle, `${what} is drawn`).toBe("solid");
+  expect(
+    edge.lineWidth,
+    `${what} is at least ${width}px`,
+  ).toBeGreaterThanOrEqual(width);
+  const system = new Set(edge.palette.map(rgb));
+  expect(
+    system.has(rgb(edge.color)),
+    `${what} is ${edge.color}, not a system color`,
+  ).toBe(true);
+  const ratio = contrast(edge.color, edge.behind);
+  expect(
+    ratio,
+    `${what} is ${edge.color} on ${edge.behind}, ${ratio.toFixed(2)}:1`,
+  ).toBeGreaterThanOrEqual(3);
 }
 
 // Runs each check as its own step and keeps going after one fails, so a

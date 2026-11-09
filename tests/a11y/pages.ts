@@ -69,13 +69,12 @@ export function ownerPages(code: string) {
 }
 
 // The restaurant's name on one of its own pages: the visible text that
-// names its nav, in front of the links (D-113). The nav is the one that
-// marks a link as current, as the page or, inside a menu, as the part of
-// the nav the page sits in (D-122).
+// names its nav, in front of the links (D-113). The nav is the one between
+// the header and main, outside main; the breadcrumb and a thing's page nav
+// sit inside main (D-222). It marks a link as current, as the page or,
+// inside a menu, as the part of the nav the page sits in (D-122).
 export async function restaurantName(page: Page): Promise<string> {
-  const nav = page
-    .locator("nav")
-    .filter({ has: page.locator("a[aria-current]") });
+  const nav = page.locator("body > nav");
   const labelId = await nav.getAttribute("aria-labelledby");
   if (!labelId) throw new Error("the restaurant nav has no visible label");
   const label = await page.locator(`[id="${labelId}"]`).textContent();

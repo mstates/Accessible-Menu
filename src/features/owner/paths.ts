@@ -48,6 +48,20 @@ export function restaurantDishPath(code: string, dishId: string): string {
   return `/app/restaurants/${code}/dishes/${dishId}`;
 }
 
+// A dish's other pages (D-222): its allergens, its dietary tags, its
+// availability with its schedule, and its choice lists, each under the
+// dish's own address, so they move with it (D-129). General is the dish's
+// own address.
+export type DishPageSlug = "allergens" | "tags" | "availability" | "choices";
+
+export function restaurantDishPagePath(
+  code: string,
+  dishId: string,
+  slug: DishPageSlug,
+): string {
+  return `${restaurantDishPath(code, dishId)}/${slug}`;
+}
+
 // One choice list's own page (D-166). The list is named by its id, and the
 // address names neither its dish or section nor the menu, as the dish
 // page's does not.

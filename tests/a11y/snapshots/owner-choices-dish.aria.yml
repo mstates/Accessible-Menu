@@ -20,6 +20,8 @@
         - link "Starters"
       - listitem:
         - link "House salad"
+      - listitem:
+        - link "Choice lists"
       - listitem: Choose a dressing
   - heading "Choose a dressing" [level=1]
   - paragraph: Each change saves when you leave its field.

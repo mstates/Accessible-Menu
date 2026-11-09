@@ -19,8 +19,8 @@ const allowed: Record<string, string> = {
     "reads and writes the column, and never reads its meaning",
   "src/features/owner/dish/actions.ts":
     "writes the mark the owner's choice means",
-  "app/app/restaurants/[code]/dishes/[dish]/page.tsx":
-    "hands the row to the decider and the mark to the page",
+  "src/features/owner/dish/load-dish.ts":
+    "hands the row to the decider once per request, for the page nav's Availability line and the Availability page (D-222); no route or frame names the mark",
   "src/domain/snapshot.ts":
     "lists the mark among the keys a published snapshot never holds, since the diner page reads it live (migration 12)",
   "src/core/supabase/diner.ts":

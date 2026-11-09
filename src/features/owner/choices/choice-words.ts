@@ -21,6 +21,11 @@ export type ChoiceStrings = Copy["owner"]["choices"];
 // {list} placeholder; which taken-lead sentence applies depends on the home.
 export const CHOICE_LIST_PREFIX = "list";
 
+// The id of the heading that names the rows, wherever the heading is: an
+// h2 on a section's page, and the h1 on a dish's Choice lists page (D-222),
+// which is why it lives here and not in the hook.
+export const CHOICE_LISTS_HEADING_ID = "choice-lists-heading";
+
 export function choiceListWords(
   strings: ChoiceStrings,
   editing: EditingStrings,

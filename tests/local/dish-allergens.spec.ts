@@ -8,7 +8,7 @@ import {
   otherAction,
   otherSuffix,
 } from "../../src/features/owner/allergens/allergen-words";
-import { restaurantDishPath } from "../../src/features/owner/paths";
+import { restaurantDishPagePath } from "../../src/features/owner/paths";
 import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture, ownerStatePath } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
@@ -33,8 +33,13 @@ const standin = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 
 type Priced = "sizes" | "one" | "market";
 
+// The dish's Allergens page (D-222), where its group lives.
 function dishPath(which: Priced): string {
-  return restaurantDishPath(code, ownerFixture().dishes[which].id);
+  return restaurantDishPagePath(
+    code,
+    ownerFixture().dishes[which].id,
+    "allergens",
+  );
 }
 
 async function openDish(page: Page, which: Priced): Promise<void> {

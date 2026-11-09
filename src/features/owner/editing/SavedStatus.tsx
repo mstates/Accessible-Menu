@@ -3,6 +3,7 @@
 import type { Copy } from "@/copy";
 import { Button } from "@/ui/Button";
 import type { Status } from "./status";
+import type { Editing } from "./useEditing";
 
 type Props = {
   strings: Copy["owner"]["editing"];
@@ -48,6 +49,32 @@ export function SavedStatus({
           {strings.reload}
         </Button>
       ) : null}
+    </div>
+  );
+}
+
+// The one status of a page that draws no list (D-111): a dish's five pages
+// (D-222). Canvas for the status and its buttons, placed where the page's
+// content ends.
+export function PageSavedStatus({
+  strings,
+  editing,
+  onRetry,
+}: {
+  strings: Copy["owner"]["editing"];
+  editing: Editing;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
+      <SavedStatus
+        strings={strings}
+        status={editing.status}
+        notice={editing.notice}
+        canRetry={Object.keys(editing.failures).length > 0}
+        outOfDate={editing.outOfDate}
+        onRetry={onRetry}
+      />
     </div>
   );
 }

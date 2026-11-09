@@ -1,0 +1,52 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+  - status
+- navigation "CI Diner (test restaurant, not real)":
+  - paragraph: CI Diner (test restaurant, not real)
+  - list:
+    - listitem:
+      - link "Details"
+    - listitem:
+      - link "Menus"
+- main:
+  - navigation "Breadcrumb":
+    - list:
+      - listitem:
+        - link "Menus"
+      - listitem:
+        - link "Dinner"
+      - listitem:
+        - link "Starters"
+      - listitem:
+        - link "House salad"
+  - heading "Choice lists" [level=1]
+  - navigation "House salad":
+    - list:
+      - listitem:
+        - link "General"
+      - listitem:
+        - link "Allergens Confirmed"
+      - listitem:
+        - link "Dietary tags 2 tags"
+      - listitem:
+        - link "Availability Available, no schedule"
+      - listitem:
+        - link "Choice lists 1 choice list"
+  - paragraph: What a diner picks or adds with this dish, like a side, a dressing, or an add-on. Each list has a lead, like Choose one side, and its options.
+  - list "Choice lists":
+    - listitem:
+      - heading "Choose a dressing" [level=2]
+      - link "Edit choices, Choose a dressing":
+        - text: Edit choices
+      - button "Move up, Choose a dressing" [disabled]: Move up
+      - button "Move down, Choose a dressing" [disabled]: Move down
+      - button "Delete, Choose a dressing": Delete
+  - text: New choice list
+  - textbox "New choice list"
+  - text: The words diners read first, like Choose one side or Add on.
+  - button "Add choice list"
+  - status: All changes saved
+  - log
+- contentinfo: Accessible Menu
+- alert

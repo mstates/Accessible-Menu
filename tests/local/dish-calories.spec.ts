@@ -1,7 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
-import { restaurantDishPath } from "../../src/features/owner/paths";
+import {
+  restaurantDishPagePath,
+  restaurantDishPath,
+} from "../../src/features/owner/paths";
 import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
@@ -22,12 +25,21 @@ const standin = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 
 type Priced = "sizes" | "one" | "market";
 
-function dishPath(which: Priced): string {
-  return restaurantDishPath(code, ownerFixture().dishes[which].id);
+// Calories live on the dish's General page, Cooked to order on its Dietary
+// tags page (D-222).
+function dishPath(which: Priced, at: "general" | "tags" = "general"): string {
+  const id = ownerFixture().dishes[which].id;
+  return at === "general"
+    ? restaurantDishPath(code, id)
+    : restaurantDishPagePath(code, id, at);
 }
 
-async function openDish(page: Page, which: Priced): Promise<void> {
-  await page.goto(dishPath(which));
+async function openDish(
+  page: Page,
+  which: Priced,
+  at: "general" | "tags" = "general",
+): Promise<void> {
+  await page.goto(dishPath(which, at));
   await page.waitForLoadState("networkidle");
   await hearLog(page);
 }
@@ -188,7 +200,7 @@ test("Cooked to order ticked and unticked each say Saved. once and hold after a 
   page,
 }) => {
   const { dishes } = ownerFixture();
-  await openDish(page, "one");
+  await openDish(page, "one", "tags");
   await expect(cookedBox(page)).not.toBeChecked();
   await cookedWords(page).click();
   await expect(cookedBox(page)).toBeChecked();
@@ -212,7 +224,7 @@ test("a Cooked to order tick the server refuses goes back, is said once with Try
 }) => {
   const { dishes } = ownerFixture();
   const dish = dishes.one.name;
-  await openDish(page, "one");
+  await openDish(page, "one", "tags");
   await fetch(`${standin}/__test/fail?times=1`);
   await cookedWords(page).click();
   const failure = `${fill(strings.cookedToOrder.notSaved, { dish })} ${editing.problems.failed}`;

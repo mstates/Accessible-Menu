@@ -39,6 +39,20 @@ describe("pageTitle", () => {
     );
   });
 
+  // A dish's sub page (D-222, D-225): the page, then the dish and every
+  // level it sits inside, nearest first, the restaurant, the site.
+  it("names a thing's page first, then the thing and every level it sits inside", () => {
+    expect(
+      pageTitle(en, "Allergens", "Test Bistro", [
+        "Soup of the day",
+        "Starters",
+        "Dinner",
+      ]),
+    ).toBe(
+      `Allergens${sep}Soup of the day${sep}Starters${sep}Dinner${sep}Test Bistro${sep}Accessible Menu`,
+    );
+  });
+
   it("keeps an outcome at the front, where it is heard first", () => {
     expect(pageTitle(en, strings.details.createdTitle, "Test Bistro")).toBe(
       `Restaurant created. Details${sep}Test Bistro${sep}Accessible Menu`,

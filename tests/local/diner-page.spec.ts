@@ -11,6 +11,7 @@ import { lifetimeSeconds, nextTimedChange } from "../../src/domain/timed";
 import { zonedDay } from "../../src/domain/timezones";
 import {
   restaurantDetailsPath,
+  restaurantDishPagePath,
   restaurantDishPath,
   restaurantMenuPath,
 } from "../../src/features/owner/paths";
@@ -186,7 +187,10 @@ test("a special's hours ending ends the page's lifetime, and the page changes on
   const now = new Date();
   const ends = new Date(Math.ceil((now.getTime() + 60_000) / 60_000) * 60_000);
   const starts = new Date(now.getTime() - 60 * 60_000);
-  await openOwner(page, restaurantDishPath(code, dishes.sizes.id));
+  await openOwner(
+    page,
+    restaurantDishPagePath(code, dishes.sizes.id, "availability"),
+  );
   await field(page, dish.schedule.starts).fill(clock(starts));
   await field(page, dish.schedule.ends).fill(clock(ends));
   await page.keyboard.press("Enter");
@@ -222,7 +226,10 @@ test("a special's hours ending ends the page's lifetime, and the page changes on
   ).not.toContain("Cup $5, 180 calories");
 
   // As it was: every day from 4 to 9 pm.
-  await openOwner(page, restaurantDishPath(code, dishes.sizes.id));
+  await openOwner(
+    page,
+    restaurantDishPagePath(code, dishes.sizes.id, "availability"),
+  );
   await field(page, dish.schedule.starts).fill("4 pm");
   await field(page, dish.schedule.ends).fill("9 pm");
   await page.keyboard.press("Enter");
@@ -233,7 +240,10 @@ test("Sold out today reaches diners without Publish, and the page's lifetime end
   page,
 }) => {
   const { dishes } = ownerFixture();
-  await openOwner(page, restaurantDishPath(code, dishes.one.id));
+  await openOwner(
+    page,
+    restaurantDishPagePath(code, dishes.one.id, "availability"),
+  );
   await choose(page, dish.availability.soldOut);
   try {
     const read = await served(page, bare);
@@ -282,7 +292,10 @@ test("Sold out today reaches diners without Publish, and the page's lifetime end
     expect(read.staleFor, "a one-second stale window").toBe(1);
   } finally {
     // As it was.
-    await openOwner(page, restaurantDishPath(code, dishes.one.id));
+    await openOwner(
+      page,
+      restaurantDishPagePath(code, dishes.one.id, "availability"),
+    );
     await choose(page, dish.availability.available);
   }
   await expect
@@ -588,7 +601,10 @@ test("a failed read is never cached: the page answers 500 once and the menu on t
   const { dishes } = ownerFixture();
   // A press clears the restaurant's pages, so the next read renders: the
   // salad off the menu for now.
-  await openOwner(page, restaurantDishPath(code, dishes.one.id));
+  await openOwner(
+    page,
+    restaurantDishPagePath(code, dishes.one.id, "availability"),
+  );
   await choose(page, dish.availability.off);
   try {
     await knob("fail-read", { times: "1" });
@@ -597,7 +613,10 @@ test("a failed read is never cached: the page answers 500 once and the menu on t
     expect(next.status).toBe(200);
     expect(next.html).not.toContain("House salad");
   } finally {
-    await openOwner(page, restaurantDishPath(code, dishes.one.id));
+    await openOwner(
+      page,
+      restaurantDishPagePath(code, dishes.one.id, "availability"),
+    );
     await choose(page, dish.availability.available);
   }
   await expect
@@ -882,7 +901,10 @@ test("a published menu whose every dish is off the menu says nothing is served w
   // Available again through its dish page, which clears the restaurant's
   // pages: Eggs is back with its dish and the confirmation line, and the
   // line is gone.
-  await openOwner(page, restaurantDishPath(code, shakshuka));
+  await openOwner(
+    page,
+    restaurantDishPagePath(code, shakshuka, "availability"),
+  );
   await choose(page, dish.availability.available);
   try {
     const shown = await served(page, brunch);
@@ -891,7 +913,10 @@ test("a published menu whose every dish is off the menu says nothing is served w
     expect(shown.html).toContain(en.allergens.confirmedAll);
     expect(shown.html).not.toContain(line);
   } finally {
-    await openOwner(page, restaurantDishPath(code, shakshuka));
+    await openOwner(
+      page,
+      restaurantDishPagePath(code, shakshuka, "availability"),
+    );
     await choose(page, dish.availability.off);
   }
   await expect

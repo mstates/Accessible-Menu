@@ -13,11 +13,14 @@ import {
 } from "./choice-actions";
 import {
   CHOICE_LIST_PREFIX,
+  CHOICE_LISTS_HEADING_ID,
   choiceListRows,
   choiceListWords,
   choiceListsLead,
   type ChoiceStrings,
 } from "./choice-words";
+
+export { CHOICE_LISTS_HEADING_ID };
 
 // The choice lists of a dish or a section, as rows on its page (D-166):
 // one row a list, named by its lead, with the link to the list's own page,
@@ -38,8 +41,6 @@ type Props = {
   // The page's one editing state.
   shared: Editing;
 };
-
-export const CHOICE_LISTS_HEADING_ID = "choice-lists-heading";
 
 export function useChoiceListRows({
   strings,

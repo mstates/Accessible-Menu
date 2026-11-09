@@ -8,20 +8,30 @@ import type { DishAvailabilityState } from "./useDishAvailability";
 type Props = {
   strings: DishStrings["availability"];
   availability: DishAvailabilityState;
+  // The group sits directly under the page's h1, which carries its heading
+  // id (D-222, D-225), so it draws no heading of its own.
+  underPageHeading?: boolean;
 };
 
-// Availability (D-160, task 5), under its own heading (D-128): three radios
+// Availability (D-160, task 5), under the heading that names it, the
+// page's h1 on a dish's Availability page (D-222): three radios
 // as Price's are (D-143), the two that change what diners see with a hint
 // under their words, and the group's line saying what the choice means now,
 // which React Aria reads with the group and each radio while it shows
 // (D-147). The wrapper takes a failed save's focus and hands it to the
 // chosen radio, so a reader hears the group and the choice.
-export function DishAvailability({ strings, availability }: Props) {
+export function DishAvailability({
+  strings,
+  availability,
+  underPageHeading = false,
+}: Props) {
   return (
     <div className="mt-8 flex flex-col gap-4">
-      <h2 id={availability.headingId} className="text-xl font-bold">
-        {strings.heading}
-      </h2>
+      {underPageHeading ? null : (
+        <h2 id={availability.headingId} className="text-xl font-bold">
+          {strings.heading}
+        </h2>
+      )}
       <div
         id={availability.id}
         role="presentation"

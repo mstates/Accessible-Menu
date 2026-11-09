@@ -22,11 +22,14 @@ type Props = {
   // The diner-facing words, for the sentence diners will read.
   allergenCopy: AllergenCopy;
   group: AllergenGroupView;
-  // The group's heading, and the lead under it: a dish's name the dish, an
-  // option's name the option (D-166).
-  heading: string;
+  // The group's heading, where it draws one: an option's names the option
+  // under its own h2 (D-166). On a dish's Allergens page the h1 is the
+  // heading and carries the group's heading id, so none is passed and none
+  // is drawn (D-222, D-225).
+  heading?: string;
+  // The lead under the heading.
   lead: string;
-  // The heading's level: 2 on a dish's page, 3 under an option's own h2.
+  // The heading's level: 3 under an option's own h2.
   headingLevel?: 2 | 3;
   // The other allergens the restaurant's dishes and lines already name
   // first, then the starter list, each once.
@@ -36,7 +39,8 @@ type Props = {
   lang: string;
 };
 
-// The allergen group (D-128, D-148, D-166), under its own heading: the nine
+// The allergen group (D-128, D-148, D-166), under the heading that names
+// it, the page's h1 on a dish's Allergens page (D-222): the nine
 // major allergens as boxes, each with a hint under its words; the other
 // allergens as rows named by their place, each a field that suggests names
 // and a Remove button; one box that checks the list; under it, always, the
@@ -68,9 +72,11 @@ export function AllergenGroup({
 
   return (
     <div className="mt-8 flex flex-col gap-6">
-      <Heading id={ids.heading} className="text-xl font-bold">
-        {heading}
-      </Heading>
+      {heading !== undefined ? (
+        <Heading id={ids.heading} className="text-xl font-bold">
+          {heading}
+        </Heading>
+      ) : null}
 
       {/* The lead for the whole group, as a plain paragraph: tied to the
           group, React Aria would read it with every box as well. */}

@@ -5,7 +5,7 @@ import { pageTitle } from "../../src/copy/title";
 import { CHOICE_LISTS_HEADING_ID } from "../../src/features/owner/choices/useChoiceListRows";
 import {
   restaurantChoiceListPath,
-  restaurantDishPath,
+  restaurantDishPagePath,
   restaurantSectionPath,
 } from "../../src/features/owner/paths";
 import { expectNoMissingIds } from "../a11y/checks";
@@ -13,7 +13,8 @@ import { ownerEnv, ownerFixture } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
 import { restaurantName } from "../a11y/pages";
 
-// Choice lists as rows on a dish's and a section's page, and the lead on
+// Choice lists as rows on a dish's Choice lists page (D-222) and a
+// section's page, and the lead on
 // the list's own page, with saves that land for real against the stand-in
 // (D-166, task 7): a list added by lead on each home, said once, its row's
 // link reaching the list page with the whole title; the lead changed by
@@ -56,10 +57,12 @@ function choiceRows(page: Page) {
   );
 }
 
+// Each row's heading: an h2 on a dish's Choice lists page, an h3 on a
+// section's page (D-222).
 async function leads(page: Page): Promise<string[]> {
   return choiceRows(page)
-    .locator("h3")
-    .evaluateAll((all) => all.map((h3) => (h3.textContent ?? "").trim()));
+    .locator(":is(h2, h3)")
+    .evaluateAll((all) => all.map((h) => (h.textContent ?? "").trim()));
 }
 
 function newListField(page: Page) {
@@ -210,7 +213,10 @@ test("a list added by lead on the section's page and on a dish's page is said on
     .not.toBeNull();
 
   // A dish's page: the market price dish has none.
-  await openPath(page, restaurantDishPath(code, dishes.market.id));
+  await openPath(
+    page,
+    restaurantDishPagePath(code, dishes.market.id, "choices"),
+  );
   expect(await leads(page)).toEqual([]);
   await newListField(page).fill("Choose a sauce");
   await page.keyboard.press("Enter");
@@ -239,7 +245,10 @@ test("a list added by lead on the section's page and on a dish's page is said on
   // that names the option (D-119), confirmed by key once focus has reached
   // Keep (D-136). The page is opened afresh so its count is the server's.
   await addOptionElsewhere(onDish?.id ?? "", "Aioli");
-  await openPath(page, restaurantDishPath(code, dishes.market.id));
+  await openPath(
+    page,
+    restaurantDishPagePath(code, dishes.market.id, "choices"),
+  );
   await deleteThroughDialog(
     page,
     "Choose a sauce",
@@ -329,7 +338,7 @@ test("the lead changes by typing and by a suggestion chosen, each saying Saved. 
   const extra = (await listRows()).find(
     (list) => list.item_id === dishes.one.id && list.lead === "Add on",
   );
-  await openPath(page, restaurantDishPath(code, dishes.one.id));
+  await openPath(page, restaurantDishPagePath(code, dishes.one.id, "choices"));
   await deleteThroughDialog(
     page,
     "Add on",
@@ -363,7 +372,10 @@ test("Move up and Move down land and read back in order after a reload", async (
     (list) => list.item_id === dishes.one.id && list.lead === "Add on",
   );
   try {
-    await openPath(page, restaurantDishPath(code, dishes.one.id));
+    await openPath(
+      page,
+      restaurantDishPagePath(code, dishes.one.id, "choices"),
+    );
     expect(await leads(page)).toEqual(["Choose a dressing", "Add on"]);
     await listButton(page, strings.lists.moveUp, "Add on").click();
     await expect
@@ -405,7 +417,10 @@ test("Move up and Move down land and read back in order after a reload", async (
     ]);
     await expectNoMissingIds(page);
   } finally {
-    await openPath(page, restaurantDishPath(code, dishes.one.id));
+    await openPath(
+      page,
+      restaurantDishPagePath(code, dishes.one.id, "choices"),
+    );
     await deleteThroughDialog(
       page,
       "Add on",

@@ -10,7 +10,7 @@ import {
   sizeAction,
   sizeLabel,
 } from "../../src/features/owner/dish/dish-words";
-import { CHOICE_LISTS_HEADING_ID } from "../../src/features/owner/choices/useChoiceListRows";
+import { CHOICE_LISTS_HEADING_ID } from "../../src/features/owner/choices/choice-words";
 import { dashboardPath } from "../../src/features/owner/paths";
 import type { Control, Mark } from "./checks";
 import { listRows } from "./owner-lists";
@@ -197,14 +197,21 @@ export async function menuControls(page: Page): Promise<Control[]> {
 // and, while the line shown with every dish has words, its allergen group's
 // buttons (D-152): each other allergen's two, named by the row as the page
 // shows it, and Add another allergen.
-// The choice lists on a dish's or a section's page (D-166): each row's
-// link and three buttons, named by the list's lead as its heading shows
-// it, and Add choice list.
-async function choiceListControls(page: Page): Promise<Control[]> {
+// The choice lists on a dish's Choice lists page or a section's page
+// (D-166, D-222): each row's link and three buttons, named by the list's
+// lead as its heading shows it, and Add choice list. A row's heading is an
+// h2 on the dish's page, where the h1 names the block, and an h3 on the
+// section's, under the block's h2.
+async function choiceListControls(
+  page: Page,
+  rowHeading: "h2" | "h3",
+): Promise<Control[]> {
   const choices = en.owner.choices.lists;
   const leads = await page
-    .locator(`main ol[aria-labelledby="${CHOICE_LISTS_HEADING_ID}"] > li h3`)
-    .evaluateAll((all) => all.map((h3) => (h3.textContent ?? "").trim()));
+    .locator(
+      `main ol[aria-labelledby="${CHOICE_LISTS_HEADING_ID}"] > li ${rowHeading}`,
+    )
+    .evaluateAll((all) => all.map((h) => (h.textContent ?? "").trim()));
   const named = (action: string, list: string) =>
     fill(choices.rowAction, { action, list });
   return [
@@ -227,21 +234,48 @@ export async function sectionControls(
     site,
     ...nav,
     link(menu),
-    ...(await choiceListControls(page)),
+    ...(await choiceListControls(page, "h3")),
     ...(await rowControls(page, words, "dish", words.editDish)),
     button(words.move.submit),
   ];
 }
 
-// A dish's page (D-128, D-139, D-148): the breadcrumb's three links, each
-// size's two buttons when the dish is priced by size, named by the size as
-// the page shows it, Add a size, each other allergen's two buttons, named
-// by the row as the page shows it, Add another allergen, each same-named
-// dish's or option's Apply button, Today only (task 5), the choice lists'
-// controls (task 7), the link to the next dish when there is one,
-// and the move's button; the move's Select is named by its label and its
-// value, so the sweep checks it.
-export async function dishControls(
+// The page nav on a dish's pages (D-222): five links, each named by its
+// page and, after it, the page's state line as the page shows it, read
+// from the nav itself since the states follow the data file (D-126); the
+// nav test in owner-dish.spec.ts holds the words. The page nav is the nav
+// inside main that is not the breadcrumb.
+async function pageNavControls(page: Page): Promise<Control[]> {
+  const names = await page
+    .locator(`main nav:not([aria-label="${en.ui.breadcrumb}"]) a`)
+    .evaluateAll((links) =>
+      links.map((link) => (link.textContent ?? "").replace(/\s+/g, " ").trim()),
+    );
+  return names.map((name) => link(name));
+}
+
+// What every one of a dish's pages shows (D-222): the site link, the
+// restaurant nav's two, the breadcrumb's links (the menu and the section,
+// and the dish on a sub page), and the page nav's five.
+async function dishFrameControls(
+  page: Page,
+  trail: readonly string[],
+): Promise<Control[]> {
+  return [
+    site,
+    ...nav,
+    ...trail.map((crumb) => link(crumb)),
+    ...(await pageNavControls(page)),
+  ];
+}
+
+// A dish's General page (D-128, D-139, D-222): each size's two buttons when
+// the dish is priced by size, named by the size as the page shows it, Add
+// a size, the link to the next dish when there is one, and the move's
+// button; the move's Select is named by its label and its value, so the
+// sweep checks it. The next dish's link is the one in a paragraph: the
+// page nav's links lead to the dish's pages too.
+export async function dishGeneralControls(
   page: Page,
   menu: string,
   section: string,
@@ -270,8 +304,30 @@ export async function dishControls(
   const bySize = await page
     .getByRole("radio", { name: words.price.sizes, exact: true })
     .isChecked();
+  const nextName = await page
+    .locator('main p a[href*="/dishes/"]')
+    .evaluateAll((links) => links.map((link) => link.textContent ?? ""));
+  return [
+    ...(await dishFrameControls(page, [menu, section])),
+    ...sizes,
+    ...(bySize ? [button(words.price.addSize)] : []),
+    ...nextName.map((text) => link(text)),
+    button(words.move.submit),
+  ];
+}
+
+// A dish's Allergens page (D-148, D-222): each other allergen's two
+// buttons, named by the row as the page shows it, Add another allergen,
+// and each same-named dish's or option's Apply button.
+export async function dishAllergensControls(
+  page: Page,
+  menu: string,
+  section: string,
+  dish: string,
+): Promise<Control[]> {
+  const words = en.owner.dish.allergens;
   const otherNames = await page
-    .locator(`main ol[aria-label="${words.allergens.othersLabel}"] > li`)
+    .locator(`main ol[aria-label="${words.othersLabel}"] > li`)
     .evaluateAll((rows) =>
       rows.map(
         (row) =>
@@ -280,12 +336,10 @@ export async function dishControls(
       ),
     );
   const others = otherNames.flatMap((name, index) => {
-    const label = otherLabel(words.allergens, name, index + 1);
+    const label = otherLabel(words, name, index + 1);
     return [
-      button(
-        otherAction(words.allergens, words.allergens.showOtherNames, label),
-      ),
-      button(otherAction(words.allergens, words.allergens.removeOther, label)),
+      button(otherAction(words, words.showOtherNames, label)),
+      button(otherAction(words, words.removeOther, label)),
     ];
   });
   const applies = await page
@@ -293,23 +347,49 @@ export async function dishControls(
     .evaluateAll((buttons) =>
       buttons.map((each) => each.getAttribute("aria-label") ?? ""),
     );
-  const nextName = await page
-    .locator('main a[href*="/dishes/"]')
-    .evaluateAll((links) => links.map((link) => link.textContent ?? ""));
   return [
-    site,
-    ...nav,
-    link(menu),
-    link(section),
-    ...sizes,
-    ...(bySize ? [button(words.price.addSize)] : []),
+    ...(await dishFrameControls(page, [menu, section, dish])),
     ...others,
-    button(words.allergens.addOther),
+    button(words.addOther),
     ...applies.map((name) => button(name)),
-    button(words.schedule.todayOnly),
-    ...(await choiceListControls(page)),
-    ...nextName.map((text) => link(text)),
-    button(words.move.submit),
+  ];
+}
+
+// A dish's Dietary tags page (D-66, D-222): the frame's alone; its boxes
+// are neither links nor buttons.
+export async function dishTagsControls(
+  page: Page,
+  menu: string,
+  section: string,
+  dish: string,
+): Promise<Control[]> {
+  return dishFrameControls(page, [menu, section, dish]);
+}
+
+// A dish's Availability page (D-160, D-222): Today only (task 5).
+export async function dishAvailabilityControls(
+  page: Page,
+  menu: string,
+  section: string,
+  dish: string,
+): Promise<Control[]> {
+  return [
+    ...(await dishFrameControls(page, [menu, section, dish])),
+    button(en.owner.dish.schedule.todayOnly),
+  ];
+}
+
+// A dish's Choice lists page (D-166, D-222): the lists' controls, each row
+// an h2 under the h1.
+export async function dishChoicesControls(
+  page: Page,
+  menu: string,
+  section: string,
+  dish: string,
+): Promise<Control[]> {
+  return [
+    ...(await dishFrameControls(page, [menu, section, dish])),
+    ...(await choiceListControls(page, "h2")),
   ];
 }
 

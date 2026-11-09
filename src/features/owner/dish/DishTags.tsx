@@ -17,21 +17,32 @@ type Props = {
   strings: DishStrings["tags"];
   names: DietaryCopy;
   tags: DishTagsState;
+  // The group sits directly under the page's h1, which carries its heading
+  // id (D-222, D-225), so it draws no heading of its own.
+  underPageHeading?: boolean;
 };
 
-// The dietary tags (D-66, task 5), under their own heading (D-128): three
+// The dietary tags (D-66, task 5), under the heading that names them, the
+// page's h1 on a dish's Dietary tags page (D-222): three
 // boxes named by the words diners read, each with a hint under its words,
 // and the sentence diners read under the group, from the one builder
 // (module rule 8), or nothing with no tag. A box sits in a wrapper that
 // takes a failed save's focus and hands it to the box, as the allergen
 // group's do.
-export function DishTags({ strings, names, tags }: Props) {
+export function DishTags({
+  strings,
+  names,
+  tags,
+  underPageHeading = false,
+}: Props) {
   const shown = new Set<string>(tags.shown);
   return (
     <div className="mt-8 flex flex-col gap-4">
-      <h2 id={TAGS_HEADING_ID} className="text-xl font-bold">
-        {strings.heading}
-      </h2>
+      {underPageHeading ? null : (
+        <h2 id={TAGS_HEADING_ID} className="text-xl font-bold">
+          {strings.heading}
+        </h2>
+      )}
       <CheckboxGroup
         aria-labelledby={TAGS_HEADING_ID}
         value={[...tags.shown]}
