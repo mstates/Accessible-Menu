@@ -35,11 +35,20 @@ export const DASHBOARD_NOTICES = [
   "checkout-missing",
 ] as const;
 export const SIGN_IN_NOTICES = ["sign-in-link", "sign-in-google"] as const;
+// A dish's three pages that save by one press (D-223, D-229), each loaded
+// again by the form once its save lands, with its own result.
+export const DISH_NOTICES = [
+  "allergens-saved",
+  "tags-saved",
+  "availability-saved",
+] as const;
 
 export type DetailsNotice = (typeof DETAILS_NOTICES)[number];
 export type DashboardNotice = (typeof DASHBOARD_NOTICES)[number];
 export type SignInNotice = (typeof SIGN_IN_NOTICES)[number];
-export type NoticeKey = DetailsNotice | DashboardNotice | SignInNotice;
+export type DishNotice = (typeof DISH_NOTICES)[number];
+export type NoticeKey =
+  DetailsNotice | DashboardNotice | SignInNotice | DishNotice;
 
 // A page's path, checked before it goes into a cookie string, so nothing
 // but a path can add an attribute.

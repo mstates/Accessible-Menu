@@ -1,0 +1,54 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+  - status
+- navigation "CI Diner (test restaurant, not real)":
+  - paragraph: CI Diner (test restaurant, not real)
+  - list:
+    - listitem:
+      - link "Details"
+    - listitem:
+      - link "Menus"
+- main:
+  - region "Success":
+    - button "Dismiss this message"
+    - heading "Success" [level=2]
+    - alert: Dietary tags saved.
+  - navigation "Breadcrumb":
+    - list:
+      - listitem:
+        - link "Menus"
+      - listitem:
+        - link "Dinner"
+      - listitem:
+        - link "Starters"
+      - listitem:
+        - link "House salad"
+  - heading "Dietary tags" [level=1]
+  - navigation "House salad":
+    - list:
+      - listitem:
+        - link "General"
+      - listitem:
+        - link "Allergens Confirmed"
+      - listitem:
+        - link "Dietary tags 2 tags"
+      - listitem:
+        - link "Availability Available, no schedule"
+      - listitem:
+        - link "Choice lists 1 choice list"
+  - paragraph: Changes on this page save when you press Save dietary tags.
+  - group "Dietary tags":
+    - checkbox "Vegan"
+    - text: Vegan No meat, fish, dairy, eggs, or honey.
+    - checkbox "Vegetarian" [checked]
+    - text: Vegetarian No meat or fish. Tick Vegan instead for a vegan dish.
+    - checkbox "Made without gluten ingredients" [checked]
+    - text: Made without gluten ingredients Ingredients only. A dedicated fryer or a shared kitchen is said in your restaurant's allergen note.
+  - paragraph: "Diners read: \"Vegetarian. Made without gluten ingredients.\""
+  - heading "Cooked to order" [level=2]
+  - checkbox "Cooked to order"
+  - text: Cooked to order For meat, fish, or eggs that can be served rare or undercooked. Diners read Cooked to order. with this dish, and the menu carries the advisory once.
+  - button "Save dietary tags"
+- contentinfo: Accessible Menu
+- alert

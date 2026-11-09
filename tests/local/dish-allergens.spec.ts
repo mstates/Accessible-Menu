@@ -13,22 +13,25 @@ import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture, ownerStatePath } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
 import { chromeName, expectNamedByOneLabel } from "./chrome-name";
+import { saveAndFail, saveAndLand, summary } from "./save";
 
-// The allergen group on a dish's page with saves that land for real against
-// the stand-in (D-148, D-129): a tick and the check, each said once and
-// kept after a reload; the check's stamp line with its date; a change that
-// clears a check and says so; the other-allergen rows, their refusals
-// unsent, a rename, and a remove on one press; the apply to a same-named
-// dish; a page whose lists moved under it, from another tab, refused with
-// one sentence and no Try again; and a failed save with Try again. The gate
-// cannot land a save, so this runs here. Each check leaves the stand-in as
-// it found it, so the checks run in any order.
+// The allergen group on a dish's Allergens page, which saves by one press
+// (D-148, D-129, D-223, D-229), with saves that land for real against the
+// stand-in: a tick with the check kept lands checked with a fresh stamp in
+// two statements, D-148's rule in one save; a tick with the check unticked
+// lands unchecked in one; a check alone lands stamped; a Save with nothing
+// changed writes nothing and flashes; a blank row is dropped by Save; the
+// other-allergen rows' refusals, unsent, under their fields; a rename and a
+// remove kept by Save; the apply to a same-named dish; a page whose lists
+// moved under it, from another tab, refused with one sentence in the
+// summary and nothing written; and a save the server refuses, kept, landed
+// by the next press. The gate cannot land a save, so this runs here. Each
+// check leaves the stand-in as it found it, so the checks run in any order.
 
 const { code } = ownerEnv();
 const strings = en.owner.dish;
 const allergens = strings.allergens;
 const editing = en.owner.editing;
-const saved = editing.fieldSaved;
 const standin = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 
 type Priced = "sizes" | "one" | "market";
@@ -76,12 +79,14 @@ function sentenceLine(page: Page) {
   return page.locator("#dish-allergen-sentence");
 }
 
-function status(page: Page) {
-  return page.locator('main [role="status"]');
+function saveButton(page: Page) {
+  return page.getByRole("button", { name: allergens.submit, exact: true });
 }
 
-function tryAgainButton(page: Page) {
-  return page.getByRole("button", { name: editing.tryAgain, exact: true });
+// Saves the page and listens to the new document's log.
+async function save(page: Page): Promise<void> {
+  await saveAndLand(page, allergens.submit, allergens.saved);
+  await hearLog(page);
 }
 
 function otherField(page: Page, position: number) {
@@ -189,139 +194,136 @@ async function stampOf(id: string): Promise<string> {
   });
 }
 
-test("a tick says Saved. once and holds after a reload, and on a checked dish it clears the check, says so, and an untick leaves the dish unchecked", async ({
+// The sentence under the check follows the saved lists and the saved check
+// (D-229): what diners read now, and the stamp.
+async function expectSentence(
+  page: Page,
+  lists: { allergens: readonly string[]; others: string[] },
+  stamp: string,
+) {
+  await expect(sentenceLine(page)).toHaveText(
+    `${reads(lists, stamp.startsWith("Checked"))} ${stamp}`,
+  );
+}
+
+test("a tick with the check kept lands checked with a fresh stamp in two statements; a tick with the check unticked lands unchecked in one; the check alone lands stamped in one; and a Save with nothing changed writes nothing and flashes", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
-  await openDish(page, "market");
-  await press(page, allergens.names.milk);
-  await expect(box(page, allergens.names.milk)).toBeChecked();
-  await expect.poll(() => said(page, saved)).toBe(1);
-  expect(await said(page, allergens.clearedNow), "nothing to clear").toBe(0);
-  await expect(sentenceLine(page)).toHaveText(
-    `${reads({ allergens: ["milk"], others: [] }, false)} ${allergens.notChecked}`,
-  );
-  await reload(page);
-  await expect(box(page, allergens.names.milk)).toBeChecked();
-  await expectNoMissingIds(page);
-  // As it was.
-  await press(page, allergens.names.milk);
-  await expect.poll(() => said(page, saved)).toBe(1);
-  await expect(box(page, allergens.names.milk)).not.toBeChecked();
-
+  const saved = { allergens: ["milk", "wheat"], others: ["celery"] };
+  const withSesame = {
+    allergens: ["milk", "wheat", "sesame"],
+    others: ["celery"],
+  };
   await openDish(page, "sizes");
   await expect(checkBox(page)).toBeChecked();
+  const stampBefore = (await row(dishes.sizes.id)).allergens_reviewed_at;
+  let sent = await writesSoFar();
+
+  // D-148 in one save: the lists, then the check again, so the check stands
+  // and the trigger stamps it afresh.
   await press(page, allergens.names.sesame);
   await expect(box(page, allergens.names.sesame)).toBeChecked();
-  await expect.poll(() => said(page, saved)).toBe(1);
-  await expect.poll(() => said(page, allergens.clearedNow)).toBe(1);
-  await expect(checkBox(page), "the check is cleared").not.toBeChecked();
-  await expect(sentenceLine(page)).toHaveText(
-    `${reads({ allergens: ["milk", "wheat", "sesame"], others: ["celery"] }, false)} ${allergens.cleared}`,
+  await expect(checkBox(page), "the check stays until Save").toBeChecked();
+  await expectSentence(page, saved, await stampOf(dishes.sizes.id));
+  expect(await writesSoFar(), "a tick sends nothing").toBe(sent);
+  await save(page);
+  expect(await writesSoFar(), "the lists, then the check").toBe(sent + 2);
+  const checkedAgain = await row(dishes.sizes.id);
+  expect(checkedAgain.allergens).toEqual(["milk", "wheat", "sesame"]);
+  expect(checkedAgain.allergens_reviewed).toBe(true);
+  expect(checkedAgain.allergens_reviewed_at).not.toBeNull();
+  expect(checkedAgain.allergens_reviewed_at, "a fresh stamp").not.toBe(
+    stampBefore,
   );
-  expect((await row(dishes.sizes.id)).allergens_reviewed_by).toBeNull();
+  await expect(box(page, allergens.names.sesame)).toBeChecked();
+  await expect(checkBox(page)).toBeChecked();
+  await expectSentence(page, withSesame, await stampOf(dishes.sizes.id));
   await expectNoMissingIds(page);
 
+  // The tick undone with the check unticked: one statement, and the
+  // trigger leaves the dish unchecked.
+  sent = await writesSoFar();
   await press(page, allergens.names.sesame);
-  await expect.poll(() => said(page, saved)).toBe(2);
-  await expect(box(page, allergens.names.sesame)).not.toBeChecked();
-  await expect(
-    checkBox(page),
-    "an untick puts the list back and never makes a check",
-  ).not.toBeChecked();
-  await expectNoMissingIds(page);
-
-  // As it was: checked again, by a person.
   await press(page, allergens.checkLabel);
-  await expect.poll(() => said(page, saved)).toBe(3);
+  await expect(checkBox(page)).not.toBeChecked();
+  await save(page);
+  expect(await writesSoFar(), "the lists alone").toBe(sent + 1);
+  const unchecked = await row(dishes.sizes.id);
+  expect(unchecked.allergens).toEqual(["milk", "wheat"]);
+  expect(unchecked.allergens_reviewed).toBe(false);
+  expect(unchecked.allergens_reviewed_by).toBeNull();
+  await expect(checkBox(page)).not.toBeChecked();
+  await expectSentence(page, saved, allergens.notChecked);
+
+  // The check alone: one statement, stamped by a person.
+  sent = await writesSoFar();
+  await press(page, allergens.checkLabel);
+  await save(page);
+  expect(await writesSoFar(), "the check alone").toBe(sent + 1);
+  const checked = await row(dishes.sizes.id);
+  expect(checked.allergens_reviewed).toBe(true);
+  expect(checked.allergens_reviewed_at).not.toBeNull();
   await expect(checkBox(page)).toBeChecked();
-  await expect(sentenceLine(page)).toHaveText(
-    `${reads({ allergens: ["milk", "wheat"], others: ["celery"] }, true)} ${await stampOf(dishes.sizes.id)}`,
-  );
+  await expectSentence(page, saved, await stampOf(dishes.sizes.id));
+
+  // Nothing changed: nothing written, and the flash still says saved.
+  sent = await writesSoFar();
+  await save(page);
+  expect(await writesSoFar(), "nothing changed, nothing written").toBe(sent);
+  await expectNoMissingIds(page);
 });
 
-test("the check says Saved. once, reads checked by you with the date in the restaurant's time zone, holds after a reload, and an uncheck says Saved. once", async ({
-  page,
-}) => {
-  const { dishes } = ownerFixture();
-  await openDish(page, "market");
-  await expect(checkBox(page)).not.toBeChecked();
-  await press(page, allergens.checkLabel);
-  await expect(checkBox(page)).toBeChecked();
-  await expect.poll(() => said(page, saved)).toBe(1);
-  const stamp = await stampOf(dishes.market.id);
-  expect(stamp).toMatch(/^Checked by you on [A-Z][a-z]+ \d{1,2}, \d{4}\.$/);
-  await expect(sentenceLine(page)).toHaveText(
-    `${reads({ allergens: [], others: [] }, true)} ${stamp}`,
-  );
-  await expect(checkBox(page)).toHaveAccessibleDescription(
-    `${allergens.checkHint} ${reads({ allergens: [], others: [] }, true)} ${stamp}`,
-  );
-  await expectNoMissingIds(page);
-  await reload(page);
-  await expect(checkBox(page)).toBeChecked();
-  await expect(sentenceLine(page)).toHaveText(
-    `${reads({ allergens: [], others: [] }, true)} ${stamp}`,
-  );
-
-  // As it was: unchecked by a person.
-  await press(page, allergens.checkLabel);
-  await expect.poll(() => said(page, saved)).toBe(1);
-  await expect(checkBox(page)).not.toBeChecked();
-  await reload(page);
-  await expect(checkBox(page)).not.toBeChecked();
-  expect((await row(dishes.market.id)).allergens_reviewed_at).toBeNull();
-});
-
-test("a deliberate uncheck says Saved. alone, leaving Not checked yet. as a reload shows it, while a tick that clears a check still says so", async ({
+test("the check saved reads checked by you with the date in the restaurant's time zone and holds after a reload, and the uncheck saved reads Not checked yet", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
   const none = { allergens: [], others: [] };
   await openDish(page, "market");
   await expect(checkBox(page)).not.toBeChecked();
-
-  // A deliberate uncheck says "Saved." alone, and the stamp reads as a
-  // reload shows it (Q-66).
+  await expectSentence(page, none, allergens.notChecked);
   await press(page, allergens.checkLabel);
-  await expect.poll(() => said(page, saved)).toBe(1);
   await expect(checkBox(page)).toBeChecked();
-  await press(page, allergens.checkLabel);
-  await expect.poll(() => said(page, saved)).toBe(2);
-  expect(
-    await said(page, allergens.clearedNow),
-    "an uncheck says Saved. alone",
-  ).toBe(0);
-  await expect(checkBox(page)).not.toBeChecked();
-  await expect(sentenceLine(page)).toHaveText(
-    `${reads(none, false)} ${allergens.notChecked}`,
-  );
-  await reload(page);
-  await expect(sentenceLine(page)).toHaveText(
-    `${reads(none, false)} ${allergens.notChecked}`,
-  );
-
-  // A tick that clears a check still says so, and the stamp says why.
-  await press(page, allergens.checkLabel);
-  await expect.poll(() => said(page, saved)).toBe(1);
-  await press(page, allergens.names.milk);
-  await expect.poll(() => said(page, saved)).toBe(2);
-  await expect.poll(() => said(page, allergens.clearedNow)).toBe(1);
-  await expect(checkBox(page)).not.toBeChecked();
-  await expect(sentenceLine(page)).toHaveText(
-    `${reads({ allergens: ["milk"], others: [] }, false)} ${allergens.cleared}`,
+  await expectSentence(page, none, allergens.notChecked);
+  await save(page);
+  const stamp = await stampOf(dishes.market.id);
+  expect(stamp).toMatch(/^Checked by you on [A-Z][a-z]+ \d{1,2}, \d{4}\.$/);
+  await expect(checkBox(page)).toBeChecked();
+  await expectSentence(page, none, stamp);
+  await expect(checkBox(page)).toHaveAccessibleDescription(
+    `${allergens.checkHint} ${reads(none, true)} ${stamp}`,
   );
   await expectNoMissingIds(page);
+  await reload(page);
+  await expect(checkBox(page)).toBeChecked();
+  await expectSentence(page, none, stamp);
 
-  // As it was: no allergens, not checked.
-  await press(page, allergens.names.milk);
-  await expect.poll(() => said(page, saved)).toBe(3);
-  const back = await row(dishes.market.id);
-  expect(back.allergens).toEqual([]);
-  expect(back.allergens_reviewed).toBe(false);
+  // As it was: unchecked by a person.
+  await press(page, allergens.checkLabel);
+  await save(page);
+  await expect(checkBox(page)).not.toBeChecked();
+  await expectSentence(page, none, allergens.notChecked);
+  expect((await row(dishes.market.id)).allergens_reviewed_at).toBeNull();
 });
 
-test("another allergen is added in the page only, a name that means one of the nine or runs long or holds a comma or repeats is refused unsent, a name that lands clears the check, a rename lands, and a remove goes on one press", async ({
+test("a blank row added is dropped by Save: nothing is written, the flash arrives, and the row is gone", async ({
+  page,
+}) => {
+  const { dishes } = ownerFixture();
+  await openDish(page, "market");
+  const sent = await writesSoFar();
+  await addOther(page).click();
+  await expect(otherField(page, 1)).toBeFocused();
+  await expect
+    .poll(() => said(page, fill(allergens.otherAdded, { position: 1 })))
+    .toBe(1);
+  await save(page);
+  expect(await writesSoFar(), "a blank row is not a change").toBe(sent);
+  await expect(otherField(page, 1)).toHaveCount(0);
+  expect((await row(dishes.market.id)).custom_allergens).toEqual([]);
+});
+
+test("another allergen is added in the page only, a name that means one of the nine or runs long or holds a comma or repeats is refused unsent under its field on Save, a name that lands is kept, a rename and a remove land with Save", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -330,8 +332,6 @@ test("another allergen is added in the page only, a name that means one of the n
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(String(error)));
   await openDish(page, "market");
-  await press(page, allergens.checkLabel);
-  await expect.poll(() => said(page, saved)).toBe(1);
   const before = await writesSoFar();
 
   await addOther(page).click();
@@ -352,98 +352,91 @@ test("another allergen is added in the page only, a name that means one of the n
   );
   expect(await writesSoFar(), "adding a row sends nothing").toBe(before);
 
-  await page.keyboard.type("Milk");
-  await page.keyboard.press("Enter");
-  const majorFailure = `${fill(allergens.notSaved.other, { other: fill(allergens.unnamedOther, { position: 1 }) })} ${fill(allergens.errors.otherMajor, { allergen: allergens.names.milk })}`;
-  await expect(status(page)).toHaveText(majorFailure);
-  await expect(first).toHaveAttribute("aria-invalid", "true");
-  expect(
-    await writesSoFar(),
-    "a name that means one of the nine is not sent",
-  ).toBe(before);
-
-  await first.fill("nuts");
-  await page.keyboard.press("Enter");
-  await expect(status(page)).toHaveText(
-    `${fill(allergens.notSaved.other, { other: fill(allergens.unnamedOther, { position: 1 }) })} ${allergens.errors.otherMajorBoth}`,
+  // Each refusal: one problem, so the field is focused with it, and
+  // nothing is sent (Primer's rule, D-229).
+  async function refused(name: string, message: string) {
+    await first.fill(name);
+    await saveButton(page).click();
+    await expect(first, `${name}: the field is focused`).toBeFocused();
+    await expect(first).toHaveAttribute("aria-invalid", "true");
+    await expect(
+      page
+        .locator(`main ol[aria-label="${allergens.othersLabel}"] > li`)
+        .first()
+        .getByText(message, { exact: true }),
+    ).toHaveCount(1);
+    await expect(summary(page)).toHaveCount(0);
+    expect(await writesSoFar(), `${name}: nothing is sent`).toBe(before);
+  }
+  await refused(
+    "Milk",
+    fill(allergens.errors.otherMajor, { allergen: allergens.names.milk }),
   );
-  expect(await writesSoFar()).toBe(before);
-
-  await first.fill("x".repeat(41));
-  await page.keyboard.press("Enter");
-  await expect(status(page)).toHaveText(
-    `${fill(allergens.notSaved.other, { other: fill(allergens.unnamedOther, { position: 1 }) })} ${allergens.errors.otherLength}`,
-  );
-  expect(await writesSoFar()).toBe(before);
-
+  await refused("nuts", allergens.errors.otherMajorBoth);
+  await refused("x".repeat(41), allergens.errors.otherLength);
   // A comma reads as two allergens to a diner (D-151): refused unsent, in
   // any of its three forms.
   for (const name of [
     "nuts, except almonds",
-    "nuts\uFF0C except almonds",
-    "nuts\u3001 except almonds",
+    "nuts， except almonds",
+    "nuts、 except almonds",
   ]) {
-    await first.fill(name);
-    await page.keyboard.press("Enter");
-    await expect(status(page)).toHaveText(
-      `${fill(allergens.notSaved.other, { other: fill(allergens.unnamedOther, { position: 1 }) })} ${allergens.errors.otherComma}`,
-    );
-    expect(await writesSoFar(), `a comma is not sent: ${name}`).toBe(before);
+    await refused(name, allergens.errors.otherComma);
   }
 
   await first.fill("celery");
-  await page.keyboard.press("Enter");
   // The suggestion list matched the name and stays open while the field
   // has focus; while it is open React Aria hides the rest of the page from
-  // assistive technology (D-143), so it is closed before anything else is
-  // looked at, as an owner's next Tab would close it.
+  // assistive technology (D-143), so it is closed before Save is pressed.
   await page.keyboard.press("Escape");
-  await expect.poll(() => said(page, editing.savedAgain)).toBe(1);
-  await expect.poll(() => said(page, allergens.clearedNow)).toBe(1);
+  await save(page);
   expect(pageErrors, "no page error after the name landed").toEqual([]);
-  await expect(
-    checkBox(page),
-    "a name that lands clears the check",
-  ).not.toBeChecked();
+  expect(await writesSoFar()).toBe(before + 1);
   expect((await row(dishes.market.id)).custom_allergens).toEqual(["celery"]);
+  await expect(otherField(page, 1)).toHaveValue("celery");
   await expect(otherButton(page, allergens.removeOther, "celery")).toHaveCount(
     1,
   );
   await expectNoMissingIds(page);
 
+  // A repeat is refused unsent, under its own field.
+  const sent = await writesSoFar();
   await addOther(page).click();
   const second = otherField(page, 2);
   await expect(second).toBeFocused();
-  await page.keyboard.type("Celery");
-  await page.keyboard.press("Enter");
-  await expect(status(page)).toHaveText(
-    `${fill(allergens.notSaved.other, { other: fill(allergens.unnamedOther, { position: 2 }) })} ${fill(allergens.errors.otherTaken, { other: "celery" })}`,
-  );
-  const sent = await writesSoFar();
-  await otherButton(
-    page,
-    allergens.removeOther,
-    fill(allergens.unnamedOther, { position: 2 }),
-  ).click();
+  await second.fill("Celery");
+  await page.keyboard.press("Escape");
+  await saveButton(page).click();
+  await expect(second).toBeFocused();
+  await expect(second).toHaveAttribute("aria-invalid", "true");
+  await expect(
+    page
+      .locator(`main ol[aria-label="${allergens.othersLabel}"] > li`)
+      .nth(1)
+      .getByText(fill(allergens.errors.otherTaken, { other: "celery" }), {
+        exact: true,
+      }),
+  ).toHaveCount(1);
+  expect(await writesSoFar(), "a repeat is not sent").toBe(sent);
+
+  // The repeat's row removed on one press, said once, with focus on the
+  // row before it; nothing is sent until Save.
+  await otherButton(page, allergens.removeOther, "Celery").click();
   await expect
-    .poll(() => said(page, fill(allergens.blankRemoved, { position: 2 })))
+    .poll(() => said(page, fill(allergens.otherRemoved, { other: "Celery" })))
     .toBe(1);
   await expect(otherField(page, 2)).toHaveCount(0);
-  expect(await writesSoFar(), "a blank row removed sends nothing").toBe(sent);
+  expect(await writesSoFar(), "a row removed sends nothing").toBe(sent);
 
-  await first.fill("mustard");
-  await page.keyboard.press("Enter");
+  // A rename lands with Save.
+  await otherField(page, 1).fill("mustard");
   await page.keyboard.press("Escape");
-  // Removing the failed blank row already ended its failure, and "All
-  // changes saved." followed it (D-125), so the rename's landing says
-  // "Saved.", the second on this page.
-  await expect.poll(() => said(page, editing.savedAgain)).toBe(2);
-  await expect.poll(() => said(page, saved)).toBe(2);
+  await save(page);
   expect((await row(dishes.market.id)).custom_allergens).toEqual(["mustard"]);
-  await expect(first).toHaveValue("mustard");
+  await expect(otherField(page, 1)).toHaveValue("mustard");
 
-  // A remove goes on one press, as a part of the dish's own form (D-221),
-  // and leaves the stand-in as it was.
+  // A remove goes on one press in the page (D-221) and lands with Save,
+  // leaving the stand-in as it was.
   await otherButton(page, allergens.removeOther, "mustard").click();
   await expect
     .poll(() => said(page, fill(allergens.otherRemoved, { other: "mustard" })))
@@ -453,13 +446,10 @@ test("another allergen is added in the page only, a name that means one of the n
     addOther(page),
     "focus goes to Add another allergen",
   ).toBeFocused();
-  await expectNoMissingIds(page);
-  // The remove is said and shown as it is queued; the row holds it once
-  // the write lands.
-  await expect
-    .poll(async () => (await row(dishes.market.id)).custom_allergens)
-    .toEqual([]);
+  await save(page);
+  expect((await row(dishes.market.id)).custom_allergens).toEqual([]);
   expect((await row(dishes.market.id)).allergens_reviewed).toBe(false);
+  await expectNoMissingIds(page);
 });
 
 test("Apply gives the same-named dish this list and the check, stamped, and moves focus to the check box", async ({
@@ -491,8 +481,11 @@ test("Apply gives the same-named dish this list and the check, stamped, and move
   expect(applied.allergens_reviewed_by).toBe(
     (await row(dishes.sizes.id)).allergens_reviewed_by,
   );
-  await expect(apply, "the line goes").toHaveCount(0);
   await expect(checkBox(page), "focus moves to the check box").toBeFocused();
+  await expect(
+    page.locator("main p").filter({ hasText: /^Applied\. / }),
+    "the result shows as a plain line",
+  ).toHaveCount(1);
   await expectNoMissingIds(page);
 
   // As it was: the other dish cleared elsewhere, so the line is back on a
@@ -509,7 +502,7 @@ test("Apply gives the same-named dish this list and the check, stamped, and move
   ).toHaveCount(1);
 });
 
-test("a list that moved under the page from another tab refuses a tick and a check with one sentence and no Try again, and the page then shows the lists as they are now", async ({
+test("a list that moved under the page from another tab refuses Save with one sentence in the summary, keeps the values, changes nothing on the server, and a reload shows the lists as they are now", async ({
   page,
   browser,
 }) => {
@@ -522,41 +515,43 @@ test("a list that moved under the page from another tab refuses a tick and a che
   const other = await context.newPage();
   await other.goto(`${origin}${dishPath("market")}`);
   await other.waitForLoadState("networkidle");
-  await hearLog(other);
   try {
     await press(other, allergens.names.wheat);
-    await expect.poll(() => said(other, saved)).toBe(1);
+    await saveAndLand(other, allergens.submit, allergens.saved);
+    expect((await row(dishes.market.id)).allergens).toEqual(["wheat"]);
+    const sent = await writesSoFar();
 
     await press(page, allergens.names.milk);
-    await expect.poll(() => said(page, allergens.listsMoved)).toBe(1);
-    await expect(status(page)).toHaveText(allergens.listsMoved);
-    await expect(tryAgainButton(page), "no Try again").toHaveCount(0);
+    await saveAndFail(page, allergens.submit, allergens.listsMoved);
     await expect(
       box(page, allergens.names.milk),
-      "nothing was written",
+      "the tick is kept",
+    ).toBeChecked();
+    await expect(
+      box(page, allergens.names.wheat),
+      "the page still shows the lists it loaded",
     ).not.toBeChecked();
+    expect(
+      await writesSoFar(),
+      "one statement, refused by its condition, and no second",
+    ).toBe(sent + 1);
+    expect((await row(dishes.market.id)).allergens).toEqual(["wheat"]);
+    await expectNoMissingIds(page);
+
+    // A second press fails the same way until the page is reloaded.
+    await saveAndFail(page, allergens.submit, allergens.listsMoved);
+    expect(await writesSoFar()).toBe(sent + 2);
+
+    await reload(page);
     await expect(
       box(page, allergens.names.wheat),
       "the page shows the list as it is now",
     ).toBeChecked();
-    expect((await row(dishes.market.id)).allergens).toEqual(["wheat"]);
-    await expectNoMissingIds(page);
-
-    await press(other, allergens.names.sesame);
-    await expect.poll(() => said(other, saved)).toBe(2);
-    await press(page, allergens.checkLabel);
-    await expect.poll(() => said(page, allergens.listsChanged)).toBe(1);
-    await expect(tryAgainButton(page)).toHaveCount(0);
-    await expect(checkBox(page), "nothing is checked").not.toBeChecked();
-    await expect(box(page, allergens.names.sesame)).toBeChecked();
-    expect((await row(dishes.market.id)).allergens_reviewed).toBe(false);
-    await expectNoMissingIds(page);
+    await expect(box(page, allergens.names.milk)).not.toBeChecked();
 
     // As it was, from the page that is now current.
     await press(page, allergens.names.wheat);
-    await expect.poll(() => said(page, editing.savedAgain)).toBe(1);
-    await press(page, allergens.names.sesame);
-    await expect.poll(() => said(page, saved)).toBe(1);
+    await save(page);
     expect((await row(dishes.market.id)).allergens).toEqual([]);
   } finally {
     await context.close();
@@ -592,10 +587,6 @@ test("Apply refuses when this dish's lists or the other dish's lists are not the
   expect((await row(other.id)).allergens_reviewed, "nothing was applied").toBe(
     false,
   );
-  await expect(
-    box(page, allergens.names.sesame),
-    "the page shows this dish as it is now",
-  ).toBeChecked();
   await expectNoMissingIds(page);
 
   // The other dish changed elsewhere.
@@ -630,7 +621,7 @@ test("Apply refuses when this dish's lists or the other dish's lists are not the
   await expect(applyButton(page, dishes.sizes.name)).toHaveCount(1);
 });
 
-test("a tick the server refuses is said once with Try again, and Try again lands it with All changes saved.", async ({
+test("a save the server refuses is kept with the failure in the summary, focused, and the next press lands it", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -638,28 +629,23 @@ test("a tick the server refuses is said once with Try again, and Try again lands
   await fetch(`${standin}/__test/fail?times=1`);
   await press(page, allergens.names.milk);
   const failure = `${fill(allergens.notSaved.allergens, { dish: dishes.market.name })} ${editing.problems.failed}`;
-  await expect.poll(() => said(page, failure)).toBe(1);
-  await expect(status(page)).toHaveText(failure);
-  await expect(box(page, allergens.names.milk)).not.toBeChecked();
-  await expect(box(page, allergens.names.milk)).toHaveAttribute(
-    "aria-invalid",
-    "true",
-  );
-  await expect(tryAgainButton(page)).toHaveCount(1);
-  await tryAgainButton(page).click();
-  await expect.poll(() => said(page, editing.savedAgain)).toBe(1);
-  expect(
-    await said(page, saved),
-    "the save that ends a failure says only that",
-  ).toBe(0);
-  await expect(box(page, allergens.names.milk)).toBeChecked();
+  await saveAndFail(page, allergens.submit, failure);
+  await expect(
+    box(page, allergens.names.milk),
+    "the tick is kept",
+  ).toBeChecked();
   await expect(box(page, allergens.names.milk)).not.toHaveAttribute(
     "aria-invalid",
   );
+  expect((await row(dishes.market.id)).allergens).toEqual([]);
   await expectNoMissingIds(page);
+
+  await save(page);
+  await expect(box(page, allergens.names.milk)).toBeChecked();
+  expect((await row(dishes.market.id)).allergens).toEqual(["milk"]);
 
   // As it was.
   await press(page, allergens.names.milk);
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await save(page);
   expect((await row(dishes.market.id)).allergens).toEqual([]);
 });

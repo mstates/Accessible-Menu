@@ -1,10 +1,17 @@
 "use client";
 
-import { handToBox } from "../editing/hand-to-box";
-import { US_MAJOR_ALLERGENS, type AllergenCopy } from "@/domain/allergens";
+import {
+  US_MAJOR_ALLERGENS,
+  type AllergenCopy,
+  type AllergenLists,
+  type UsMajorAllergen,
+} from "@/domain/allergens";
+import type { AllergenId } from "@/domain/types";
 import { Button } from "@/ui/Button";
 import { Checkbox, CheckboxGroup } from "@/ui/CheckboxGroup";
 import { ComboBox, suggestionItems } from "@/ui/ComboBox";
+import { handToBox } from "../editing/hand-to-box";
+import type { TextState } from "../editing/texts";
 import {
   applyName,
   dinerSentence,
@@ -14,8 +21,51 @@ import {
   sameNamedLine,
   stampLine,
   type AllergenStrings,
+  type SameNamedPlace,
+  type StampState,
 } from "./allergen-words";
-import type { AllergenGroupView } from "./useAllergenGroup";
+import type { GroupIds } from "./target";
+
+// What the component draws, whichever hook holds it: the group that saves
+// as the owner goes (useAllergenGroup, an option's) or the dish's form
+// that saves by a press (useAllergenForm, D-229). The shown values are
+// the controls'; reads is what the Diners read line and the stamp follow,
+// the shown state for a group that saves as it goes and the saved values
+// for a form, so what diners read is never ahead of what is saved.
+export type AllergenGroupView = {
+  ids: GroupIds;
+  allergens: {
+    shown: readonly AllergenId[];
+    set: (id: UsMajorAllergen, on: boolean) => void;
+    errorOf: (id: AllergenId) => string | null;
+  };
+  others: {
+    rows: readonly {
+      key: number;
+      position: number;
+      label: string;
+      field: TextState;
+    }[];
+    add: () => void;
+    remove: (key: number) => void;
+    full: boolean;
+  };
+  check: {
+    shown: boolean;
+    set: (on: boolean) => void;
+    error: string | null;
+  };
+  reads: { lists: AllergenLists; checked: boolean; stamp: StampState };
+  sameNamed: {
+    places: readonly SameNamedPlace[];
+    apply: (place: SameNamedPlace) => void;
+    // The page holds unsaved changes, so Apply says to save first and
+    // sends nothing (D-229).
+    dirty: boolean;
+    // The last Apply's outcome, as a line under the list.
+    result: string | null;
+  };
+};
 
 type Props = {
   strings: AllergenStrings;
@@ -64,8 +114,12 @@ export function AllergenGroup({
   lang,
 }: Props) {
   const { ids } = group;
-  const sentence = dinerSentence(allergenCopy, group.lists, group.check.shown);
-  const stamp = stampLine(strings, group.check.stamp, timeZone, lang);
+  const sentence = dinerSentence(
+    allergenCopy,
+    group.reads.lists,
+    group.reads.checked,
+  );
+  const stamp = stampLine(strings, group.reads.stamp, timeZone, lang);
   const line = `${dinersReadText(strings, sentence)} ${stamp}`;
   const shownMajors = new Set<string>(group.allergens.shown);
   const Heading = headingLevel === 2 ? "h2" : "h3";
@@ -223,6 +277,7 @@ export function AllergenGroup({
                 <Button
                   id={ids.apply(place.id)}
                   aria-label={applyName(strings, place)}
+                  aria-disabled={group.sameNamed.dirty ? true : undefined}
                   onPress={() => group.sameNamed.apply(place)}
                 >
                   {strings.sameNamed.apply}
@@ -232,6 +287,7 @@ export function AllergenGroup({
           ))}
         </ul>
       ) : null}
+      {group.sameNamed.result !== null ? <p>{group.sameNamed.result}</p> : null}
     </div>
   );
 }

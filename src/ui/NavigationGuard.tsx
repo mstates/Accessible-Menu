@@ -17,9 +17,14 @@ import {
 // through. "hold" stops it, and the screen that said so takes over: it waits
 // for its saves and navigates itself, or stays and says why. The guard lives
 // here, in the context, so a link never imports the feature that owns it.
-// Outside a provider, and with no guard registered, every link goes.
+// Outside a provider, and with no guard registered, every link goes. The
+// link hands itself along as well, so a screen that asks before leaving
+// can put focus back on it when the owner stays (D-229).
 
-export type NavigationGuard = (href: string) => "go" | "hold";
+export type NavigationGuard = (
+  href: string,
+  from: HTMLElement | null,
+) => "go" | "hold";
 
 const GuardContext = createContext<RefObject<NavigationGuard | null> | null>(
   null,
@@ -49,5 +54,5 @@ export function useNavigationGuard(guard: NavigationGuard): void {
 // the press, so it always asks the screen as it is then.
 export function useAskGuard(): NavigationGuard {
   const guardRef = useContext(GuardContext);
-  return (href) => guardRef?.current?.(href) ?? "go";
+  return (href, from) => guardRef?.current?.(href, from) ?? "go";
 }

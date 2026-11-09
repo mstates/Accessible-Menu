@@ -21,6 +21,7 @@ import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture, ownerStatePath } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
 import { expectNamedByOneLabel } from "./chrome-name";
+import { saveAndLand } from "./save";
 
 // The options on a choice list's page, with saves that land for real
 // against the stand-in (D-166, D-154, D-153): an option added by name
@@ -580,7 +581,12 @@ test("Apply from a checked option gives the same-named dish this list and the ch
     await page.waitForLoadState("networkidle");
     await hearLog(page);
     await page.getByText(group.checkLabel, { exact: true }).click();
-    await expect.poll(() => said(page, saved)).toBe(1);
+    await saveAndLand(
+      page,
+      en.owner.dish.allergens.submit,
+      en.owner.dish.allergens.saved,
+    );
+    await hearLog(page);
     const toOption = page.getByRole("button", {
       name: `${group.sameNamed.apply}, Ranch in ${fill(strings.placeIn, { lead: lists.dish.lead, home: dishes.one.name })}, Dinner`,
       exact: true,

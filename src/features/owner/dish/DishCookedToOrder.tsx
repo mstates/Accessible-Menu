@@ -3,11 +3,20 @@
 import { Checkbox } from "@/ui/CheckboxGroup";
 import { handToBox } from "../editing/hand-to-box";
 import type { DishStrings } from "./dish-words";
-import type { DishCookedToOrderState } from "./useDishCookedToOrder";
+
+// What the component draws: the box's state and a problem under it if
+// one stands.
+export type DishCookedToOrderView = {
+  id: string;
+  headingId: string;
+  shown: boolean;
+  set: (on: boolean) => void;
+  error: string | null;
+};
 
 type Props = {
   strings: DishStrings["cookedToOrder"];
-  cookedToOrder: DishCookedToOrderState;
+  cookedToOrder: DishCookedToOrderView;
 };
 
 // The Cooked to order box (D-167, task 7), under its own heading after

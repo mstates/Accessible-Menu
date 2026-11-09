@@ -3,7 +3,16 @@ import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
 import { pageTitle } from "../../src/copy/title";
 import { CHOICE_LISTS_HEADING_ID } from "../../src/features/owner/choices/choice-words";
-import { DISH_PAGE_HEADING_IDS } from "../../src/features/owner/dish/dish-pages";
+import {
+  DISH_PAGE_HEADING_IDS,
+  dishPageHeadingId,
+} from "../../src/features/owner/dish/dish-pages";
+import { dashboardPath } from "../../src/features/owner/paths";
+import {
+  CONFIRM_GUARD_MS,
+  FIRST_FOCUS_WAIT_MS,
+} from "../../src/ui/alert-dialog-guard";
+import { SETTLE_MS } from "../../src/features/owner/editing/settle";
 import {
   restaurantChoiceListPath,
   restaurantDishPagePath,
@@ -24,6 +33,7 @@ import {
   setLargestText,
 } from "./checks";
 import {
+  bannerMarks,
   breadcrumbMarks,
   checkboxMarks,
   dishAllergensControls,
@@ -33,16 +43,20 @@ import {
   dishTagsControls,
   formMarks,
   radioMarks,
+  savedDishControls,
 } from "./owner-controls";
 import {
   dinersReadText,
   dinerSentence,
+  notAppliedSentence,
   otherAction,
   otherSuffix,
 } from "../../src/features/owner/allergens/allergen-words";
 import { US_MAJOR_ALLERGENS } from "../../src/domain/allergens";
 import { ownerEnv, ownerFixture } from "./owner-env";
+import { hearLog, heard, stopClock } from "./owner-lists";
 import { restaurantName } from "./pages";
+import { expectFlashArrival, flashBanner, setNotice } from "./saved-banner";
 import { expectWrites, guardWrites } from "./write-guard";
 
 // A dish's five pages (D-128, D-139, D-148, D-159, D-160, D-222), signed in
@@ -59,18 +73,25 @@ import { expectWrites, guardWrites } from "./write-guard";
 // on the second. The gate never writes and never types into
 // a field that saves when it is left (D-108, D-111, D-115): every test
 // here runs behind the write guard. The tests that press a control that
-// saves, a radio, Add a size, a box, say they expect a write; the guard
-// answers it inside the browser as an action the server does not know,
-// which is how the failed state is reached. Real saves, "Saved." (D-118),
-// a size that lands, a name chosen from the suggestions, a check that
-// lands with its stamp, a list that moved under the page, the apply, and a
-// dish that really moves are covered by
+// saves, a radio, Add a size, a page's Save, say they expect a write; the
+// guard answers it inside the browser as an action the server does not
+// know, which is how the failed state is reached. Real saves, "Saved."
+// (D-118), a size that lands, a name chosen from the suggestions, a Save
+// that lands with its flash, a list that moved under the page, the apply,
+// and a dish that really moves are covered by
 // tests/local, by the unit tests, by the boundary scripts, and by hand.
 //
 // A dish is edited on five pages under one page nav (D-222, D-225): General
 // at the dish's own address, then Allergens, Dietary tags with Cooked to
 // order, Availability with Schedule, and Choice lists, each at its own
 // address under the dish's. Each test here opens the page its group is on.
+// General and Choice lists save as the owner goes (D-111); Allergens,
+// Dietary tags, and Availability each save by one press of a Save at the
+// foot (D-223, D-229): a tick changes the page only, a Save sends one
+// write, a Save the browser refuses sends nothing and focuses the first
+// problem or the summary of them, and an owner link pressed with unsaved
+// changes asks first. The fields on those three pages save nothing when
+// they are left, so the tests type into them.
 //
 // A dish's page is named by its id, which the setup finds and writes down,
 // so every path here is read when a test runs, never when this file loads.
@@ -86,6 +107,7 @@ const schedule = strings.schedule;
 const cookedToOrder = strings.cookedToOrder;
 const choiceCopy = en.owner.choices;
 const dayNames = en.owner.restaurants.days;
+const form = strings.form;
 
 guardWrites();
 
@@ -188,6 +210,47 @@ test.describe("a dish's Choice lists page", () => {
     controls: subPageControls("one", dishChoicesControls),
     marks: breadcrumbMarks,
     snapshot: "dishes-one-choices",
+  });
+});
+
+// Each of the three pages that save by a press, as its save leaves it
+// (D-223, D-229): the success flash first in main (D-219), from the cookie
+// the save leaves, set before each load since the gate never lands a save
+// (D-108). The same checks as the page, with the flash's dismiss button
+// among the controls and its two marks in forced colors.
+test.describe("a dish's Allergens page after a save", () => {
+  pageChecks(() => dishPath("sizes", "allergens"), {
+    controls: subPageControls(
+      "sizes",
+      savedDishControls(dishAllergensControls),
+    ),
+    marks: [...breadcrumbMarks, ...checkboxMarks, ...bannerMarks],
+    review: true,
+    snapshot: "dishes-sizes-allergens-saved",
+    prepare: (page) =>
+      setNotice(page, "allergens-saved", dishPath("sizes", "allergens")),
+  });
+});
+
+test.describe("a dish's Dietary tags page after a save", () => {
+  pageChecks(() => dishPath("one", "tags"), {
+    controls: subPageControls("one", savedDishControls(dishTagsControls)),
+    marks: [...breadcrumbMarks, ...checkboxMarks, ...bannerMarks],
+    snapshot: "dishes-one-tags-saved",
+    prepare: (page) => setNotice(page, "tags-saved", dishPath("one", "tags")),
+  });
+});
+
+test.describe("a dish's Availability page after a save", () => {
+  pageChecks(() => dishPath("sizes", "availability"), {
+    controls: subPageControls(
+      "sizes",
+      savedDishControls(dishAvailabilityControls),
+    ),
+    marks: [...breadcrumbMarks, ...radioMarks, ...bannerMarks],
+    snapshot: "dishes-sizes-availability-saved",
+    prepare: (page) =>
+      setNotice(page, "availability-saved", dishPath("sizes", "availability")),
   });
 });
 
@@ -386,6 +449,57 @@ function todayButton(page: Page) {
 
 function scheduleLine(page: Page) {
   return page.locator("#dish-schedule-sentence");
+}
+
+// The three pages that save by one press (D-223, D-229): the page's Save,
+// named for the page; the lead under the h1 that says so; the summary of
+// the problems a Save found, a box that takes focus, named by its heading,
+// with a link per problem; and the dialog an owner link opens while the
+// page holds unsaved changes.
+function saveButton(page: Page, name: string) {
+  return page.getByRole("button", { name, exact: true });
+}
+
+function leadLine(page: Page, submit: string) {
+  return page
+    .locator("main")
+    .getByText(fill(form.lead, { save: submit }), { exact: true });
+}
+
+function summary(page: Page) {
+  return page.locator('main [tabindex="-1"]').filter({
+    has: page.getByRole("heading", {
+      level: 2,
+      name: form.summary,
+      exact: true,
+    }),
+  });
+}
+
+function summaryLinks(page: Page) {
+  return summary(page).getByRole("link");
+}
+
+function leaveDialog(page: Page) {
+  return page.getByRole("alertdialog", {
+    name: form.leave.question,
+    exact: true,
+  });
+}
+
+function otherField(page: Page, position: number) {
+  return page.getByRole("combobox", {
+    name: `${allergens.otherLabel} ${otherSuffix(allergens, position)}`,
+    exact: true,
+  });
+}
+
+async function said(page: Page, sentence: string): Promise<number> {
+  return (await heard(page)).filter((each) => each === sentence).length;
+}
+
+function pathOf(page: Page): string {
+  return new URL(page.url()).pathname;
 }
 
 // The Select's trigger. React Aria names it by its label and its value.
@@ -850,10 +964,10 @@ test("General reads in order: the lead, the description, the price group under i
   );
 });
 
-// D-148 on its own page (D-222): the h1, the group's lead, the nine, the
-// other-allergen rows and Add another allergen, the check and its sentence,
-// the same-named line, and the status.
-test("Allergens reads in order: the h1, the lead, the nine, the other allergens and Add another allergen, the check and its sentence, the same-named line, and the status", async ({
+// D-148 on its own page (D-222, D-223): the h1, the page's lead, the
+// group's lead, the nine, the other-allergen rows and Add another allergen,
+// the check and its sentence, the same-named line, and Save allergens.
+test("Allergens reads in order: the h1, the page's lead, the group's lead, the nine, the other allergens and Add another allergen, the check and its sentence, the same-named line, and Save allergens", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -862,6 +976,7 @@ test("Allergens reads in order: the h1, the lead, the nine, the other allergens 
   await expectInOrder(
     [
       main.locator("h1"),
+      leadLine(page, allergens.submit),
       main.getByText(allergens.groupHint, { exact: true }),
       majorGroup(page),
       otherRows(page).first(),
@@ -869,10 +984,14 @@ test("Allergens reads in order: the h1, the lead, the nine, the other allergens 
       checkBox(page),
       sentenceLine(page),
       main.getByText(new RegExp(`^${escape(dishes.sizes.name)} is also in `)),
-      savedStatus(page),
+      saveButton(page, allergens.submit),
     ],
-    "the h1, the lead, the nine, the other allergens, Add another allergen, the check, its sentence, the same-named line, then the status, in that order",
+    "the h1, the page's lead, the group's lead, the nine, the other allergens, Add another allergen, the check, its sentence, the same-named line, then Save allergens, in that order",
   );
+  await expect(
+    savedStatus(page),
+    "no status: the page saves by a press",
+  ).toHaveCount(0);
   await expect(
     main.getByText(strings.lead, { exact: true }),
     "General's lead is General's",
@@ -881,10 +1000,10 @@ test("Allergens reads in order: the h1, the lead, the nine, the other allergens 
   await expect(priceGroup(page)).toHaveCount(0);
 });
 
-// D-66 and D-167 on their own page (D-222): the three boxes under the h1,
-// the sentence diners read, Cooked to order under its own heading, and the
-// status.
-test("Dietary tags reads in order: the h1, the three boxes, the sentence diners read, Cooked to order under its heading, and the status", async ({
+// D-66 and D-167 on their own page (D-222, D-223): the page's lead, the
+// three boxes under the h1, the sentence diners read, Cooked to order under
+// its own heading, and Save dietary tags.
+test("Dietary tags reads in order: the h1, the page's lead, the three boxes, the sentence diners read, Cooked to order under its heading, and Save dietary tags", async ({
   page,
 }) => {
   await openDish(page, "one", "tags");
@@ -892,25 +1011,31 @@ test("Dietary tags reads in order: the h1, the three boxes, the sentence diners 
   await expectInOrder(
     [
       main.locator("h1"),
+      leadLine(page, tags.submit),
       tagsGroup(page),
       tagsLine(page),
       main.getByRole("heading", { level: 2, name: cookedToOrder.heading }),
       cookedBox(page),
-      savedStatus(page),
+      saveButton(page, tags.submit),
     ],
-    "the h1, the tags, their sentence, Cooked to order under its heading, its box, then the status, in that order",
+    "the h1, the page's lead, the tags, their sentence, Cooked to order under its heading, its box, then Save dietary tags, in that order",
   );
+  await expect(
+    savedStatus(page),
+    "no status: the page saves by a press",
+  ).toHaveCount(0);
+  await expect(log(page), "nothing on this page is said").toHaveCount(0);
   await expect(
     main.getByRole("heading", { level: 2 }),
     "one h2, Cooked to order",
   ).toHaveCount(1);
 });
 
-// D-159 and D-160 on their own page (D-222): the three radios under the h1,
-// the schedule under its own heading with its lead, days, hours, Today
-// only, the two days, the weeks with their lead, the months with theirs,
-// and its sentence, and the status.
-test("Availability reads in order: the h1, the three radios, the schedule under its heading with its parts and its sentence, and the status", async ({
+// D-159 and D-160 on their own page (D-222, D-223): the page's lead, the
+// three radios under the h1, the schedule under its own heading with its
+// lead, days, hours, Today only, the two days, the weeks with their lead,
+// the months with theirs, and its sentence, and Save availability.
+test("Availability reads in order: the h1, the page's lead, the three radios, the schedule under its heading with its parts and its sentence, and Save availability", async ({
   page,
 }) => {
   await openDish(page, "sizes", "availability");
@@ -918,6 +1043,7 @@ test("Availability reads in order: the h1, the three radios, the schedule under 
   await expectInOrder(
     [
       main.locator("h1"),
+      leadLine(page, availability.submit),
       availabilityGroup(page),
       main.getByRole("heading", { level: 2, name: schedule.heading }),
       main.getByText(schedule.lead, { exact: true }),
@@ -933,10 +1059,14 @@ test("Availability reads in order: the h1, the three radios, the schedule under 
       main.getByText(schedule.monthsLead, { exact: true }),
       boxGroup(page, schedule.monthsLabel),
       scheduleLine(page),
-      savedStatus(page),
+      saveButton(page, availability.submit),
     ],
-    "the h1, the radios, the schedule heading, its lead, days, hours, Today only, the two days, the weeks with their lead, the months with theirs, its sentence, then the status, in that order",
+    "the h1, the page's lead, the radios, the schedule heading, its lead, days, hours, Today only, the two days, the weeks with their lead, the months with theirs, its sentence, then Save availability, in that order",
   );
+  await expect(
+    savedStatus(page),
+    "no status: the page saves by a press",
+  ).toHaveCount(0);
   await expect(
     main.getByRole("heading", { level: 2 }),
     "one h2, Schedule",
@@ -1076,9 +1206,10 @@ test("the choice lists block shows the salad's dressing list as a row with its l
   }
 });
 
-// The box saves at once, as a tag does: it shows at once while its save
-// waits, and goes back when the guard answers it.
-test("a Cooked to order tick shows at once, is refused once when it cannot land, and goes back", async ({
+// The box changes the page only (D-223); Save dietary tags sends the one
+// write, held on the button while it waits (D-209); a save that cannot
+// land keeps every value and puts the failure in the summary, focused.
+test("a Cooked to order tick changes the page only, and Save dietary tags sends one write, held on the button, and keeps the tick with the failure in the summary when it cannot land", async ({
   page,
 }) => {
   const writes = expectWrites(page, { hold: true });
@@ -1089,15 +1220,26 @@ test("a Cooked to order tick shows at once, is refused once when it cannot land,
     .getByText(cookedToOrder.label, { exact: true })
     .click();
   await expect(cookedBox(page)).toBeChecked();
+  expect(writes.attempted.length, "a tick sends nothing").toBe(0);
   await expectNoMissingIds(page);
 
+  const save = saveButton(page, tags.submit);
+  await save.click();
+  await expect(save, "the press is held at once").toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await expect.poll(() => writes.answered.length).toBe(1);
   writes.release();
-  const failure = `${fill(cookedToOrder.notSaved, { dish: dishes.one.name })} ${editing.problems.outOfDate}`;
-  await expect(savedStatus(page)).toHaveText(failure);
-  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
-  await expect(cookedBox(page), "the box is back").not.toBeChecked();
-  await expect(cookedBox(page)).toHaveAttribute("aria-invalid", "true");
-  expect(writes.answered.length).toBeGreaterThan(0);
+  const failure = `${fill(tags.notSaved, { dish: dishes.one.name })} ${editing.problems.outOfDate}`;
+  await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
+    1,
+  );
+  await expect(summary(page), "the summary takes focus").toBeFocused();
+  await expect(summaryLinks(page), "no field is at fault").toHaveCount(0);
+  await expect(cookedBox(page), "the tick is kept").toBeChecked();
+  await expect(save, "Save is free again").not.toHaveAttribute("aria-disabled");
+  await expect(savedStatus(page)).toHaveCount(0);
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
@@ -1263,36 +1405,42 @@ test("the schedule reads a special's hours in one format with one hint on both f
   await expect(scheduleField(page, schedule.starts)).toHaveValue("");
 });
 
-// A tag tick, an availability choice, and a day tick each save at once;
-// each shows at once while its save waits, and goes back when the guard
-// answers it.
-test("a tag tick shows at once, is refused once when it cannot land, and goes back", async ({
+// A tag tick, an availability choice, and a day tick each change the page
+// only (D-223); the line under each group keeps reading the saved values
+// until a Save lands; Save sends the one write, and a save that cannot land
+// keeps the change with the failure in the summary, focused.
+test("a tag tick changes the page only while the sentence diners read follows the saved tags, and Save dietary tags keeps the tick with the failure in the summary when it cannot land", async ({
   page,
 }) => {
   const writes = expectWrites(page, { hold: true });
   const { dishes } = ownerFixture();
   const vegan = en.dietary.names.vegan;
   await openDish(page, "market", "tags");
+  await expect(tagsLine(page), "no tag is saved").toHaveCount(0);
   await page.getByText(vegan, { exact: true }).click();
   await expect(box(page, vegan)).toBeChecked();
-  await expect(tagsLine(page)).toHaveText(
-    fill(tags.dinersRead, { sentence: `"${vegan}."` }),
-  );
+  await expect(
+    tagsLine(page),
+    "the sentence follows the saved tags, not the tick",
+  ).toHaveCount(0);
+  expect(writes.attempted.length, "a tick sends nothing").toBe(0);
   await expectNoMissingIds(page);
 
+  await saveButton(page, tags.submit).click();
+  await expect.poll(() => writes.answered.length).toBe(1);
   writes.release();
   const failure = `${fill(tags.notSaved, { dish: dishes.market.name })} ${editing.problems.outOfDate}`;
-  await expect(savedStatus(page)).toHaveText(failure);
-  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
-  await expect(box(page, vegan), "the box is back").not.toBeChecked();
-  await expect(box(page, vegan)).toHaveAttribute("aria-invalid", "true");
+  await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
+    1,
+  );
+  await expect(summary(page)).toBeFocused();
+  await expect(box(page, vegan), "the tick is kept").toBeChecked();
   await expect(tagsLine(page)).toHaveCount(0);
-  expect(writes.answered.length).toBeGreaterThan(0);
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
 
-test("Sold out today shows at once with no line until it lands, is refused once when it cannot land, and goes back", async ({
+test("Sold out today changes the page only while the group's line follows the saved choice, and Save availability keeps the choice with the failure in the summary when it cannot land", async ({
   page,
 }) => {
   const writes = expectWrites(page, { hold: true });
@@ -1302,119 +1450,111 @@ test("Sold out today shows at once with no line until it lands, is refused once 
   await expect(radio(page, availability.soldOut)).toBeChecked();
   await expect(
     availabilityGroup(page),
-    "the line waits for the server's answer",
+    "the line follows the saved choice, Available, which has none",
   ).toHaveAccessibleDescription("");
+  expect(writes.attempted.length, "a choice sends nothing").toBe(0);
   await expectNoMissingIds(page);
 
+  await saveButton(page, availability.submit).click();
+  await expect.poll(() => writes.answered.length).toBe(1);
   writes.release();
   const failure = `${fill(availability.notSaved, { dish: dishes.one.name })} ${editing.problems.outOfDate}`;
-  await expect(savedStatus(page)).toHaveText(failure);
-  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
+  await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
+    1,
+  );
+  await expect(summary(page)).toBeFocused();
   await expect(
-    radio(page, availability.available),
-    "the choice is back",
+    radio(page, availability.soldOut),
+    "the choice is kept",
   ).toBeChecked();
-  await expect(availabilityGroup(page)).toHaveAttribute("aria-invalid", "true");
-  expect(writes.answered.length).toBeGreaterThan(0);
+  await expect(availabilityGroup(page)).not.toHaveAttribute("aria-invalid");
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
 
-test("a day tick shows at once with the sentence it would give diners, is refused once when it cannot land, and goes back", async ({
+test("a day tick changes the page only while the sentence diners read follows the saved schedule, and Save availability keeps the tick with the failure in the summary when it cannot land", async ({
   page,
 }) => {
   const writes = expectWrites(page, { hold: true });
   const { dishes } = ownerFixture();
   await openDish(page, "sizes", "availability");
+  const every = fill(schedule.dinersRead, {
+    sentence: '"Every day, 4 to 9 pm."',
+  });
+  await expect(scheduleLine(page)).toContainText(every);
   await page.getByText(dayNames.tue, { exact: true }).click();
   await expect(box(page, dayNames.tue)).toBeChecked();
-  await expect(scheduleLine(page)).toContainText(
-    fill(schedule.dinersRead, { sentence: '"Tuesdays, 4 to 9 pm."' }),
-  );
+  await expect(
+    scheduleLine(page),
+    "the sentence follows the saved schedule, not the tick",
+  ).toContainText(every);
+  expect(writes.attempted.length, "a tick sends nothing").toBe(0);
   await expectNoMissingIds(page);
 
+  await saveButton(page, availability.submit).click();
+  await expect.poll(() => writes.answered.length).toBe(1);
   writes.release();
-  const failure = `${fill(schedule.notSaved.days, { dish: dishes.sizes.name })} ${editing.problems.outOfDate}`;
-  await expect(savedStatus(page)).toHaveText(failure);
-  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
-  await expect(box(page, dayNames.tue), "the box is back").not.toBeChecked();
-  await expect(box(page, dayNames.tue)).toHaveAttribute("aria-invalid", "true");
-  await expect(scheduleLine(page)).toContainText(
-    fill(schedule.dinersRead, { sentence: '"Every day, 4 to 9 pm."' }),
+  const failure = `${fill(availability.notSaved, { dish: dishes.sizes.name })} ${editing.problems.outOfDate}`;
+  await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
+    1,
   );
-  expect(writes.answered.length).toBeGreaterThan(0);
+  await expect(summary(page)).toBeFocused();
+  await expect(box(page, dayNames.tue), "the tick is kept").toBeChecked();
+  await expect(box(page, dayNames.tue)).not.toHaveAttribute("aria-invalid");
+  await expect(scheduleLine(page)).toContainText(every);
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
 
-// The two time fields commit together, and a date field when it is left:
-// the write guard proves that Tab and Enter through them unchanged send
-// nothing.
-test("Tab and Enter through the unchanged time pair and the unchanged dates send nothing and say nothing", async ({
+// The schedule's fields save nothing when they are left (D-223): the write
+// guard proves that Tab through them unchanged sends nothing, and nothing
+// is said.
+test("Tab through the unchanged time pair, Today only, and the unchanged dates sends nothing and says nothing", async ({
   page,
 }) => {
   await openDish(page, "sizes", "availability");
   await scheduleField(page, schedule.starts).focus();
   await page.keyboard.press("Tab");
   await expect(scheduleField(page, schedule.ends)).toBeFocused();
-  await page.keyboard.press("Enter");
   await page.keyboard.press("Tab");
   await expect(todayButton(page)).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(scheduleField(page, schedule.firstDay)).toBeFocused();
-  await page.keyboard.press("Enter");
   await page.keyboard.press("Tab");
   await expect(scheduleField(page, schedule.lastDay)).toBeFocused();
-  await page.keyboard.press("Enter");
   await page.keyboard.press("Tab");
-  await expect(savedStatus(page)).toHaveText(editing.saved);
+  await expect(scheduleField(page, schedule.lastDay)).not.toBeFocused();
   await expect(log(page)).toHaveText("");
+  await expect(summary(page)).toHaveCount(0);
 });
 
-// Today only is a press with no field of its own, like Add a size: answered
-// in the browser, it is said once and focus stays on the button.
-test("Today only sends one write, is said once when it cannot land, and keeps focus on the button", async ({
+// Today only fills the two date fields in the page and says so once;
+// nothing is sent until Save (D-223, D-229). No expectWrites, so the guard
+// is the proof.
+test("Today only fills First day and Last day with today, is said once, sends nothing, and keeps focus on the button", async ({
   page,
 }) => {
-  const writes = expectWrites(page, { hold: true });
-  const { dishes } = ownerFixture();
   await openDish(page, "one", "availability");
+  await hearLog(page);
+  const first = scheduleField(page, schedule.firstDay);
+  const last = scheduleField(page, schedule.lastDay);
+  await expect(first).toHaveValue("");
   await todayButton(page).focus();
   await page.keyboard.press("Enter");
-  await expectNoMissingIds(page);
-  writes.release();
-  const failure = `${fill(schedule.notSaved.today, { dish: dishes.one.name })} ${editing.problems.outOfDate}`;
-  await expect(savedStatus(page)).toHaveText(failure);
-  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
+  await expect(first).not.toHaveValue("");
+  await expect(last).toHaveValue(await first.inputValue());
+  const prefix = schedule.todayOnlyFilled.split("{date}")[0] ?? "";
+  await expect
+    .poll(
+      async () =>
+        (await heard(page)).filter((each) => each.startsWith(prefix)).length,
+    )
+    .toBe(1);
   await expect(todayButton(page)).toBeFocused();
   await expect(
-    scheduleField(page, schedule.firstDay),
-    "the date went back",
-  ).toHaveValue("");
-  expect(writes.answered.length).toBe(1);
-  await expectNoMissingIds(page);
-  await expectNoAxeViolations(page);
-});
-
-// A week says which of the month's Mondays, so with no day it is refused
-// before anything is sent: no expectWrites, so the guard is the proof.
-test("a week ticked with no day is refused unsent, said once, with the box back and marked", async ({
-  page,
-}) => {
-  const { dishes } = ownerFixture();
-  await openDish(page, "one", "availability");
-  await page.getByText(schedule.weeks.first, { exact: true }).click();
-  const refused = `${fill(schedule.notSaved.weeks, { dish: dishes.one.name })} ${schedule.errors.weeksNeedDay}`;
-  await expect(savedStatus(page)).toHaveText(refused);
-  await expect(log(page).getByText(refused, { exact: true })).toHaveCount(1);
-  await expect(box(page, schedule.weeks.first)).not.toBeChecked();
-  await expect(box(page, schedule.weeks.first)).toHaveAttribute(
-    "aria-invalid",
-    "true",
-  );
-  await expect(
-    page.getByRole("button", { name: editing.tryAgain, exact: true }),
-  ).toHaveCount(1);
+    scheduleLine(page),
+    "the sentence follows the saved schedule",
+  ).toHaveText(schedule.none);
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
@@ -1531,136 +1671,171 @@ test("the allergen group shows the nine with their hints, the other allergens as
   await expectNoAxeViolations(page);
 });
 
-// A tick saves at once, as the price choice does. The box shows at once
-// while its save waits, so the write is held to look at it there; once
-// released, the guard answers it, the save fails, and the box goes back.
-// The sentence under the check follows the boxes, so the ids it ties are
-// looked at after each change (D-147).
-test("a tick shows at once, is refused once when it cannot land, goes back, and nothing points at a missing id either way", async ({
+// A tick changes the page only (D-223): the sentence under the check keeps
+// reading the saved lists and the saved check until a Save lands, so the
+// ids it ties are the same before and after (D-147). Save allergens sends
+// the one write; a save that cannot land keeps the tick with the failure
+// in the summary, focused.
+test("a tick changes the page only while the sentence diners read follows the saved lists, and Save allergens keeps the tick with the failure in the summary when it cannot land", async ({
   page,
 }) => {
   const writes = expectWrites(page, { hold: true });
   const { dishes } = ownerFixture();
   await openDish(page, "market", "allergens");
+  const notChecked = checkDescription(
+    reads({ allergens: [], others: [] }, false),
+    allergens.notChecked,
+  );
   await page.getByText(allergens.names.milk, { exact: true }).click();
   await expect(box(page, allergens.names.milk)).toBeChecked();
   await expect(
     checkBox(page),
-    "an unchecked dish reads not confirmed whatever its list holds",
-  ).toHaveAccessibleDescription(
-    checkDescription(
-      reads({ allergens: ["milk"], others: [] }, false),
-      allergens.notChecked,
-    ),
-  );
+    "the sentence follows the saved lists, not the tick",
+  ).toHaveAccessibleDescription(notChecked);
+  expect(writes.attempted.length, "a tick sends nothing").toBe(0);
   await expectNoMissingIds(page);
 
+  const save = saveButton(page, allergens.submit);
+  await save.click();
+  await expect(save, "the press is held at once").toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await expect.poll(() => writes.answered.length).toBe(1);
   writes.release();
   const failure = `${fill(allergens.notSaved.allergens, {
     dish: dishes.market.name,
   })} ${editing.problems.outOfDate}`;
-  await expect(savedStatus(page)).toHaveText(failure);
-  await expect(
-    log(page).getByText(failure, { exact: true }),
-    "the failure is said once",
-  ).toHaveCount(1);
+  await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
+    1,
+  );
+  await expect(summary(page), "the summary takes focus").toBeFocused();
+  await expect(summaryLinks(page), "no field is at fault").toHaveCount(0);
   await expect(
     box(page, allergens.names.milk),
-    "the box is back",
-  ).not.toBeChecked();
-  await expect(box(page, allergens.names.milk)).toHaveAttribute(
+    "the tick is kept",
+  ).toBeChecked();
+  await expect(box(page, allergens.names.milk)).not.toHaveAttribute(
     "aria-invalid",
-    "true",
   );
-  expect(writes.answered.length).toBeGreaterThan(0);
+  await expect(checkBox(page)).toHaveAccessibleDescription(notChecked);
+  await expect(save).not.toHaveAttribute("aria-disabled");
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
 
-test("a tick on a checked dish clears the check at once and says so in the sentence, and the check comes back when the tick cannot land", async ({
+// On a checked dish a tick leaves the saved check as it is: the check and
+// the lists save together by the press, D-148's rule in one save (D-229).
+// The same-named offer stays, since it works from the saved list (D-129):
+// while the page holds unsaved changes Apply says to save first and sends
+// nothing, through the inactive-button pattern Add another allergen uses
+// when the rows are full; with the page clean again it sends one write,
+// answered in the browser, and says the result once, focus staying on it.
+test("a tick on a checked dish leaves the check and the same-named offer as they are; Apply with unsaved changes says to save first and sends nothing, and with the page clean sends one write and says the result once", async ({
   page,
 }) => {
-  const writes = expectWrites(page, { hold: true });
+  const writes = expectWrites(page);
+  const { dishes, withSections, withDishes } = ownerFixture();
   await openDish(page, "sizes", "allergens");
+  await hearLog(page);
+  const checked = checkDescription(
+    reads({ allergens: ["milk", "wheat"], others: ["celery"] }, true),
+    checkedByYou,
+  );
+  const apply = page.locator('main button[id^="dish-apply-"]');
+  await expect(apply).toHaveCount(1);
+  await expect(apply).not.toHaveAttribute("aria-disabled");
+
   await page.getByText(allergens.names.sesame, { exact: true }).click();
   await expect(box(page, allergens.names.sesame)).toBeChecked();
-  await expect(checkBox(page), "the check clears at once").not.toBeChecked();
-  await expect(checkBox(page)).toHaveAccessibleDescription(
-    checkDescription(
-      reads(
-        { allergens: ["milk", "wheat", "sesame"], others: ["celery"] },
-        false,
-      ),
-      allergens.cleared,
-    ),
-  );
-  await expect(
-    page.locator('main button[id^="dish-apply-"]'),
-    "the same-named line goes while the dish is not checked",
-  ).toHaveCount(0);
+  await expect(checkBox(page), "the check stays until Save").toBeChecked();
+  await expect(checkBox(page)).toHaveAccessibleDescription(checked);
+  await expect(apply, "the same-named line stays").toHaveCount(1);
+  await expect(apply).toHaveAttribute("aria-disabled", "true");
+  await apply.focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => said(page, allergens.sameNamed.saveFirst)).toBe(1);
+  await expect(apply, "focus stays on Apply").toBeFocused();
+  expect(writes.attempted.length, "nothing was sent").toBe(0);
   await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
 
-  writes.release();
+  // The tick undone: the page is clean, and Apply works from the saved list.
+  await page.getByText(allergens.names.sesame, { exact: true }).click();
   await expect(box(page, allergens.names.sesame)).not.toBeChecked();
-  await expect(checkBox(page), "the check is back").toBeChecked();
-  await expect(checkBox(page)).toHaveAccessibleDescription(
-    checkDescription(
-      reads({ allergens: ["milk", "wheat"], others: ["celery"] }, true),
-      checkedByYou,
-    ),
+  await expect(apply).not.toHaveAttribute("aria-disabled");
+  const before = (await heard(page)).length;
+  await apply.focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => writes.answered.length).toBe(1);
+  const notApplied = notAppliedSentence(
+    allergens,
+    editing,
+    strings.errors.parentGone,
+    { kind: "out-of-date" },
+    {
+      name: dishes.sizes.name,
+      section: withSections.name,
+      menu: withDishes.name,
+    },
   );
+  await expect.poll(() => said(page, notApplied)).toBe(1);
+  expect((await heard(page)).length, "said once").toBe(before + 1);
+  await expect(
+    page.locator("main p").filter({ hasText: notApplied }),
+    "the last result shows as a plain line",
+  ).toHaveCount(1);
+  await expect(apply, "focus stays on Apply").toBeFocused();
+  await expect(apply).toHaveCount(1);
+  await expect(savedStatus(page)).toHaveCount(0);
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
 
-test("the check shows at once as checked by you, and goes back when it cannot land", async ({
+test("the check changes the page only while the sentence diners read follows the saved check, and Save allergens keeps it with the failure in the summary when it cannot land", async ({
   page,
 }) => {
   const writes = expectWrites(page, { hold: true });
   const { dishes } = ownerFixture();
   await openDish(page, "market", "allergens");
+  const notChecked = checkDescription(
+    reads({ allergens: [], others: [] }, false),
+    allergens.notChecked,
+  );
   await page.getByText(allergens.checkLabel, { exact: true }).click();
   await expect(checkBox(page)).toBeChecked();
-  await expect(checkBox(page)).toHaveAccessibleDescription(
-    checkDescription(
-      reads({ allergens: [], others: [] }, true),
-      allergens.checkedByYouNow,
-    ),
-  );
-  await expectNoMissingIds(page);
-
-  writes.release();
-  const failure = `${fill(allergens.notSaved.check, {
-    dish: dishes.market.name,
-  })} ${editing.problems.outOfDate}`;
-  await expect(savedStatus(page)).toHaveText(failure);
-  await expect(log(page).getByText(failure, { exact: true })).toHaveCount(1);
-  await expect(checkBox(page)).not.toBeChecked();
   await expect(
     checkBox(page),
-    "the hint, the sentence, then the problem",
-  ).toHaveAccessibleDescription(
-    `${checkDescription(
-      reads({ allergens: [], others: [] }, false),
-      allergens.notChecked,
-    )} ${editing.problems.outOfDate}`,
+    "the sentence follows the saved check, not the tick",
+  ).toHaveAccessibleDescription(notChecked);
+  expect(writes.attempted.length, "a tick sends nothing").toBe(0);
+  await expectNoMissingIds(page);
+
+  await saveButton(page, allergens.submit).click();
+  await expect.poll(() => writes.answered.length).toBe(1);
+  writes.release();
+  const failure = `${fill(allergens.notSaved.allergens, {
+    dish: dishes.market.name,
+  })} ${editing.problems.outOfDate}`;
+  await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
+    1,
   );
+  await expect(summary(page)).toBeFocused();
+  await expect(checkBox(page), "the tick is kept").toBeChecked();
+  await expect(checkBox(page)).toHaveAccessibleDescription(notChecked);
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
 
 // Add another allergen adds a row in the page only, and a blank row removed
-// sends nothing: the write guard is the proof.
+// sends nothing: the write guard is the proof. Each press is said once.
 test("Add another allergen adds a blank row with focus in its field and sends nothing, and removing it sends nothing", async ({
   page,
 }) => {
   await openDish(page, "market", "allergens");
   await addOtherButton(page).focus();
   await page.keyboard.press("Enter");
-  const field = page.getByRole("combobox", {
-    name: `${allergens.otherLabel} ${otherSuffix(allergens, 1)}`,
-    exact: true,
-  });
+  const field = otherField(page, 1);
   await expect(field).toHaveCount(1);
   await expect(field, "focus lands in the new field").toBeFocused();
   await expect(log(page)).toHaveText(
@@ -1687,7 +1862,7 @@ test("Add another allergen adds a blank row with focus in its field and sends no
       exact: true,
     }),
   ).toHaveCount(1);
-  await expect(savedStatus(page)).toHaveText(editing.saved);
+  await expect(savedStatus(page)).toHaveCount(0);
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
@@ -2082,4 +2257,529 @@ test("a move the server cannot take is said once, keeps focus on its button, and
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
   await expectNoHorizontalScroll(page);
+});
+
+// D-223, D-229: the three pages that save by one press. Each ends in one
+// Save named for the page, a submit button never disabled, after a lead
+// under the h1 that says the page saves when it is pressed; none shows the
+// status region the pages that save as the owner goes show.
+test("each page that saves by a press has one Save named for the page, a submit button never disabled and last in its form, a lead that says so, and no status region", async ({
+  page,
+}) => {
+  const pages = [
+    { which: "sizes", at: "allergens", submit: allergens.submit },
+    { which: "one", at: "tags", submit: tags.submit },
+    { which: "sizes", at: "availability", submit: availability.submit },
+  ] as const;
+  for (const { which, at, submit } of pages) {
+    await openDish(page, which, at);
+    const main = page.locator("main");
+    const save = saveButton(page, submit);
+    await expect(save, `${at}: one Save`).toHaveCount(1);
+    await expect(save).toHaveAttribute("type", "submit");
+    await expect(save).toBeEnabled();
+    await expect(save).not.toHaveAttribute("aria-disabled");
+    const formOf = main.locator("form").filter({ has: save });
+    await expect(formOf, `${at}: Save sits in the page's one form`).toHaveCount(
+      1,
+    );
+    await expect(main.locator("form")).toHaveCount(1);
+    await expect(
+      formOf.getByRole("button").last(),
+      `${at}: Save is the form's last button`,
+    ).toHaveAccessibleName(submit);
+    await expectInOrder(
+      [main.locator("h1"), leadLine(page, submit), save],
+      `${at}: the h1, the lead, then Save`,
+    );
+    await expect(savedStatus(page), `${at}: no status region`).toHaveCount(0);
+    await expect(summary(page), `${at}: no summary at rest`).toHaveCount(0);
+  }
+});
+
+// Primer's rule for a Save the browser refuses (D-229): three or more
+// problems focus the summary, whose links lead to each field in field
+// order; fewer focus the first field at fault. Nothing is sent: no
+// expectWrites, so the guard is the proof. A blank row is dropped, never a
+// problem (Michael, November 9, 2026). The fields here save nothing when
+// they are left, so the gate types into them (D-115, refined).
+test("Save allergens with a name that means one of the nine, a name with a comma, and a name that runs long sends nothing and focuses the summary, whose links lead to each field in order; one problem alone focuses its field", async ({
+  page,
+}) => {
+  await openDish(page, "market", "allergens");
+  const names = ["Milk", "nuts, except almonds", "x".repeat(41)];
+  for (const [index, name] of names.entries()) {
+    await addOtherButton(page).click();
+    const field = otherField(page, index + 1);
+    await expect(field).toBeFocused();
+    await field.fill(name);
+    // Leaving the field closes any suggestion list React Aria opened.
+    await page.keyboard.press("Tab");
+  }
+  await saveButton(page, allergens.submit).click();
+  const box = summary(page);
+  await expect(box, "the summary takes focus").toBeFocused();
+  await expect(
+    box.getByRole("heading", { level: 2 }),
+    "named by its heading",
+  ).toHaveText(form.summary);
+  const links = summaryLinks(page);
+  await expect(links).toHaveText([
+    fill(allergens.errors.otherMajor, { allergen: allergens.names.milk }),
+    allergens.errors.otherComma,
+    allergens.errors.otherLength,
+  ]);
+  for (const index of names.keys()) {
+    const field = otherField(page, index + 1);
+    const id = await field.getAttribute("id");
+    await expect(links.nth(index)).toHaveAttribute("href", `#${id}`);
+    await expect(field).toHaveAttribute("aria-invalid", "true");
+  }
+  await expect(
+    otherRows(page).nth(1).getByText(allergens.errors.otherComma, {
+      exact: true,
+    }),
+    "each problem stands under its field too",
+  ).toHaveCount(1);
+  await links.nth(1).click();
+  await expect(otherField(page, 2), "a link focuses its field").toBeFocused();
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+
+  // The last two rows removed, each by the name typed in it, which names
+  // its row's controls as the form holds it: one problem, so its field is
+  // focused and there is no summary.
+  for (const name of [names[2], names[1]]) {
+    await page
+      .getByRole("button", {
+        name: otherAction(allergens, allergens.removeOther, name ?? ""),
+        exact: true,
+      })
+      .click();
+  }
+  await expect(otherRows(page)).toHaveCount(1);
+  await saveButton(page, allergens.submit).click();
+  await expect(otherField(page, 1), "the one field at fault").toBeFocused();
+  await expect(otherField(page, 1)).toHaveAttribute("aria-invalid", "true");
+  await expect(summary(page)).toHaveCount(0);
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+test("Save availability with Starts at 4, First day soon, and Last day later sends nothing and focuses the summary with a link per problem in field order; Starts alone focuses Starts; a week with no day focuses the week's box", async ({
+  page,
+}) => {
+  await openDish(page, "one", "availability");
+  const starts = scheduleField(page, schedule.starts);
+  const ends = scheduleField(page, schedule.ends);
+  const first = scheduleField(page, schedule.firstDay);
+  const last = scheduleField(page, schedule.lastDay);
+  const save = saveButton(page, availability.submit);
+  await starts.fill("4");
+  await first.fill("soon");
+  await last.fill("later");
+  await save.click();
+  await expect(summary(page), "the summary takes focus").toBeFocused();
+  const links = summaryLinks(page);
+  await expect(links).toHaveText([
+    schedule.errors.timeAmPmStarts,
+    schedule.errors.timePairEnds,
+    schedule.errors.dateFormat,
+    schedule.errors.dateFormat,
+  ]);
+  for (const [index, id] of [
+    "dish-schedule-hours-open",
+    "dish-schedule-hours-close",
+    "dish-schedule-from",
+    "dish-schedule-until",
+  ].entries()) {
+    await expect(links.nth(index)).toHaveAttribute("href", `#${id}`);
+  }
+  await expect(starts).toHaveAttribute("aria-invalid", "true");
+  await expect(starts).toHaveAccessibleDescription(
+    `${schedule.errors.timeAmPmStarts} ${schedule.hoursHint}`,
+  );
+  await expect(ends).toHaveAccessibleDescription(
+    `${schedule.errors.timePairEnds} ${schedule.hoursHint}`,
+  );
+  await expect(first).toHaveAccessibleDescription(
+    `${schedule.errors.dateFormat} ${schedule.dateHint}`,
+  );
+  await links.nth(2).click();
+  await expect(first, "a link focuses its field").toBeFocused();
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+
+  // Two problems, the pair's: the first field at fault is focused.
+  await first.fill("");
+  await last.fill("");
+  await save.click();
+  await expect(starts, "Starts, the first field at fault").toBeFocused();
+  await expect(summary(page)).toHaveCount(0);
+  await expect(ends).toHaveAttribute("aria-invalid", "true");
+  await expect(first).not.toHaveAttribute("aria-invalid");
+
+  // A week says which of the month's Mondays, so with no day it is one
+  // problem, on the week's box: its wrapper takes the focus and hands it
+  // to the box. The tick is kept.
+  await starts.fill("");
+  await page.getByText(schedule.weeks.first, { exact: true }).click();
+  await expect(box(page, schedule.weeks.first)).toBeChecked();
+  await save.click();
+  await expect(box(page, schedule.weeks.first)).toBeFocused();
+  await expect(
+    box(page, schedule.weeks.first),
+    "the tick is kept",
+  ).toBeChecked();
+  await expect(box(page, schedule.weeks.first)).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await expect(box(page, schedule.weeks.first)).toHaveAccessibleDescription(
+    schedule.errors.weeksNeedDay,
+  );
+  await expect(summary(page)).toHaveCount(0);
+  await expect(starts).not.toHaveAttribute("aria-invalid");
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
+// A Save that lands loads the page again with the flash (D-219, D-229),
+// here from the cookie the save leaves, since the gate never lands a save
+// (D-108). The same arrival as Details' (D-214 to D-216), with the
+// breadcrumb between the banner and the h1 (D-222): first in main, before
+// the breadcrumb and the h1. Dismiss sends focus to the h1 (D-214), which
+// carries the page's heading id (D-225).
+test(
+  "after a save, Allergens arrives with the success banner first in main, before the breadcrumb and the h1, its dismiss button focused by the served autofocus; Enter on it focuses the h1; and a reload shows no banner",
+  { tag: "@saved-banner" },
+  async ({ page }) => {
+    const path = dishPath("sizes", "allergens");
+    await setNotice(page, "allergens-saved", path);
+    const response = await open(page, path);
+    const { banner, dismiss } = await expectFlashArrival(page, response, {
+      kind: "success",
+      words: allergens.saved,
+    });
+    const h1 = page.locator("main h1");
+    await expect(h1).toHaveText(allergens.heading);
+    await expectInOrder(
+      [banner, breadcrumb(page), h1],
+      "the banner, the breadcrumb, then the h1",
+    );
+    await expect(h1).toHaveAttribute(
+      "id",
+      dishPageHeadingId("allergens") ?? "",
+    );
+    await expectNoMissingIds(page);
+    await expectNoAxeViolations(page);
+
+    await expect(dismiss).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(banner).toHaveCount(0);
+    await expect(h1, "Dismiss sends focus to the h1").toBeFocused();
+    await expectNoMissingIds(page);
+
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    await expect(h1).toHaveText(allergens.heading);
+    await expect(
+      flashBanner(page, "success"),
+      "a reload shows no banner",
+    ).toHaveCount(0);
+    await expect(page.locator("main").getByRole("alert")).toHaveCount(0);
+  },
+);
+
+// The leave rule (D-229): an owner link pressed while the page holds
+// unsaved changes asks first, in the one dialog (D-119, D-221), named by
+// its question, with focus on Keep editing after the wait (D-136). Keep
+// editing returns focus to the link with the change kept; Leave goes. Back
+// and forward are not asked (Michael, November 9, 2026). Nothing is
+// asked on a page that saves as the owner goes.
+test(
+  "a page nav link pressed with unsaved changes asks first in a dialog named by its question, focus on Keep editing; Keep editing returns focus to the link with the change kept; Leave goes to the page",
+  { tag: "@dialog" },
+  async ({ page }) => {
+    await page.clock.install();
+    const { dishes } = ownerFixture();
+    const vegan = en.dietary.names.vegan;
+    await openDish(page, "one", "tags");
+    await stopClock(page);
+    await page.getByText(vegan, { exact: true }).click();
+    await expect(box(page, vegan)).toBeChecked();
+    const general = pageNav(page, dishes.one.name).getByRole("link", {
+      name: strings.pages.general,
+      exact: true,
+    });
+    await general.focus();
+    await page.keyboard.press("Enter");
+    const dialog = leaveDialog(page);
+    await expect(dialog, "an alert dialog named by its question").toHaveCount(
+      1,
+    );
+    await expect(dialog.getByRole("heading", { level: 2 })).toHaveText(
+      form.leave.question,
+    );
+    await expect(dialog).toHaveAccessibleDescription(form.leave.note);
+    // React Aria makes the page behind inert, which Playwright's role
+    // engine does not read as hidden.
+    expect(
+      await page
+        .locator("main")
+        .evaluate((main) => main.closest("[inert]") !== null),
+      "the page behind is inert",
+    ).toBe(true);
+    expect(pathOf(page), "nothing moved").toBe(dishPath("one", "tags"));
+    const keep = dialog.getByRole("button", {
+      name: form.leave.keep,
+      exact: true,
+    });
+    const leave = dialog.getByRole("button", {
+      name: form.leave.leave,
+      exact: true,
+    });
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
+    await expect(keep, "focus moves to Keep editing (D-136)").toBeFocused();
+    await expectNoMissingIds(page);
+
+    await page.keyboard.press("Enter");
+    await expect(dialog).toHaveCount(0);
+    await expect(
+      general,
+      "Keep editing returns focus to the link",
+    ).toBeFocused();
+    expect(pathOf(page)).toBe(dishPath("one", "tags"));
+    await expect(box(page, vegan), "the change is kept").toBeChecked();
+
+    await page.keyboard.press("Enter");
+    await expect(dialog).toHaveCount(1);
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
+    await expect(keep).toBeFocused();
+    // Axe runs on timers, so the clock runs again for its reading of the
+    // open dialog.
+    await page.clock.resume();
+    await expectNoAxeViolations(page);
+    await page.keyboard.press("Tab");
+    await expect(leave).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(new RegExp(`${escape(dishPath("one"))}$`));
+    await expect(page.locator("main h1")).toHaveText(dishes.one.name);
+    await expect(leaveDialog(page)).toHaveCount(0);
+  },
+);
+
+test(
+  "the dialog's Leave takes no pointer press for half a second after it opens, Escape keeps, and after the wait a pointer press on Leave goes to the dashboard",
+  { tag: "@dialog" },
+  async ({ page }) => {
+    await page.clock.install();
+    const vegan = en.dietary.names.vegan;
+    await openDish(page, "one", "tags");
+    await stopClock(page);
+    await page.getByText(vegan, { exact: true }).click();
+    await expect(box(page, vegan)).toBeChecked();
+    const site = page.getByRole("link", { name: en.site.name, exact: true });
+    await site.click();
+    const dialog = leaveDialog(page);
+    await expect(dialog).toHaveCount(1);
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
+    const leave = dialog.getByRole("button", {
+      name: form.leave.leave,
+      exact: true,
+    });
+    await leave.click();
+    await expect(
+      dialog,
+      "a pointer press inside the guard does nothing (D-119)",
+    ).toHaveCount(1);
+    expect(pathOf(page)).toBe(dishPath("one", "tags"));
+
+    await page.keyboard.press("Escape");
+    await expect(dialog, "Escape keeps").toHaveCount(0);
+    expect(pathOf(page)).toBe(dishPath("one", "tags"));
+    await expect(box(page, vegan)).toBeChecked();
+
+    await site.click();
+    await expect(dialog).toHaveCount(1);
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS + CONFIRM_GUARD_MS);
+    await leave.click();
+    await page.clock.resume();
+    await expect(page).toHaveURL(new RegExp(`${escape(dashboardPath)}$`));
+  },
+);
+
+// While a submit is on its way the link holds without asking (Michael,
+// November 9, 2026): a save that lands loads the page again, one that
+// fails keeps the page with the summary focused, and only then does the
+// link ask.
+test(
+  "while a save is on its way a page nav link holds without a dialog and nothing moves; once the save fails the page stays with the summary focused and the change kept, and the link asks",
+  { tag: "@dialog" },
+  async ({ page }) => {
+    await page.clock.install();
+    const writes = expectWrites(page, { hold: true });
+    const { dishes } = ownerFixture();
+    const vegan = en.dietary.names.vegan;
+    await openDish(page, "one", "tags");
+    await stopClock(page);
+    await page.getByText(vegan, { exact: true }).click();
+    await expect(box(page, vegan)).toBeChecked();
+    const save = saveButton(page, tags.submit);
+    await save.click();
+    await expect(save, "the press is held (D-209)").toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await expect.poll(() => writes.answered.length).toBe(1);
+
+    const general = pageNav(page, dishes.one.name).getByRole("link", {
+      name: strings.pages.general,
+      exact: true,
+    });
+    await general.focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      leaveDialog(page),
+      "no dialog while the save is on its way",
+    ).toHaveCount(0);
+    expect(pathOf(page), "nothing moved").toBe(dishPath("one", "tags"));
+    await page.clock.runFor(2000);
+    expect(pathOf(page), "and nothing moves later").toBe(
+      dishPath("one", "tags"),
+    );
+
+    writes.release();
+    const failure = `${fill(tags.notSaved, { dish: dishes.one.name })} ${editing.problems.outOfDate}`;
+    await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
+      1,
+    );
+    await expect(summary(page), "the summary takes focus").toBeFocused();
+    await expect(box(page, vegan), "the change is kept").toBeChecked();
+    await expect(save).not.toHaveAttribute("aria-disabled");
+    expect(pathOf(page)).toBe(dishPath("one", "tags"));
+
+    await general.focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      leaveDialog(page),
+      "with the save answered, the link asks",
+    ).toHaveCount(1);
+    // Axe runs on timers, so the clock runs again for its reading.
+    await page.clock.resume();
+    await expectNoMissingIds(page);
+    await expectNoAxeViolations(page);
+  },
+);
+
+// The browser's own warning on a full unload (D-229): armed only while the
+// page holds unsaved changes, so the flash a landed save brings never
+// trips it. A synthetic beforeunload in the page tells whether a handler
+// cancelled it.
+test("the browser's leave warning is armed only while the page holds unsaved changes", async ({
+  page,
+}) => {
+  const vegan = en.dietary.names.vegan;
+  await openDish(page, "market", "tags");
+  const armed = () =>
+    page.evaluate(
+      () =>
+        !window.dispatchEvent(new Event("beforeunload", { cancelable: true })),
+    );
+  expect(await armed(), "clean: not armed").toBe(false);
+  await page.getByText(vegan, { exact: true }).click();
+  await expect(box(page, vegan)).toBeChecked();
+  expect(await armed(), "a tick: armed").toBe(true);
+  await page.getByText(vegan, { exact: true }).click();
+  await expect(box(page, vegan)).not.toBeChecked();
+  expect(await armed(), "back as saved: not armed").toBe(false);
+
+  // An added row that holds nothing is not a change (D-229): the warning
+  // arms once a name is typed.
+  await openDish(page, "market", "allergens");
+  expect(await armed(), "allergens clean: not armed").toBe(false);
+  await addOtherButton(page).click();
+  await expect(otherRows(page)).toHaveCount(1);
+  expect(await armed(), "a blank row: not armed").toBe(false);
+  await otherField(page, 1).fill("Celery");
+  expect(await armed(), "a name typed: armed").toBe(true);
+});
+
+// General's price choice settles before it saves (D-229): a round of
+// arrows sends one write, half a second after the last, carrying the last
+// choice; a round that ends on the saved choice sends nothing and says
+// nothing. On the page's clock, stopped, so the half second is exact.
+test("a price choice saves once it has settled: arrows back to the saved choice send nothing and say nothing; arrows through two choices send one write carrying the last, said once when it cannot land; arrows back after that say All changes saved once", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const writes = expectWrites(page);
+  const bodies: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST") bodies.push(request.postData() ?? "");
+  });
+  const { dishes } = ownerFixture();
+  await openDish(page, "one");
+  await hearLog(page);
+  await stopClock(page);
+
+  // Three arrows end on the saved choice: no write, nothing said.
+  await radio(page, strings.price.one).focus();
+  for (let step = 0; step < 3; step += 1) {
+    await page.keyboard.press("ArrowDown");
+  }
+  await expect(radio(page, strings.price.one)).toBeChecked();
+  await page.clock.runFor(SETTLE_MS + 1);
+  expect(
+    writes.attempted.length,
+    "a round back on the saved choice sends nothing",
+  ).toBe(0);
+  expect((await heard(page)).length, "and says nothing").toBe(0);
+
+  // Two arrows end on Market price: one write, half a second after the
+  // last, carrying the last choice.
+  await radio(page, strings.price.one).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(radio(page, strings.price.sizes)).toBeChecked();
+  await page.keyboard.press("ArrowDown");
+  await expect(radio(page, strings.price.market)).toBeChecked();
+  await page.clock.runFor(SETTLE_MS - 1);
+  expect(
+    writes.attempted.length,
+    "nothing is sent before the choice settles",
+  ).toBe(0);
+  await page.clock.runFor(1);
+  await expect.poll(() => writes.attempted.length).toBe(1);
+  expect(bodies.at(-1), "the write carries the last choice").toContain(
+    "market",
+  );
+  const failure = `${fill(strings.notSaved.priceKind, {
+    dish: dishes.one.name,
+  })} ${editing.problems.outOfDate}`;
+  await expect(savedStatus(page)).toHaveText(failure);
+  await expect.poll(() => said(page, failure)).toBe(1);
+  await expect(
+    radio(page, strings.price.one),
+    "the saved choice is back",
+  ).toBeChecked();
+
+  // Three arrows back on the saved choice after the failure: nothing sent,
+  // the failure cleared, and coming back to saved said once (D-118).
+  const heardBefore = (await heard(page)).length;
+  await radio(page, strings.price.one).focus();
+  for (let step = 0; step < 3; step += 1) {
+    await page.keyboard.press("ArrowDown");
+  }
+  await expect(radio(page, strings.price.one)).toBeChecked();
+  await page.clock.runFor(SETTLE_MS + 1);
+  expect(writes.attempted.length, "nothing more is sent").toBe(1);
+  await expect(savedStatus(page)).toHaveText(editing.saved);
+  await expect.poll(() => said(page, editing.savedAgain)).toBe(1);
+  expect((await heard(page)).length, "one more thing said").toBe(
+    heardBefore + 1,
+  );
+  // Axe runs on timers, so the clock runs again for its reading.
+  await page.clock.resume();
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
 });

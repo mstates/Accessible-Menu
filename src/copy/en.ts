@@ -693,6 +693,20 @@ export const en = {
           sectionGone: "That section is no longer here. Reload the page.",
         },
       },
+      // The three pages that save by one press (D-223, D-229): the lead
+      // under the h1 that says so, filled with the page's Save words; the
+      // heading of the summary of problems a Save found; and the dialog an
+      // owner link opens while the page holds unsaved changes.
+      form: {
+        lead: "Changes on this page save when you press {save}.",
+        summary: "Check these fields",
+        leave: {
+          question: "Leave without saving?",
+          note: "Your changes on this page are not saved.",
+          keep: "Keep editing",
+          leave: "Leave",
+        },
+      },
       // The dish's dietary tags (task 5, D-66): three boxes with a hint
       // each, and the sentence diners read under them from
       // domain/dietary.ts. The box names are the diner words
@@ -709,6 +723,10 @@ export const en = {
         notSaved: "The dietary tags of {dish} were not saved.",
         tagsMoved:
           "The dietary tags changed since this page showed them, so nothing was saved. Look at the tags as they are now.",
+        // The page's one Save (D-223, D-229) and the flash its landing
+        // brings (D-219).
+        submit: "Save dietary tags",
+        saved: "Dietary tags saved.",
       },
       // Availability (task 5, D-160): three radios like Price's, a hint on
       // the two that change what diners see, and the group's line saying
@@ -728,6 +746,10 @@ export const en = {
         endsOn: "Available again on its own on {date}, at {time}.",
         endsMidnight: "Available again on its own at midnight tonight.",
         notSaved: "The availability of {dish} was not saved.",
+        // The page's one Save (D-223, D-229), for the choice and the
+        // schedule together, and the flash its landing brings (D-219).
+        submit: "Save availability",
+        saved: "Availability saved.",
       },
       // The schedule (task 5, D-159): five optional parts under one
       // heading, days, hours, and Today only first, the sentence diners
@@ -744,7 +766,10 @@ export const en = {
         hoursHint:
           "For example, 11 am, 5:30 pm, or 17:30. Leave both blank for all day.",
         todayOnly: "Today only",
-        todayOnlySet: "Set to today only, {date}.",
+        // Today only fills the two date fields in the page; Save keeps them
+        // (D-223, D-229).
+        todayOnlyFilled:
+          "First day and last day set to {date}. Press Save availability to keep it.",
         firstDay: "First day",
         lastDay: "Last day",
         dateHint: "For example, October 31 or 10/31/2026.",
@@ -768,19 +793,8 @@ export const en = {
         showsNowAllDay: "Shows now, all day.",
         nextShows: "Next shows {date}.",
         never: "No day ahead fits this schedule, so diners do not see it.",
-        weeksCleared:
-          "The weeks of the month were cleared with it, since they need a day.",
         scheduleMoved:
           "The schedule changed since this page showed it, so nothing was saved. Look at the schedule as it is now.",
-        notSaved: {
-          days: "The days for {dish} were not saved.",
-          hours: "The hours for {dish} were not saved.",
-          today: "Today only for {dish} was not saved.",
-          from: "The first day for {dish} was not saved.",
-          until: "The last day for {dish} was not saved.",
-          weeks: "The weeks of the month for {dish} were not saved.",
-          months: "The months for {dish} were not saved.",
-        },
         errors: {
           timeAmPmStarts: "Add am or pm to the time it starts.",
           timeAmPmEnds: "Add am or pm to the time it ends.",
@@ -808,7 +822,6 @@ export const en = {
         heading: "Cooked to order",
         label: "Cooked to order",
         hint: "For meat, fish, or eggs that can be served rare or undercooked. Diners read Cooked to order. with this dish, and the menu carries the advisory once.",
-        notSaved: "The Cooked to order mark for {dish} was not saved.",
       },
       // The dish's allergens and their check (task 4, D-148): the nine
       // major allergens as boxes with a hint each, other allergens as typed
@@ -818,6 +831,10 @@ export const en = {
       // lists the page showed and lands only if the dish still holds them.
       allergens: {
         heading: "Allergens",
+        // The page's one Save (D-223, D-229) and the flash its landing
+        // brings (D-219).
+        submit: "Save allergens",
+        saved: "Allergens saved.",
         groupLabel: "Major allergens",
         groupHint:
           "Tick each major allergen this dish contains, add any others below, then check the list once it is complete.",
@@ -907,6 +924,9 @@ export const en = {
           apply: "Apply this list there",
           // The button's whole name: its visible words first (WCAG 2.5.3).
           applyTo: "{action}, {dish} in {section}, {menu}",
+          // Apply works from the saved list, so while the page holds
+          // unsaved changes the press says this and sends nothing (D-229).
+          saveFirst: "Save allergens first.",
           applied:
             "Applied. {dish} in {section}, {menu} has this list, checked by you.",
           errors: {

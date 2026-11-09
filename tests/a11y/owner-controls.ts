@@ -316,9 +316,9 @@ export async function dishGeneralControls(
   ];
 }
 
-// A dish's Allergens page (D-148, D-222): each other allergen's two
+// A dish's Allergens page (D-148, D-222, D-223): each other allergen's two
 // buttons, named by the row as the page shows it, Add another allergen,
-// and each same-named dish's or option's Apply button.
+// each same-named dish's or option's Apply button, and the page's one Save.
 export async function dishAllergensControls(
   page: Page,
   menu: string,
@@ -352,21 +352,26 @@ export async function dishAllergensControls(
     ...others,
     button(words.addOther),
     ...applies.map((name) => button(name)),
+    button(words.submit),
   ];
 }
 
-// A dish's Dietary tags page (D-66, D-222): the frame's alone; its boxes
-// are neither links nor buttons.
+// A dish's Dietary tags page (D-66, D-222, D-223): the frame's, and the
+// page's one Save; its boxes are neither links nor buttons.
 export async function dishTagsControls(
   page: Page,
   menu: string,
   section: string,
   dish: string,
 ): Promise<Control[]> {
-  return dishFrameControls(page, [menu, section, dish]);
+  return [
+    ...(await dishFrameControls(page, [menu, section, dish])),
+    button(en.owner.dish.tags.submit),
+  ];
 }
 
-// A dish's Availability page (D-160, D-222): Today only (task 5).
+// A dish's Availability page (D-160, D-222, D-223): Today only (task 5)
+// and the page's one Save.
 export async function dishAvailabilityControls(
   page: Page,
   menu: string,
@@ -376,6 +381,18 @@ export async function dishAvailabilityControls(
   return [
     ...(await dishFrameControls(page, [menu, section, dish])),
     button(en.owner.dish.schedule.todayOnly),
+    button(en.owner.dish.availability.submit),
+  ];
+}
+
+// One of the three after its save (D-229): the same, and the success
+// banner's dismiss button (D-219).
+export function savedDishControls(
+  controlsOf: typeof dishTagsControls,
+): typeof dishTagsControls {
+  return async (page, menu, section, dish) => [
+    ...(await controlsOf(page, menu, section, dish)),
+    button(en.ui.banner.dismiss),
   ];
 }
 

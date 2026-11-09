@@ -104,6 +104,14 @@ async function writesSoFar(): Promise<number> {
 const unnamed = (position: number) =>
   fill(strings.price.unnamedSize, { position });
 
+async function priceKindOf(id: string): Promise<string> {
+  const response = await fetch(`${standin}/__test/items`);
+  const rows = (await response.json()) as { id: string; price_kind: string }[];
+  const found = rows.find((each) => each.id === id);
+  if (!found) throw new Error(`the stand-in has no dish ${id}`);
+  return found.price_kind;
+}
+
 test("the description saves when it is left, the note and the price on Enter, each says Saved. once, and a price comes back with two decimals", async ({
   page,
 }) => {
@@ -276,6 +284,54 @@ test("a switch to Market price that lands ties its sentence to the group and its
   await choose(page, strings.price.market);
   await expect.poll(() => said(page, saved)).toBe(2);
   await expectDescribed();
+});
+
+// The price choice settles before it saves (D-229): a quick run of arrows
+// through the choices sends one write, half a second after the last, and
+// says Saved. once; a run that ends on the saved choice sends nothing and
+// says nothing. Sizes are untouched by a kind change.
+test("a run of arrows through the price choices saves once it has settled and says Saved. once, the sizes are as they were when By size comes back, and a run back to the saved choice saves nothing", async ({
+  page,
+}) => {
+  const { dishes } = ownerFixture();
+  await openDish(page, "sizes");
+  expect(await sizeNames(page)).toEqual(["Cup", "Bowl"]);
+  const before = await writesSoFar();
+  await radio(page, strings.price.sizes).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(radio(page, strings.price.market)).toBeChecked();
+  await page.keyboard.press("ArrowDown");
+  await expect(radio(page, strings.price.one)).toBeChecked();
+  await expect.poll(() => said(page, saved)).toBe(1);
+  expect(await writesSoFar(), "one write for the run").toBe(before + 1);
+  expect(await priceKindOf(dishes.sizes.id)).toBe("one");
+  await expect(
+    page.getByRole("button", { name: strings.price.addSize, exact: true }),
+  ).toHaveCount(0);
+
+  await radio(page, strings.price.one).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(radio(page, strings.price.sizes)).toBeChecked();
+  await expect.poll(() => said(page, saved)).toBe(2);
+  expect(await sizeNames(page), "the sizes are as they were").toEqual([
+    "Cup",
+    "Bowl",
+  ]);
+  expect(await priceKindOf(dishes.sizes.id)).toBe("sizes");
+
+  // A run that ends where it began: nothing is sent, nothing said, after
+  // the half second a save would take to settle.
+  const sent = await writesSoFar();
+  await radio(page, strings.price.sizes).focus();
+  for (let step = 0; step < 3; step += 1) {
+    await page.keyboard.press("ArrowDown");
+  }
+  await expect(radio(page, strings.price.sizes)).toBeChecked();
+  await page.waitForTimeout(800);
+  expect(await writesSoFar(), "nothing is sent").toBe(sent);
+  expect(await said(page, saved), "nothing is said").toBe(2);
+  await expect(status(page)).toHaveText(editing.saved);
+  await expectNoMissingIds(page);
 });
 
 test("a size named from the suggestions commits once and keeps its field's name in Chrome while focused, a taken name is refused unsent, and a size is removed on one press with focus on the next size's name", async ({

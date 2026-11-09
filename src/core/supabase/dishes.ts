@@ -27,9 +27,9 @@ import { shaped } from "./log";
 // and OwnerDishDetail on the dish's own page. A delete marks the row and
 // keeps it, with deleted_at set; reads leave marked rows out. Owners
 // write name, description, the price choice, price_cents, the two calorie
-// columns, the Cooked to order mark (D-167), note, the two allergen lists,
-// the allergen check, the dietary tags, available with the sold-out mark,
-// the schedule, sort, and deleted_at and nothing else:
+// columns, note, the two allergen lists and the allergen check, the
+// dietary tags with the Cooked to order mark (D-167), the schedule with
+// available and the sold-out mark, sort, and deleted_at and nothing else:
 // nothing about photos yet, and never who checked a list or when, which the
 // database stamps (D-148). A move to another section goes through
 // move_item(), since section_id is not a column owners write (migration 6).
@@ -415,22 +415,33 @@ export async function writeOwnerDishAllergens(
   return row ? { ok: true, value: toDetail(row, viewer) } : failed;
 }
 
-// Writes a dish's dietary tags, scoped to the section the page read the
-// dish in, and lands only if the dish still holds the tags the page showed
-// (D-149's rule, widened to tags at task 5's plan): a stale tab's tick
-// would otherwise put back a tag another tab removed. Both lists are in
-// the enum's order, the way every write leaves them.
-export async function writeOwnerDishTags(
+// What the Dietary tags page writes in one statement (D-223, D-229): the
+// tags and the Cooked to order mark (D-66, D-167).
+export type TagsPagePatch = {
+  dietary_tags: readonly DietaryTagId[];
+  cooked_to_order: boolean;
+};
+
+// Writes a dish's dietary tags and its Cooked to order mark together,
+// scoped to the section the page read the dish in, and lands only if the
+// dish still holds the tags the page showed (D-149's rule, widened to tags
+// at task 5's plan): a stale tab's save would otherwise put back a tag
+// another tab removed. The tags are in the enum's order, the way every
+// write leaves them.
+export async function writeOwnerDishTagsPage(
   client: SupabaseClient,
   sectionId: string,
   id: string,
   viewer: string | null,
-  tags: readonly DietaryTagId[],
+  patch: TagsPagePatch,
   shown: readonly DietaryTagId[],
 ): Promise<DishWriteResult<OwnerDishDetail>> {
   const { data, error } = await client
     .from("items")
-    .update({ dietary_tags: [...tags] })
+    .update({
+      dietary_tags: [...patch.dietary_tags],
+      cooked_to_order: patch.cooked_to_order,
+    })
     .eq("id", id)
     .eq("section_id", sectionId)
     .is("deleted_at", null)
@@ -443,58 +454,47 @@ export async function writeOwnerDishTags(
   return row ? { ok: true, value: toDetail(row, viewer) } : failed;
 }
 
-// What a write on a dish's availability sets (D-160): the flag and the
-// mark together, so the three states are the three rows the database
-// allows.
-export type AvailabilityPatch = {
-  available: boolean;
-  sold_out_at: string | null;
+// What the Availability page writes in one statement (D-223, D-229): the
+// whole schedule, or none (D-159), and, when the choice changed, the flag
+// and the mark together, so the three states are the three rows the
+// database allows (D-160). A save that changes only the schedule leaves a
+// sold-out mark's time as it was.
+export type ShowingPatch = {
+  available?: boolean;
+  sold_out_at?: string | null;
+  special_schedule: Schedule | null;
 };
 
-export async function writeOwnerDishAvailability(
+// Writes a dish's schedule and, when it changed, its availability, scoped
+// to the section the page read the dish in, and lands only if the dish
+// still holds the schedule the page showed (D-149's rule, widened to the
+// schedule at task 5's plan). jsonb compares by value, so the text's key
+// order never matters.
+export async function writeOwnerDishShowing(
   client: SupabaseClient,
   sectionId: string,
   id: string,
   viewer: string | null,
-  patch: AvailabilityPatch,
+  patch: ShowingPatch,
+  shownSchedule: Schedule | null,
 ): Promise<DishWriteResult<OwnerDishDetail>> {
-  const { data, error } = await client
-    .from("items")
-    .update({ available: patch.available, sold_out_at: patch.sold_out_at })
-    .eq("id", id)
-    .eq("section_id", sectionId)
-    .is("deleted_at", null)
-    .select(detailColumns)
-    .maybeSingle();
-  if (error) return refused(error.code, error.message);
-  if (!data) return notFound;
-  const row = shaped(detailSchema, data, "items");
-  return row ? { ok: true, value: toDetail(row, viewer) } : failed;
-}
-
-// Writes a dish's whole schedule, or none, scoped to the section the page
-// read the dish in, and lands only if the dish still holds the schedule the
-// page showed (D-149's rule, widened to the schedule at task 5's plan),
-// since each part is its own control but the column is one value. jsonb
-// compares by value, so the text's key order never matters.
-export async function writeOwnerDishSchedule(
-  client: SupabaseClient,
-  sectionId: string,
-  id: string,
-  viewer: string | null,
-  schedule: Schedule | null,
-  shown: Schedule | null,
-): Promise<DishWriteResult<OwnerDishDetail>> {
+  const values: Record<string, unknown> = {
+    special_schedule: patch.special_schedule,
+  };
+  if (patch.available !== undefined) {
+    values.available = patch.available;
+    values.sold_out_at = patch.sold_out_at ?? null;
+  }
   let update = client
     .from("items")
-    .update({ special_schedule: schedule })
+    .update(values)
     .eq("id", id)
     .eq("section_id", sectionId)
     .is("deleted_at", null);
   update =
-    shown === null
+    shownSchedule === null
       ? update.is("special_schedule", null)
-      : update.eq("special_schedule", scheduleJson(shown));
+      : update.eq("special_schedule", scheduleJson(shownSchedule));
   const { data, error } = await update.select(detailColumns).maybeSingle();
   if (error) return refused(error.code, error.message);
   if (!data) return notFound;
@@ -657,16 +657,6 @@ export function setOwnerDishCalories(
   calories: Calories | null,
 ): Promise<DishWriteResult<OwnerDishDetail>> {
   return writeDishColumns(client, sectionId, id, calorieColumns(calories));
-}
-
-// The Cooked to order mark (D-167).
-export function setOwnerDishCookedToOrder(
-  client: SupabaseClient,
-  sectionId: string,
-  id: string,
-  on: boolean,
-): Promise<DishWriteResult<OwnerDishDetail>> {
-  return writeDishColumns(client, sectionId, id, { cooked_to_order: on });
 }
 
 // How a dish is priced (D-139). The other choices' values stay stored and

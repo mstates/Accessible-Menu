@@ -4,7 +4,9 @@ import { groupIds } from "../../src/features/owner/allergens/target";
 import { CHOICE_LISTS_HEADING_ID } from "../../src/features/owner/choices/useChoiceListRows";
 import {
   DISH_PAGE_KEYS,
+  DISH_PAGE_SAVING,
   dishPageHeadingId,
+  dishPageSaving,
   dishPageName,
   dishPageNavItems,
   dishPagePath,
@@ -13,8 +15,10 @@ import {
   dishPageTitle,
   type DishPageState,
 } from "../../src/features/owner/dish/dish-pages";
-import { AVAILABILITY_HEADING_ID } from "../../src/features/owner/dish/useDishAvailability";
-import { TAGS_HEADING_ID } from "../../src/features/owner/dish/useDishTags";
+import {
+  AVAILABILITY_HEADING_ID,
+  TAGS_HEADING_ID,
+} from "../../src/features/owner/dish/showing-ids";
 import {
   restaurantDishPagePath,
   restaurantDishPath,
@@ -84,6 +88,20 @@ describe("the dish's pages (D-222)", () => {
     expect(dishPageHeadingId("tags")).toBe(TAGS_HEADING_ID);
     expect(dishPageHeadingId("availability")).toBe(AVAILABILITY_HEADING_ID);
     expect(dishPageHeadingId("choices")).toBe(CHOICE_LISTS_HEADING_ID);
+  });
+});
+
+describe("how each page saves (D-223, D-229)", () => {
+  it("saves Allergens, Dietary tags, and Availability by a press, and General and Choice lists as the owner goes", () => {
+    expect(DISH_PAGE_SAVING).toEqual({
+      general: "as-you-go",
+      allergens: "press",
+      tags: "press",
+      availability: "press",
+      choices: "as-you-go",
+    });
+    expect(dishPageSaving("allergens")).toBe("press");
+    expect(dishPageSaving("general")).toBe("as-you-go");
   });
 });
 

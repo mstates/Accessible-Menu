@@ -1,59 +1,85 @@
 "use client";
 
-import { useRef } from "react";
 import { fill } from "@/copy/fill";
-import { monthName } from "@/domain/schedule";
+import type { DayKey } from "@/domain/hours";
+import { monthName, type MonthKey, type WeekKey } from "@/domain/schedule";
 import { Button } from "@/ui/Button";
 import { Checkbox, CheckboxGroup } from "@/ui/CheckboxGroup";
-import { AutosaveTextField } from "../editing/AutosaveTextField";
+import { TextField } from "@/ui/TextField";
 import { handToBox } from "../editing/hand-to-box";
 import type { DishStrings } from "./dish-words";
-import type { DishScheduleState } from "./useDishSchedule";
+import type { SCHEDULE_IDS } from "./showing-ids";
+
+// One typed field of the schedule, as the form holds it (D-229): its id,
+// its text as typed, and the problem Save found with it, if any.
+export type ScheduleFieldView = {
+  id: string;
+  value: string;
+  error: string | null;
+  onChange: (value: string) => void;
+};
+
+type ListView<Key extends string> = {
+  keys: readonly Key[];
+  shown: readonly Key[];
+  set: (key: Key, on: boolean) => void;
+  errorOf: (key: Key) => string | null;
+};
+
+// What the component draws: the schedule's lists, its typed fields, Today
+// only, and the two lines under the group, the sentence diners read from
+// the saved schedule and when the special next shows.
+export type DishScheduleView = {
+  ids: typeof SCHEDULE_IDS;
+  days: ListView<DayKey>;
+  weeks: ListView<WeekKey>;
+  months: ListView<MonthKey>;
+  hours: { open: ScheduleFieldView; close: ScheduleFieldView };
+  from: ScheduleFieldView;
+  until: ScheduleFieldView;
+  today: { id: string; set: () => void };
+  sentence: string | null;
+  showing: string | null;
+};
 
 type Props = {
   strings: DishStrings["schedule"];
   // The singular day names, the hours grid's.
   dayNames: Readonly<Record<string, string>>;
   lang: string;
-  schedule: DishScheduleState;
+  schedule: DishScheduleView;
 };
 
 type BoxesProps<Key extends string> = {
   label: string;
-  keys: readonly Key[];
   nameOf: (key: Key) => string;
   idOf: (key: Key) => string;
-  shown: readonly Key[];
-  set: (key: Key, on: boolean) => void;
-  errorOf: (key: Key) => string | null;
+  list: ListView<Key>;
 };
 
 // A group of boxes for one list of the schedule: each box in a wrapper
-// that takes a failed save's focus and hands it to the box, with its error
+// that takes a problem's focus and hands it to the box, with its problem
 // under it while one stands.
 function Boxes<Key extends string>({
   label,
-  keys,
   nameOf,
   idOf,
-  shown,
-  set,
-  errorOf,
+  list,
 }: BoxesProps<Key>) {
-  const ticked = new Set<string>(shown);
+  const ticked = new Set<string>(list.shown);
   return (
     <CheckboxGroup
       label={label}
-      value={[...shown]}
+      value={[...list.shown]}
       onChange={(values) => {
         const next = new Set(values);
-        for (const key of keys) {
-          if (ticked.has(key) !== next.has(key)) set(key, next.has(key));
+        for (const key of list.keys) {
+          if (ticked.has(key) !== next.has(key)) list.set(key, next.has(key));
         }
       }}
     >
-      {keys.map((key) => {
-        const error = errorOf(key);
+      {list.keys.map((key) => {
+        const error = list.errorOf(key);
         const errorId = `${idOf(key)}-error`;
         return (
           <div
@@ -89,18 +115,50 @@ function Boxes<Key extends string>({
 // last day, the weeks of the month with their lead, and the months of the
 // year with theirs; under the group, the sentence diners read and when the
 // special next shows, or that there is no schedule. The two time fields
-// share one hint by id, the hours grid's pattern (D-105), and commit
-// together: Tab from one to the other sends nothing. A group's hint is a
-// lead before it, since a description on the group would be read with
-// every box.
+// share one hint by id, the hours grid's pattern (D-105), and each date
+// field has its own the same way; each field is described by its problem
+// and then the hint while a problem stands. A
+// group's hint is a lead before it, since a description on the group would
+// be read with every box. Everything saves by the page's one Save
+// (D-223, D-229).
 export function DishSchedule({ strings, dayNames, lang, schedule }: Props) {
   const { ids } = schedule;
-  const hoursRef = useRef<HTMLFieldSetElement>(null);
   const line = schedule.sentence
     ? `${fill(strings.dinersRead, { sentence: `"${schedule.sentence}"` })}${
         schedule.showing ? ` ${schedule.showing}` : ""
       }`
     : strings.none;
+  const time = (field: ScheduleFieldView, label: string) => (
+    <TextField
+      id={field.id}
+      label={label}
+      value={field.value}
+      onChange={field.onChange}
+      autoComplete="off"
+      aria-describedby={ids.hoursHint}
+      isInvalid={field.error ? true : undefined}
+      errorMessage={field.error ?? undefined}
+    />
+  );
+  // A date field's hint sits under it by id, as the hours' does, so a
+  // problem is read before the hint, not after it.
+  const date = (field: ScheduleFieldView, label: string) => (
+    <div className="flex flex-col gap-1">
+      <TextField
+        id={field.id}
+        label={label}
+        value={field.value}
+        onChange={field.onChange}
+        autoComplete="off"
+        aria-describedby={`${field.id}-hint`}
+        isInvalid={field.error ? true : undefined}
+        errorMessage={field.error ?? undefined}
+      />
+      <p id={`${field.id}-hint`} className="text-sm text-foreground-muted">
+        {strings.dateHint}
+      </p>
+    </div>
+  );
   return (
     <div className="mt-8 flex flex-col gap-6">
       <h2 id={ids.heading} className="text-xl font-bold">
@@ -110,17 +168,13 @@ export function DishSchedule({ strings, dayNames, lang, schedule }: Props) {
 
       <Boxes
         label={strings.daysLabel}
-        keys={schedule.days.keys}
         nameOf={(key) => dayNames[key] ?? key}
         idOf={ids.day}
-        shown={schedule.days.shown}
-        set={schedule.days.set}
-        errorOf={schedule.days.errorOf}
+        list={schedule.days}
       />
 
       <fieldset
         id={ids.hours}
-        ref={hoursRef}
         aria-describedby={ids.hoursHint}
         className="flex flex-col gap-4"
       >
@@ -128,18 +182,8 @@ export function DishSchedule({ strings, dayNames, lang, schedule }: Props) {
         <p id={ids.hoursHint} className="text-sm text-foreground-muted">
           {strings.hoursHint}
         </p>
-        <AutosaveTextField
-          {...schedule.hours.open}
-          label={strings.starts}
-          aria-describedby={ids.hoursHint}
-          commitWithin={hoursRef}
-        />
-        <AutosaveTextField
-          {...schedule.hours.close}
-          label={strings.ends}
-          aria-describedby={ids.hoursHint}
-          commitWithin={hoursRef}
-        />
+        {time(schedule.hours.open, strings.starts)}
+        {time(schedule.hours.close, strings.ends)}
       </fieldset>
 
       <div>
@@ -148,37 +192,23 @@ export function DishSchedule({ strings, dayNames, lang, schedule }: Props) {
         </Button>
       </div>
 
-      <AutosaveTextField
-        {...schedule.from}
-        label={strings.firstDay}
-        description={strings.dateHint}
-      />
-      <AutosaveTextField
-        {...schedule.until}
-        label={strings.lastDay}
-        description={strings.dateHint}
-      />
+      {date(schedule.from, strings.firstDay)}
+      {date(schedule.until, strings.lastDay)}
 
       <p className="text-foreground-muted">{strings.weeksLead}</p>
       <Boxes
         label={strings.weeksLabel}
-        keys={schedule.weeks.keys}
         nameOf={(key) => strings.weeks[key]}
         idOf={ids.week}
-        shown={schedule.weeks.shown}
-        set={schedule.weeks.set}
-        errorOf={schedule.weeks.errorOf}
+        list={schedule.weeks}
       />
 
       <p className="text-foreground-muted">{strings.monthsLead}</p>
       <Boxes
         label={strings.monthsLabel}
-        keys={schedule.months.keys}
         nameOf={(key) => monthName(key, lang)}
         idOf={ids.month}
-        shown={schedule.months.shown}
-        set={schedule.months.set}
-        errorOf={schedule.months.errorOf}
+        list={schedule.months}
       />
 
       <p id={ids.sentence}>{line}</p>

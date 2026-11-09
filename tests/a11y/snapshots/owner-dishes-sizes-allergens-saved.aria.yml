@@ -1,0 +1,80 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+  - status
+- navigation "CI Diner (test restaurant, not real)":
+  - paragraph: CI Diner (test restaurant, not real)
+  - list:
+    - listitem:
+      - link "Details"
+    - listitem:
+      - link "Menus"
+- main:
+  - region "Success":
+    - button "Dismiss this message"
+    - heading "Success" [level=2]
+    - alert: Allergens saved.
+  - navigation "Breadcrumb":
+    - list:
+      - listitem:
+        - link "Menus"
+      - listitem:
+        - link "Dinner"
+      - listitem:
+        - link "Starters"
+      - listitem:
+        - link "Soup of the day"
+  - heading "Allergens" [level=1]
+  - navigation "Soup of the day":
+    - list:
+      - listitem:
+        - link "General"
+      - listitem:
+        - link "Allergens Confirmed"
+      - listitem:
+        - link "Dietary tags None"
+      - listitem:
+        - link "Availability Available, schedule set"
+      - listitem:
+        - link "Choice lists None"
+  - paragraph: Changes on this page save when you press Save allergens.
+  - paragraph: Tick each major allergen this dish contains, add any others below, then check the list once it is complete.
+  - group "Major allergens":
+    - text: Major allergens
+    - checkbox "Milk" [checked]
+    - text: Milk Butter, ghee, cheese, cream, yogurt, and whey count too.
+    - checkbox "Eggs"
+    - text: Eggs Mayonnaise, aioli, meringue, and egg wash count too.
+    - checkbox "Fish"
+    - text: Fish Anchovies, fish sauce, and Worcestershire sauce count too.
+    - checkbox "Shellfish"
+    - text: Shellfish Shrimp, crab, and lobster, and also clams, mussels, oysters, and scallops.
+    - checkbox "Tree nuts"
+    - text: Tree nuts Almonds, walnuts, pecans, cashews, pistachios, and pesto count too.
+    - checkbox "Peanuts"
+    - text: Peanuts Peanut oil, peanut butter, and satay sauce count too.
+    - checkbox "Wheat" [checked]
+    - text: Wheat Flour, bread crumbs, pasta, soy sauce, and beer batter count too.
+    - checkbox "Soy"
+    - text: Soy Soy sauce, tofu, edamame, miso, and tempeh count too.
+    - checkbox "Sesame"
+    - text: Sesame Tahini, hummus, sesame oil, and seeds on buns count too.
+  - list "Other allergens":
+    - listitem:
+      - text: Other allergen 1
+      - combobox "Other allergen 1": celery
+      - button "Show allergen names, celery"
+      - text: Like celery, mustard, or sulfites. One allergen per row.
+      - button "Remove allergen, celery": Remove allergen
+  - button "Add another allergen"
+  - checkbox "The allergen list is complete" [checked]
+  - text: The allergen list is complete Check this once every allergen in this dish is listed above. A change to the list clears the check.
+  - paragraph: "/Diners read: Contains milk, wheat, celery\\. Checked by you on \\w+ \\d+, \\d+\\./"
+  - list:
+    - listitem:
+      - paragraph: Soup of the day is also in Mains, Dinner, not checked yet.
+      - button "Apply this list there, Soup of the day in Mains, Dinner": Apply this list there
+  - button "Save allergens"
+  - log
+- contentinfo: Accessible Menu
+- alert

@@ -19,6 +19,7 @@ import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
 import { flashBanner } from "../a11y/saved-banner";
+import { saveAndLand } from "./save";
 
 // The diner page with the writes landing for real against the stand-in
 // (the diner page task): a price change live through Publish; a special's
@@ -93,11 +94,14 @@ function field(page: Page, name: string) {
   return page.getByRole("textbox", { name, exact: true });
 }
 
-// Chooses a radio by its visible words: React Aria keeps the input under
-// the label, where a pointer cannot reach it directly.
+// Chooses a radio by its visible words and saves the page (D-223, D-229):
+// React Aria keeps the input under the label, where a pointer cannot reach
+// it directly. The page loads again with the flash, so the log is attached
+// again.
 async function choose(page: Page, label: string): Promise<void> {
   await page.getByText(label, { exact: true }).click();
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await saveAndLand(page, dish.availability.submit, dish.availability.saved);
+  await hearLog(page);
 }
 
 function publishButton(page: Page, name: string) {
@@ -193,8 +197,7 @@ test("a special's hours ending ends the page's lifetime, and the page changes on
   );
   await field(page, dish.schedule.starts).fill(clock(starts));
   await field(page, dish.schedule.ends).fill(clock(ends));
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await saveAndLand(page, dish.availability.submit, dish.availability.saved);
 
   const before = await served(page, bare);
   expect(before.status).toBe(200);
@@ -232,8 +235,7 @@ test("a special's hours ending ends the page's lifetime, and the page changes on
   );
   await field(page, dish.schedule.starts).fill("4 pm");
   await field(page, dish.schedule.ends).fill("9 pm");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await saveAndLand(page, dish.availability.submit, dish.availability.saved);
 });
 
 test("Sold out today reaches diners without Publish, and the page's lifetime ends no later than the dish's return", async ({

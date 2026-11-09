@@ -36,6 +36,12 @@ function result(
       return { kind: "critical", words: copy.owner.signIn.failures.link };
     case "sign-in-google":
       return { kind: "critical", words: copy.owner.signIn.failures.google };
+    case "allergens-saved":
+      return { kind: "success", words: copy.owner.dish.allergens.saved };
+    case "tags-saved":
+      return { kind: "success", words: copy.owner.dish.tags.saved };
+    case "availability-saved":
+      return { kind: "success", words: copy.owner.dish.availability.saved };
   }
 }
 

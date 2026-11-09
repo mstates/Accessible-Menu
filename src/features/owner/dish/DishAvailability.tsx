@@ -1,13 +1,23 @@
 "use client";
 
-import { isAvailability } from "@/domain/availability";
+import { isAvailability, type Availability } from "@/domain/availability";
 import { Radio, RadioGroup } from "@/ui/RadioGroup";
 import type { DishStrings } from "./dish-words";
-import type { DishAvailabilityState } from "./useDishAvailability";
+
+// What the component draws: the chosen radio, the line under the group
+// saying what the saved choice means now, and a problem if one stands.
+export type DishAvailabilityView = {
+  id: string;
+  headingId: string;
+  value: Availability;
+  set: (value: Availability) => void;
+  description: string | undefined;
+  error: string | null;
+};
 
 type Props = {
   strings: DishStrings["availability"];
-  availability: DishAvailabilityState;
+  availability: DishAvailabilityView;
   // The group sits directly under the page's h1, which carries its heading
   // id (D-222, D-225), so it draws no heading of its own.
   underPageHeading?: boolean;

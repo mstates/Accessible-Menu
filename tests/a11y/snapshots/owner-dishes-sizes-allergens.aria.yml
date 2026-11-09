@@ -33,6 +33,7 @@
         - link "Availability Available, schedule set"
       - listitem:
         - link "Choice lists None"
+  - paragraph: Changes on this page save when you press Save allergens.
   - paragraph: Tick each major allergen this dish contains, add any others below, then check the list once it is complete.
   - group "Major allergens":
     - text: Major allergens
@@ -69,7 +70,7 @@
     - listitem:
       - paragraph: Soup of the day is also in Mains, Dinner, not checked yet.
       - button "Apply this list there, Soup of the day in Mains, Dinner": Apply this list there
-  - status: All changes saved
+  - button "Save allergens"
   - log
 - contentinfo: Accessible Menu
 - alert

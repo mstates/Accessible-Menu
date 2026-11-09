@@ -23,28 +23,31 @@ import {
 import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
+import { saveAndFail, saveAndLand, summary } from "./save";
 
-// The dietary tags, availability, and the schedule on a dish's page with
-// saves that land for real against the stand-in (task 5, D-66, D-159,
-// D-160): a tag tick said once and kept after a reload, and its untick; a
-// page whose tags moved under it, from another tab, refused with one
-// sentence and no Try again; a failed tick with Try again; Sold out today
+// The dietary tags with Cooked to order, and availability with the
+// schedule, on a dish's two pages that save by one press (task 5, D-66,
+// D-159, D-160, D-223, D-229), with saves that land for real against the
+// stand-in: a tag and Cooked to order in one save, kept after the reload
+// the save brings, and undone the same way; a page whose tags moved under
+// it refused with one sentence in the summary and nothing written; a save
+// the server refuses kept and landed by the next press; Sold out today
 // with the line saying when it comes back, from the restaurant's hours,
 // and Off the menu for now, each put back to Available; a mark that has
-// ended reading as available; a day, the hours pair as one commit, dates
-// in their forms, Today only, a week with no day refused unsent, the last
-// day unticked taking the weeks with it, a month, and a schedule that
-// moved under the page. The gate cannot land a save, so this runs here.
-// Each check leaves the stand-in as it found it, so the checks run in any
-// order.
+// ended reading as available; a schedule-only save that keeps the mark; a
+// day, the hours pair saved as one and shown in one format, dates in their
+// forms, Today only filling the fields for Save, a week with no day refused
+// unsent, a month, and a schedule that moved under the page. The gate
+// cannot land a save, so this runs here. Each check leaves the stand-in as
+// it found it, so the checks run in any order.
 
 const { code } = ownerEnv();
 const strings = en.owner.dish;
 const tags = strings.tags;
 const availability = strings.availability;
 const schedule = strings.schedule;
+const cookedToOrder = strings.cookedToOrder;
 const editing = en.owner.editing;
-const saved = editing.fieldSaved;
 const standin = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const zone = "America/New_York";
 const words = { ...en.schedule, day: en.owner.restaurants.days };
@@ -64,17 +67,11 @@ async function openDish(
 ): Promise<void> {
   await page.goto(dishPath(which, at));
   await page.waitForLoadState("networkidle");
-  await hearLog(page);
 }
 
 async function reload(page: Page): Promise<void> {
   await page.reload();
   await page.waitForLoadState("networkidle");
-  await hearLog(page);
-}
-
-async function said(page: Page, sentence: string): Promise<number> {
-  return (await heard(page)).filter((each) => each === sentence).length;
 }
 
 function box(page: Page, name: string) {
@@ -91,16 +88,17 @@ async function press(page: Page, label: string): Promise<void> {
   await page.getByText(label, { exact: true }).click();
 }
 
+// The Cooked to order box by its words, inside its wrapper: the heading
+// above says the same words (D-167).
+async function pressCooked(page: Page): Promise<void> {
+  await page
+    .locator("#dish-cooked-to-order")
+    .getByText(cookedToOrder.label, { exact: true })
+    .click();
+}
+
 function field(page: Page, name: string) {
   return page.getByRole("textbox", { name, exact: true });
-}
-
-function status(page: Page) {
-  return page.locator('main [role="status"]');
-}
-
-function tryAgainButton(page: Page) {
-  return page.getByRole("button", { name: editing.tryAgain, exact: true });
 }
 
 function tagsLine(page: Page) {
@@ -118,10 +116,23 @@ function availabilityGroup(page: Page) {
   });
 }
 
+function saveTags(page: Page) {
+  return saveAndLand(page, tags.submit, tags.saved);
+}
+
+function saveAvailability(page: Page) {
+  return saveAndLand(page, availability.submit, availability.saved);
+}
+
+function saveButton(page: Page) {
+  return page.getByRole("button", { name: availability.submit, exact: true });
+}
+
 type Row = {
   id: string;
   name: string;
   dietary_tags: string[];
+  cooked_to_order: boolean;
   available: boolean;
   sold_out_at: string | null;
   special_schedule: Schedule | null;
@@ -167,53 +178,94 @@ function reads(value: Schedule): string {
   return `${fill(schedule.dinersRead, { sentence: `"${sentence}"` })} ${showing}`;
 }
 
-test("a tag tick says Saved. once, reads under the group, holds after a reload, and an untick clears it", async ({
+// A Save the browser refuses (D-229): nothing sent, the first field at
+// fault focused with its problem, or the summary with three or more.
+async function expectRefusedInField(
+  page: Page,
+  at: ReturnType<Page["getByRole"]>,
+  message: string,
+  hint: string,
+  sent: number,
+) {
+  await saveButton(page).click();
+  await expect(at, "the first field at fault is focused").toBeFocused();
+  await expect(at).toHaveAttribute("aria-invalid", "true");
+  await expect(at).toHaveAccessibleDescription(`${message} ${hint}`);
+  await expect(summary(page)).toHaveCount(0);
+  expect(await writesSoFar(), "nothing is sent").toBe(sent);
+}
+
+test("a tag tick and Cooked to order save together in one press, read under the group after the reload, hold, and the unticks save back", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
   const vegan = en.dietary.names.vegan;
   await openDish(page, "market", "tags");
   await expect(box(page, vegan)).not.toBeChecked();
+  await expect(box(page, cookedToOrder.label)).toBeChecked();
   await expect(tagsLine(page)).toHaveCount(0);
+  const sent = await writesSoFar();
   await press(page, vegan);
+  await pressCooked(page);
   await expect(box(page, vegan)).toBeChecked();
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await expect(box(page, cookedToOrder.label)).not.toBeChecked();
+  await expect(tagsLine(page), "the line follows the saved tags").toHaveCount(
+    0,
+  );
+  expect(await writesSoFar(), "the ticks send nothing").toBe(sent);
+  await saveTags(page);
+  expect(await writesSoFar(), "one write for both").toBe(sent + 1);
+  await expect(box(page, vegan)).toBeChecked();
+  await expect(box(page, cookedToOrder.label)).not.toBeChecked();
   await expect(tagsLine(page)).toHaveText(
     fill(tags.dinersRead, { sentence: `"${vegan}."` }),
   );
-  expect((await row(dishes.market.id)).dietary_tags).toEqual(["vegan"]);
+  const saved = await row(dishes.market.id);
+  expect(saved.dietary_tags).toEqual(["vegan"]);
+  expect(saved.cooked_to_order).toBe(false);
   await expectNoMissingIds(page);
   await reload(page);
   await expect(box(page, vegan)).toBeChecked();
 
   // As it was.
   await press(page, vegan);
+  await pressCooked(page);
+  await saveTags(page);
   await expect(box(page, vegan)).not.toBeChecked();
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await expect(box(page, cookedToOrder.label)).toBeChecked();
   await expect(tagsLine(page)).toHaveCount(0);
-  expect((await row(dishes.market.id)).dietary_tags).toEqual([]);
-  await reload(page);
-  await expect(box(page, vegan)).not.toBeChecked();
+  const back = await row(dishes.market.id);
+  expect(back.dietary_tags).toEqual([]);
+  expect(back.cooked_to_order).toBe(true);
 });
 
-test("a tick on a page whose tags moved under it is refused once, with no Try again, and the page shows the tags as they are now", async ({
+test("a Save on a page whose tags moved under it is refused with one sentence in the summary, keeps the tick, changes nothing on the server, and a reload shows the tags as they are now", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
+  const vegan = en.dietary.names.vegan;
+  const vegetarian = en.dietary.names.vegetarian;
   await openDish(page, "market", "tags");
   await knob("set-tags", { id: dishes.market.id, tags: "vegetarian" });
-  await press(page, en.dietary.names.vegan);
-  await expect.poll(() => said(page, tags.tagsMoved)).toBe(1);
-  await expect(tryAgainButton(page)).toHaveCount(0);
-  await expect(box(page, en.dietary.names.vegetarian)).toBeChecked();
-  await expect(box(page, en.dietary.names.vegan)).not.toBeChecked();
+  const sent = await writesSoFar();
+  await press(page, vegan);
+  await saveAndFail(page, tags.submit, tags.tagsMoved);
+  await expect(box(page, vegan), "the tick is kept").toBeChecked();
+  await expect(box(page, vegetarian)).not.toBeChecked();
+  expect(
+    await writesSoFar(),
+    "one statement, refused by its condition, and no second",
+  ).toBe(sent + 1);
   expect((await row(dishes.market.id)).dietary_tags).toEqual(["vegetarian"]);
   await expectNoMissingIds(page);
+  await reload(page);
+  await expect(box(page, vegetarian)).toBeChecked();
+  await expect(box(page, vegan)).not.toBeChecked();
   // As it was.
   await knob("set-tags", { id: dishes.market.id, tags: "" });
 });
 
-test("a tick that fails is said once with Try again, and Try again lands it", async ({
+test("a save the server refuses is kept with the failure in the summary, focused, and the next press lands it", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -222,21 +274,20 @@ test("a tick that fails is said once with Try again, and Try again lands it", as
   await knob("fail", { times: "1" });
   await press(page, vegan);
   const failure = `${fill(tags.notSaved, { dish: dishes.market.name })} ${editing.problems.failed}`;
-  await expect(status(page)).toHaveText(failure);
-  await expect.poll(() => said(page, failure)).toBe(1);
-  await expect(box(page, vegan)).not.toBeChecked();
-  await expect(box(page, vegan)).toHaveAttribute("aria-invalid", "true");
-  await tryAgainButton(page).click();
-  await expect.poll(() => said(page, editing.savedAgain)).toBe(1);
+  await saveAndFail(page, tags.submit, failure);
+  await expect(box(page, vegan), "the tick is kept").toBeChecked();
+  await expect(box(page, vegan)).not.toHaveAttribute("aria-invalid");
+  expect((await row(dishes.market.id)).dietary_tags).toEqual([]);
+  await saveTags(page);
   await expect(box(page, vegan)).toBeChecked();
   expect((await row(dishes.market.id)).dietary_tags).toEqual(["vegan"]);
   // As it was.
   await press(page, vegan);
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await saveTags(page);
   expect((await row(dishes.market.id)).dietary_tags).toEqual([]);
 });
 
-test("Sold out today says Saved. once, the group's line says when it comes back, it holds after a reload, and Available clears the mark", async ({
+test("Sold out today saved reads when it comes back under the group, holds after a reload, and Available saved clears the mark", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -249,7 +300,12 @@ test("Sold out today says Saved. once, the group's line says when it comes back,
   await expect(availabilityGroup(page)).toHaveAccessibleDescription("");
   await press(page, availability.soldOut);
   await expect(radio(page, availability.soldOut)).toBeChecked();
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await expect(
+    availabilityGroup(page),
+    "the line follows the saved choice",
+  ).toHaveAccessibleDescription("");
+  await saveAvailability(page);
+  await expect(radio(page, availability.soldOut)).toBeChecked();
   await expect(availabilityGroup(page)).toHaveAccessibleDescription(
     availability.endsMidnight,
   );
@@ -264,8 +320,8 @@ test("Sold out today says Saved. once, the group's line says when it comes back,
 
   // As it was.
   await press(page, availability.available);
+  await saveAvailability(page);
   await expect(radio(page, availability.available)).toBeChecked();
-  await expect.poll(() => said(page, saved)).toBe(1);
   await expect(availabilityGroup(page)).toHaveAccessibleDescription("");
   expect((await row(dishes.one.id)).sold_out_at).toBeNull();
   await knob("reset-details", {});
@@ -294,7 +350,7 @@ test("the line reads the end of the restaurant's day from its hours: today by it
       }),
     });
     await press(page, availability.soldOut);
-    await expect.poll(() => said(page, saved)).toBe(1);
+    await saveAvailability(page);
     await expect(availabilityGroup(page)).toHaveAccessibleDescription(
       fill(availability.endsToday, { time: formatTime("23:59", en.time) }),
     );
@@ -345,29 +401,30 @@ test("the line reads the end of the restaurant's day from its hours: today by it
   }
 });
 
-test("Off the menu for now says Saved. once and that diners do not see the dish, and Available brings it back", async ({
+test("Off the menu for now saved says diners do not see the dish, and Available saved brings it back", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
   await openDish(page, "sizes", "availability");
   await press(page, availability.off);
+  await saveAvailability(page);
   await expect(radio(page, availability.off)).toBeChecked();
-  await expect.poll(() => said(page, saved)).toBe(1);
   await expect(availabilityGroup(page)).toHaveAccessibleDescription(
     availability.hidden,
   );
   expect((await row(dishes.sizes.id)).available).toBe(false);
   // As it was.
   await press(page, availability.available);
+  await saveAvailability(page);
   await expect(radio(page, availability.available)).toBeChecked();
-  await expect.poll(() => said(page, saved)).toBe(2);
   expect((await row(dishes.sizes.id)).available).toBe(true);
 });
 
-test("a sold-out mark whose day has ended reads as available, and a new mark lands over it", async ({
+test("a sold-out mark whose day has ended reads as available, a new mark saved lands over it, and a save that changes only the schedule keeps the mark", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
+  const tuesday = en.owner.restaurants.days.tue;
   const yesterday = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   await knob("set-availability", {
     id: dishes.one.id,
@@ -379,9 +436,21 @@ test("a sold-out mark whose day has ended reads as available, and a new mark lan
     await expect(radio(page, availability.available)).toBeChecked();
     await expect(availabilityGroup(page)).toHaveAccessibleDescription("");
     await press(page, availability.soldOut);
-    await expect.poll(() => said(page, saved)).toBe(1);
+    await saveAvailability(page);
     const mark = (await row(dishes.one.id)).sold_out_at ?? "";
     expect(mark > yesterday).toBe(true);
+
+    // A schedule-only save never restamps the mark (D-229).
+    await press(page, tuesday);
+    await saveAvailability(page);
+    const after = await row(dishes.one.id);
+    expect(after.sold_out_at, "the mark is kept as it was").toBe(mark);
+    expect(after.special_schedule).toEqual({ days: ["tue"] });
+    await expect(radio(page, availability.soldOut)).toBeChecked();
+
+    await press(page, tuesday);
+    await saveAvailability(page);
+    expect((await row(dishes.one.id)).special_schedule).toBeNull();
   } finally {
     await knob("set-availability", {
       id: dishes.one.id,
@@ -391,7 +460,7 @@ test("a sold-out mark whose day has ended reads as available, and a new mark lan
   }
 });
 
-test("a day tick says Saved. once, the sentence and the next day read under the group, it holds after a reload, and an untick clears it", async ({
+test("a day tick saved reads the sentence and the next day under the group, holds after a reload, and the untick saved clears it", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -400,7 +469,12 @@ test("a day tick says Saved. once, the sentence and the next day read under the 
   await expect(scheduleLine(page)).toHaveText(schedule.none);
   await press(page, tuesday);
   await expect(box(page, tuesday)).toBeChecked();
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await expect(
+    scheduleLine(page),
+    "the line follows the saved schedule",
+  ).toHaveText(schedule.none);
+  await saveAvailability(page);
+  await expect(box(page, tuesday)).toBeChecked();
   await expect(scheduleLine(page)).toHaveText(reads({ days: ["tue"] }));
   expect((await row(dishes.one.id)).special_schedule).toEqual({
     days: ["tue"],
@@ -412,13 +486,13 @@ test("a day tick says Saved. once, the sentence and the next day read under the 
 
   // As it was.
   await press(page, tuesday);
+  await saveAvailability(page);
   await expect(box(page, tuesday)).not.toBeChecked();
-  await expect.poll(() => said(page, saved)).toBe(1);
   await expect(scheduleLine(page)).toHaveText(schedule.none);
   expect((await row(dishes.one.id)).special_schedule).toBeNull();
 });
 
-test("the two time fields commit together: Tab between them sends nothing, Enter sends one write, each refusal is unsent, and a saved time comes back in one format", async ({
+test("the hours pair saves as one and comes back in one format, each refusal is unsent under the first field at fault with both sides marked when both are wrong, and both blank is no schedule", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -431,12 +505,9 @@ test("the two time fields commit together: Tab between them sends nothing, Enter
   await starts.fill("4 pm");
   await page.keyboard.press("Tab");
   await expect(ends).toBeFocused();
-  expect(await writesSoFar(), "Tab between the pair sends nothing").toBe(
-    before,
-  );
   await ends.fill("9 pm");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, saved)).toBe(1);
+  expect(await writesSoFar(), "typing sends nothing").toBe(before);
+  await saveAvailability(page);
   expect(await writesSoFar()).toBe(before + 1);
   expect((await row(dishes.one.id)).special_schedule).toEqual({
     hours: { open: "16:00", close: "21:00" },
@@ -445,180 +516,109 @@ test("the two time fields commit together: Tab between them sends nothing, Enter
     reads({ hours: { open: "16:00", close: "21:00" } }),
   );
 
-  await starts.fill("17:30");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, saved)).toBe(2);
-  await expect(starts, "a saved time comes back in one format").toHaveValue(
-    "5:30 pm",
-  );
-  await expect(ends).toHaveValue("9 pm");
+  await field(page, schedule.starts).fill("17:30");
+  await saveAvailability(page);
+  await expect(
+    field(page, schedule.starts),
+    "a saved time comes back in one format",
+  ).toHaveValue("5:30 pm");
+  await expect(field(page, schedule.ends)).toHaveValue("9 pm");
 
+  // Each refusal, unsent (D-164 for the pair): Starts without am or pm,
+  // Ends blank, the same time twice.
   const sent = await writesSoFar();
-  const notSaved = fill(schedule.notSaved.hours, { dish: dishes.one.name });
-  await starts.fill("4");
-  await page.keyboard.press("Enter");
-  await expect(status(page)).toHaveText(
-    `${notSaved} ${schedule.errors.timeAmPmStarts}`,
+  await field(page, schedule.starts).fill("4");
+  await expectRefusedInField(
+    page,
+    field(page, schedule.starts),
+    schedule.errors.timeAmPmStarts,
+    schedule.hoursHint,
+    sent,
   );
-  await expect(starts).toHaveAttribute("aria-invalid", "true");
-  await ends.fill("");
-  await starts.fill("4 pm");
-  await page.keyboard.press("Enter");
-  await expect(status(page)).toHaveText(
-    `${notSaved} ${schedule.errors.timePairEnds}`,
+  await field(page, schedule.starts).fill("4 pm");
+  await field(page, schedule.ends).fill("");
+  await expectRefusedInField(
+    page,
+    field(page, schedule.ends),
+    schedule.errors.timePairEnds,
+    schedule.hoursHint,
+    sent,
   );
-  await expect(ends).toHaveAttribute("aria-invalid", "true");
-  await ends.fill("4 pm");
-  await page.keyboard.press("Enter");
-  await expect(status(page)).toHaveText(
-    `${notSaved} ${schedule.errors.sameTime}`,
+  await field(page, schedule.ends).fill("4 pm");
+  await expectRefusedInField(
+    page,
+    field(page, schedule.ends),
+    schedule.errors.sameTime,
+    schedule.hoursHint,
+    sent,
   );
-  expect(await writesSoFar(), "every refusal is unsent").toBe(sent);
-  await expect
-    .poll(
-      async () =>
-        (await heard(page)).filter((each) => each.startsWith(notSaved)).length,
-    )
-    .toBe(3);
+
+  // Both wrong at once: both marked, Starts first, Starts focused.
+  await field(page, schedule.starts).fill("");
+  await field(page, schedule.ends).fill("abc");
+  await expectRefusedInField(
+    page,
+    field(page, schedule.starts),
+    schedule.errors.timePairStarts,
+    schedule.hoursHint,
+    sent,
+  );
+  await expect(field(page, schedule.ends)).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await expect(field(page, schedule.ends)).toHaveAccessibleDescription(
+    `${schedule.errors.timeFormatEnds} ${schedule.hoursHint}`,
+  );
   await expectNoMissingIds(page);
 
   // As it was: both blank is all day, which with nothing else is no
   // schedule.
-  await starts.fill("");
-  await ends.fill("");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, editing.savedAgain)).toBe(1);
+  await field(page, schedule.ends).fill("");
+  await saveAvailability(page);
   expect((await row(dishes.one.id)).special_schedule).toBeNull();
   await expect(scheduleLine(page)).toHaveText(schedule.none);
 });
 
-// D-164: the pair refused on both sides at once, each problem under its own
-// field, said once together, Starts first, and nothing sent until both are
-// fixed.
-test("the hours pair left with two problems shows both at once, each under its own field, says them once together with Starts first, and sends nothing until both are fixed", async ({
-  page,
-}) => {
-  const { dishes } = ownerFixture();
-  await openDish(page, "one", "availability");
-  const starts = field(page, schedule.starts);
-  const ends = field(page, schedule.ends);
-  const notSaved = fill(schedule.notSaved.hours, { dish: dishes.one.name });
-  const sent = await writesSoFar();
-
-  // "4" in Starts with Ends blank, D-164's own case.
-  await starts.fill("4");
-  await page.keyboard.press("Enter");
-  const both = `${notSaved} ${schedule.errors.timeAmPmStarts} ${schedule.errors.timePairEnds}`;
-  await expect(status(page)).toHaveText(both);
-  await expect.poll(() => said(page, both)).toBe(1);
-  await expect(starts).toHaveAttribute("aria-invalid", "true");
-  await expect(starts).toHaveAccessibleDescription(
-    `${schedule.errors.timeAmPmStarts} ${schedule.hoursHint}`,
-  );
-  await expect(ends).toHaveAttribute("aria-invalid", "true");
-  await expect(ends).toHaveAccessibleDescription(
-    `${schedule.errors.timePairEnds} ${schedule.hoursHint}`,
-  );
-  await expectNoMissingIds(page);
-
-  // Starts fixed alone: only the Ends problem stands, and nothing is sent.
-  await starts.fill("4 pm");
-  await page.keyboard.press("Enter");
-  await expect(status(page)).toHaveText(
-    `${notSaved} ${schedule.errors.timePairEnds}`,
-  );
-  await expect(starts).not.toHaveAttribute("aria-invalid", "true");
-  await expect(starts).toHaveAccessibleDescription(schedule.hoursHint);
-  await expect(ends).toHaveAttribute("aria-invalid", "true");
-
-  // Ends fixed alone: only the Starts problem stands.
-  await starts.fill("4");
-  await ends.fill("9 pm");
-  await page.keyboard.press("Enter");
-  await expect(status(page)).toHaveText(
-    `${notSaved} ${schedule.errors.timeAmPmStarts}`,
-  );
-  await expect(ends).not.toHaveAttribute("aria-invalid", "true");
-
-  // Two problems of other kinds: Starts blank and an Ends that does not
-  // read, whose sentence names its side (Q-73).
-  await starts.fill("");
-  await ends.fill("abc");
-  await page.keyboard.press("Enter");
-  await expect(status(page)).toHaveText(
-    `${notSaved} ${schedule.errors.timePairStarts} ${schedule.errors.timeFormatEnds}`,
-  );
-  await expect(starts).toHaveAccessibleDescription(
-    `${schedule.errors.timePairStarts} ${schedule.hoursHint}`,
-  );
-  await expect(ends).toHaveAccessibleDescription(
-    `${schedule.errors.timeFormatEnds} ${schedule.hoursHint}`,
-  );
-  expect(await writesSoFar(), "nothing is sent until both are fixed").toBe(
-    sent,
-  );
-  await expect
-    .poll(
-      async () =>
-        (await heard(page)).filter((each) => each.startsWith(notSaved)).length,
-    )
-    .toBe(4);
-  await expectNoMissingIds(page);
-
-  // Both fixed: one write lands.
-  await starts.fill("4 pm");
-  await ends.fill("9 pm");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, editing.savedAgain)).toBe(1);
-  expect(await writesSoFar()).toBe(sent + 1);
-  expect((await row(dishes.one.id)).special_schedule).toEqual({
-    hours: { open: "16:00", close: "21:00" },
-  });
-
-  // As it was.
-  await starts.fill("");
-  await ends.fill("");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, saved)).toBe(1);
-  expect((await row(dishes.one.id)).special_schedule).toBeNull();
-});
-
-test("a date reads in each of its forms and comes back with its year, a day-first number and a last day before the first are refused unsent, and Today only fills both days with its own sentence", async ({
+test("a date reads in each of its forms and comes back with its year, a day-first number and a last day before the first are refused unsent, and Today only fills both days for Save with its own sentence", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
   const today = todayIn(zone, new Date());
   await openDish(page, "one", "availability");
-  const first = field(page, schedule.firstDay);
-  const last = field(page, schedule.lastDay);
-  await expect(first).toHaveAccessibleDescription(schedule.dateHint);
+  await hearLog(page);
+  await expect(field(page, schedule.firstDay)).toHaveAccessibleDescription(
+    schedule.dateHint,
+  );
 
-  await first.fill("10/31/2099");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, saved)).toBe(1);
-  await expect(first).toHaveValue("October 31, 2099");
+  await field(page, schedule.firstDay).fill("10/31/2099");
+  await saveAvailability(page);
+  await expect(field(page, schedule.firstDay)).toHaveValue("October 31, 2099");
   expect((await row(dishes.one.id)).special_schedule).toEqual({
     from: "2099-10-31",
   });
 
   const sent = await writesSoFar();
-  await last.fill("31/10/2099");
-  await page.keyboard.press("Enter");
-  await expect(status(page)).toHaveText(
-    `${fill(schedule.notSaved.until, { dish: dishes.one.name })} ${schedule.errors.dateFormat}`,
+  await field(page, schedule.lastDay).fill("31/10/2099");
+  await expectRefusedInField(
+    page,
+    field(page, schedule.lastDay),
+    schedule.errors.dateFormat,
+    schedule.dateHint,
+    sent,
   );
-  await expect(last).toHaveAttribute("aria-invalid", "true");
-  await last.fill("Oct 30, 2099");
-  await page.keyboard.press("Enter");
-  await expect(status(page)).toHaveText(
-    `${fill(schedule.notSaved.until, { dish: dishes.one.name })} ${schedule.errors.dateOrder}`,
+  await field(page, schedule.lastDay).fill("Oct 30, 2099");
+  await expectRefusedInField(
+    page,
+    field(page, schedule.lastDay),
+    schedule.errors.dateOrder,
+    schedule.dateHint,
+    sent,
   );
-  expect(await writesSoFar(), "the refusals are unsent").toBe(sent);
 
-  await last.fill("November 5, 2099");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, editing.savedAgain)).toBe(1);
-  await expect(last).toHaveValue("November 5, 2099");
+  await field(page, schedule.lastDay).fill("November 5, 2099");
+  await saveAvailability(page);
+  await expect(field(page, schedule.lastDay)).toHaveValue("November 5, 2099");
   await expect(scheduleLine(page)).toHaveText(
     reads({ from: "2099-10-31", until: "2099-11-05" }),
   );
@@ -626,24 +626,40 @@ test("a date reads in each of its forms and comes back with its year, a day-firs
   // A date typed with no year is the next such day on or after today.
   const typed = parseDate("October 31", today);
   if (!typed.ok) throw new Error("October 31 did not read");
-  await first.fill("October 31");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, saved)).toBe(2);
-  await expect(first).toHaveValue(formatDate(typed.day, "en"));
-  await first.fill("10/31/2099");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, saved)).toBe(3);
+  await field(page, schedule.firstDay).fill("October 31");
+  await saveAvailability(page);
+  await expect(field(page, schedule.firstDay)).toHaveValue(
+    formatDate(typed.day, "en"),
+  );
+  await field(page, schedule.firstDay).fill("10/31/2099");
+  await saveAvailability(page);
+  await hearLog(page);
 
+  // Today only fills both fields in the page and says so once; nothing is
+  // written until Save (D-229).
+  const written = await writesSoFar();
   await page
     .getByRole("button", { name: schedule.todayOnly, exact: true })
     .click();
-  const set = fill(schedule.todayOnlySet, {
-    date: formatDayAndDate(today, today, "en"),
-  });
-  await expect.poll(() => said(page, set)).toBe(1);
-  expect(await said(page, saved), "the press says its own sentence").toBe(3);
-  await expect(first).toHaveValue(formatDate(today, "en"));
-  await expect(last).toHaveValue(formatDate(today, "en"));
+  const prefix = schedule.todayOnlyFilled.split("{date}")[0] ?? "";
+  await expect
+    .poll(
+      async () =>
+        (await heard(page)).filter((each) => each.startsWith(prefix)).length,
+    )
+    .toBe(1);
+  await expect(field(page, schedule.firstDay)).toHaveValue(
+    formatDate(today, "en"),
+  );
+  await expect(field(page, schedule.lastDay)).toHaveValue(
+    formatDate(today, "en"),
+  );
+  await expect(
+    scheduleLine(page),
+    "the line follows the saved schedule",
+  ).toHaveText(reads({ from: "2099-10-31", until: "2099-11-05" }));
+  expect(await writesSoFar(), "the press writes nothing").toBe(written);
+  await saveAvailability(page);
   await expect(scheduleLine(page)).toHaveText(
     reads({ from: today, until: today }),
   );
@@ -654,16 +670,13 @@ test("a date reads in each of its forms and comes back with its year, a day-firs
   await expectNoMissingIds(page);
 
   // As it was.
-  await first.fill("");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, saved)).toBe(4);
-  await last.fill("");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, saved)).toBe(5);
+  await field(page, schedule.firstDay).fill("");
+  await field(page, schedule.lastDay).fill("");
+  await saveAvailability(page);
   expect((await row(dishes.one.id)).special_schedule).toBeNull();
 });
 
-test("a week with no day is refused unsent, lands after a day with Try again, and the last day unticked takes the weeks with it and says so", async ({
+test("a week with no day is refused unsent on Save with the week's box focused, lands with a day, and the day unticked alone is refused the same way until the week goes too", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
@@ -672,19 +685,22 @@ test("a week with no day is refused unsent, lands after a day with Try again, an
   await openDish(page, "one", "availability");
   const sent = await writesSoFar();
   await press(page, first);
-  const refused = `${fill(schedule.notSaved.weeks, { dish: dishes.one.name })} ${schedule.errors.weeksNeedDay}`;
-  await expect(status(page)).toHaveText(refused);
-  await expect.poll(() => said(page, refused)).toBe(1);
-  await expect(box(page, first)).not.toBeChecked();
+  await expect(box(page, first)).toBeChecked();
+  await saveButton(page).click();
+  await expect(box(page, first), "the week's box is focused").toBeFocused();
+  await expect(box(page, first), "the tick is kept").toBeChecked();
   await expect(box(page, first)).toHaveAttribute("aria-invalid", "true");
+  await expect(box(page, first)).toHaveAccessibleDescription(
+    schedule.errors.weeksNeedDay,
+  );
+  await expect(summary(page)).toHaveCount(0);
   expect(await writesSoFar(), "nothing was sent").toBe(sent);
-  await expect(tryAgainButton(page)).toHaveCount(1);
+  await expectNoMissingIds(page);
 
   await press(page, monday);
-  await expect.poll(() => said(page, saved)).toBe(1);
-  await tryAgainButton(page).click();
-  await expect.poll(() => said(page, editing.savedAgain)).toBe(1);
+  await saveAvailability(page);
   await expect(box(page, first)).toBeChecked();
+  await expect(box(page, monday)).toBeChecked();
   expect((await row(dishes.one.id)).special_schedule).toEqual({
     days: ["mon"],
     weeks: ["first"],
@@ -693,23 +709,34 @@ test("a week with no day is refused unsent, lands after a day with Try again, an
     reads({ days: ["mon"], weeks: ["first"] }),
   );
 
+  // The day unticked with the week kept is the same problem.
+  const landed = await writesSoFar();
   await press(page, monday);
-  await expect.poll(() => said(page, saved)).toBe(2);
-  await expect.poll(() => said(page, schedule.weeksCleared)).toBe(1);
+  await saveButton(page).click();
+  await expect(box(page, first)).toBeFocused();
+  await expect(box(page, first)).toHaveAttribute("aria-invalid", "true");
+  expect(await writesSoFar()).toBe(landed);
+
+  // As it was.
+  await press(page, first);
+  await saveAvailability(page);
   await expect(box(page, first)).not.toBeChecked();
+  await expect(box(page, monday)).not.toBeChecked();
   expect((await row(dishes.one.id)).special_schedule).toBeNull();
   await expectNoMissingIds(page);
 });
 
-test("a month tick lands and reads, and a tick on a page whose schedule moved under it is refused once, with no Try again", async ({
+test("a month tick saved reads, and a Save on a page whose schedule moved under it is refused with one sentence in the summary, keeps the tick, changes nothing on the server, and a reload shows the schedule as it is now", async ({
   page,
 }) => {
   const { dishes } = ownerFixture();
   const january = "January";
   const monday = en.owner.restaurants.days.mon;
+  const friday = en.owner.restaurants.days.fri;
   await openDish(page, "one", "availability");
   await press(page, january);
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await saveAvailability(page);
+  await expect(box(page, january)).toBeChecked();
   await expect(scheduleLine(page)).toHaveText(reads({ months: ["jan"] }));
   expect((await row(dishes.one.id)).special_schedule).toEqual({
     months: ["jan"],
@@ -719,17 +746,24 @@ test("a month tick lands and reads, and a tick on a page whose schedule moved un
     id: dishes.one.id,
     schedule: JSON.stringify({ days: ["fri"] }),
   });
+  const sent = await writesSoFar();
   await press(page, monday);
-  await expect.poll(() => said(page, schedule.scheduleMoved)).toBe(1);
-  await expect(tryAgainButton(page)).toHaveCount(0);
-  await expect(box(page, en.owner.restaurants.days.fri)).toBeChecked();
-  await expect(box(page, monday)).not.toBeChecked();
-  await expect(box(page, january)).not.toBeChecked();
+  await saveAndFail(page, availability.submit, schedule.scheduleMoved);
+  await expect(box(page, monday), "the tick is kept").toBeChecked();
+  await expect(box(page, january)).toBeChecked();
+  expect(
+    await writesSoFar(),
+    "one statement, refused by its condition, and no second",
+  ).toBe(sent + 1);
   expect((await row(dishes.one.id)).special_schedule).toEqual({
     days: ["fri"],
   });
-
   await expectNoMissingIds(page);
+
+  await reload(page);
+  await expect(box(page, friday)).toBeChecked();
+  await expect(box(page, monday)).not.toBeChecked();
+  await expect(box(page, january)).not.toBeChecked();
 
   // As it was.
   await knob("set-schedule", { id: dishes.one.id, schedule: "null" });

@@ -10,21 +10,23 @@ import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
 import { restaurantName } from "../a11y/pages";
+import { saveAndLand } from "./save";
 
 // A dish's pages under their page nav (D-222, D-225), with saves that land
 // for real against the stand-in: each sub page arrives with its title and
 // its h1, and the state line beside each nav item follows a save on that
-// page and comes back when the save is undone, since every save ends with
-// a refresh of the page's server parts. The gate reads the lines as the
-// data file set them; this reads them change. Each check leaves the
-// stand-in as it found it, so the checks run in any order.
+// page and comes back when the save is undone. Allergens, Dietary tags,
+// and Availability save by one press (D-223, D-229), which loads the page
+// again with the flash, so the nav reads the new state from the new
+// document; Choice lists saves as the owner goes, and refreshes the page's
+// server parts. The gate reads the lines as the data file set them; this
+// reads them change. Each check leaves the stand-in as it found it, so the
+// checks run in any order.
 
 const { code } = ownerEnv();
 const strings = en.owner.dish;
 const choices = en.owner.choices;
 const state = strings.pages.state;
-const editing = en.owner.editing;
-const saved = editing.fieldSaved;
 
 type Priced = "sizes" | "one" | "market";
 
@@ -37,7 +39,6 @@ async function openDishPage(
     restaurantDishPagePath(code, ownerFixture().dishes[which].id, at),
   );
   await page.waitForLoadState("networkidle");
-  await hearLog(page);
 }
 
 async function said(page: Page, sentence: string): Promise<number> {
@@ -86,7 +87,7 @@ async function confirmByKey(page: Page, dialog: ReturnType<Page["locator"]>) {
   await page.keyboard.press("Enter");
 }
 
-test("the Allergens line reads Confirmed once the check lands and Not confirmed yet once it is undone", async ({
+test("the Allergens line reads Confirmed once the check is saved and Not confirmed yet once the uncheck is saved", async ({
   page,
 }) => {
   const allergens = strings.allergens;
@@ -101,7 +102,12 @@ test("the Allergens line reads Confirmed once the check lands and Not confirmed 
   );
 
   await page.getByText(allergens.checkLabel, { exact: true }).click();
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await expect(
+    navLink(page, "market", notConfirmed),
+    "the line follows the saved check, not the tick",
+  ).toHaveCount(1);
+  await saveAndLand(page, allergens.submit, allergens.saved);
+  await expectArrival(page, "market", allergens.heading);
   await expect(navLink(page, "market", confirmed)).toHaveCount(1);
   await expect(navLink(page, "market", confirmed)).toHaveAttribute(
     "aria-current",
@@ -110,11 +116,11 @@ test("the Allergens line reads Confirmed once the check lands and Not confirmed 
   await expectNoMissingIds(page);
 
   await page.getByText(allergens.checkLabel, { exact: true }).click();
-  await expect.poll(() => said(page, saved)).toBe(2);
+  await saveAndLand(page, allergens.submit, allergens.saved);
   await expect(navLink(page, "market", notConfirmed)).toHaveCount(1);
 });
 
-test("the Dietary tags line counts a tag once it lands and reads None once it is undone", async ({
+test("the Dietary tags line counts a tag once it is saved and reads None once the untick is saved", async ({
   page,
 }) => {
   const vegan = en.dietary.names.vegan;
@@ -125,16 +131,21 @@ test("the Dietary tags line counts a tag once it lands and reads None once it is
   await expect(navLink(page, "market", none)).toHaveCount(1);
 
   await page.getByText(vegan, { exact: true }).click();
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await expect(
+    navLink(page, "market", none),
+    "the line follows the saved tags, not the tick",
+  ).toHaveCount(1);
+  await saveAndLand(page, strings.tags.submit, strings.tags.saved);
+  await expectArrival(page, "market", strings.tags.heading);
   await expect(navLink(page, "market", one)).toHaveCount(1);
   await expectNoMissingIds(page);
 
   await page.getByText(vegan, { exact: true }).click();
-  await expect.poll(() => said(page, saved)).toBe(2);
+  await saveAndLand(page, strings.tags.submit, strings.tags.saved);
   await expect(navLink(page, "market", none)).toHaveCount(1);
 });
 
-test("the Availability line reads the chosen words once a choice lands and Available once it is put back", async ({
+test("the Availability line reads the chosen words once the choice is saved and Available once it is put back", async ({
   page,
 }) => {
   const availability = strings.availability;
@@ -147,12 +158,17 @@ test("the Availability line reads the chosen words once a choice lands and Avail
   );
 
   await page.getByText(availability.soldOut, { exact: true }).click();
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await expect(
+    navLink(page, "one", line(availability.available)),
+    "the line follows the saved choice, not the radio",
+  ).toHaveCount(1);
+  await saveAndLand(page, availability.submit, availability.saved);
+  await expectArrival(page, "one", availability.heading);
   await expect(navLink(page, "one", line(availability.soldOut))).toHaveCount(1);
   await expectNoMissingIds(page);
 
   await page.getByText(availability.available, { exact: true }).click();
-  await expect.poll(() => said(page, saved)).toBe(2);
+  await saveAndLand(page, availability.submit, availability.saved);
   await expect(navLink(page, "one", line(availability.available))).toHaveCount(
     1,
   );
@@ -163,6 +179,7 @@ test("the Choice lists line counts a list once it is added and reads None once i
 }) => {
   const lead = "Choose a sauce";
   await openDishPage(page, "market", "choices");
+  await hearLog(page);
   await expectArrival(page, "market", choices.heading);
   const none = `${choices.heading} ${state.none}`;
   const one = `${choices.heading} ${fill(choices.lists.count.one, { count: 1 })}`;
@@ -201,4 +218,45 @@ test("the Choice lists line counts a list once it is added and reads None once i
     .poll(() => said(page, fill(choices.lists.deleted, { list: lead })))
     .toBe(1);
   await expect(navLink(page, "market", none)).toHaveCount(1);
+});
+
+// The leave rule on a page that saves by a press (D-229): a change, then
+// the page nav's General link, asks; Leave goes, and the change is gone
+// when the page is opened again.
+test("Leave on the dialog a page nav link opens with unsaved changes goes to the page, and the change is gone when the page is opened again", async ({
+  page,
+}) => {
+  const vegan = en.dietary.names.vegan;
+  const { dishes } = ownerFixture();
+  const form = strings.form;
+  await openDishPage(page, "market", "tags");
+  await page.getByText(vegan, { exact: true }).click();
+  await expect(
+    page.getByRole("checkbox", { name: vegan, exact: true }),
+  ).toBeChecked();
+  await navLink(page, "market", strings.pages.general).click();
+  const dialog = page.getByRole("alertdialog", {
+    name: form.leave.question,
+    exact: true,
+  });
+  await expect(dialog).toHaveCount(1);
+  await expect(
+    dialog.getByRole("button", { name: form.leave.keep, exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
+    dialog.getByRole("button", { name: form.leave.leave, exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("main h1")).toHaveText(dishes.market.name);
+  await expect(dialog).toHaveCount(0);
+
+  await openDishPage(page, "market", "tags");
+  await expect(
+    page.getByRole("checkbox", { name: vegan, exact: true }),
+    "the change was not saved",
+  ).not.toBeChecked();
+  await expect(
+    navLink(page, "market", `${strings.tags.heading} ${state.none}`),
+  ).toHaveCount(1);
 });

@@ -1,6 +1,12 @@
 "use client";
 
-import { startTransition, useMemo, useOptimistic, useState } from "react";
+import {
+  startTransition,
+  useMemo,
+  useOptimistic,
+  useRef,
+  useState,
+} from "react";
 import { useAnnounce } from "@/core/a11y/announcer";
 import {
   cleanDishText,
@@ -17,7 +23,9 @@ import {
   type SizeText,
 } from "@/domain/dish";
 import { nameTaken } from "@/domain/menu";
+import { useConfirmed } from "../editing/confirmed";
 import { problemText, type EditingStrings } from "../editing/list-words";
+import { SETTLE_MS, settleChoice, type Settle } from "../editing/settle";
 import {
   commitText,
   textOf,
@@ -49,9 +57,11 @@ import {
 // handlers behind its texts, its price choice, and its sizes. The page's
 // own texts take no list; it composes the same editing state and the same
 // text-commit path (texts.ts) the lists use, so it keeps one queue and one
-// saved status for everything on it. The price choice saves on change and
-// says "Saved." once, as a field does (D-118); the other choices' values
-// stay stored and come back on switching back (Michael, October 7, 2026).
+// saved status for everything on it. The price choice saves once it has
+// settled, half a second after the last arrow, and says "Saved." once, as
+// a field does (D-118, D-229); a walk that ends on the saved choice sends
+// nothing and says nothing. The other choices' values stay stored and
+// come back on switching back (Michael, October 7, 2026).
 // A size is added blank and takes focus in its name once it lands; a
 // remove takes effect at once, on the press, since a size is a part of the
 // dish's form (D-221). Sizes keep the places the page showed them in while
@@ -109,6 +119,16 @@ export function useDishGeneral({
     dish.priceKind,
     (_current: PriceKind, next: PriceKind) => next,
   );
+  // What the server last confirmed, so a round that starts while the last
+  // save is still on its way compares against what was sent, not the
+  // stale prop (D-229).
+  const confirmedKindRef = useConfirmed(dish.priceKind);
+  // The settle itself is made on the first change, in the handler, since
+  // its reader of the confirmed choice must not be made in render.
+  const settleRef = useRef<Settle<PriceKind> | null>(null);
+  // The round on its way, which a change made inside the wait awaits, so
+  // the chosen radio shows until the round ends.
+  const roundRef = useRef<Promise<void> | null>(null);
 
   // The order the sizes are shown in: price order on arrival, held while
   // the page is open. Each new list from the server keeps the places the
@@ -175,39 +195,71 @@ export function useDishGeneral({
     };
   }
 
-  // The price choice changed. It saves at once, through the page's queue,
-  // and says "Saved." once when it lands (D-118). Try again passes force
-  // with the choice that failed.
-  function setKind(next: PriceKind, force = false) {
-    const saved = dish.priceKind;
-    if (next === saved && !force) {
-      editing.reset(KIND_KEY);
+  // One save of the price choice, through the page's queue: "Saved." once
+  // when it lands (D-118), the problem under the group when it does not.
+  async function sendKind(value: PriceKind) {
+    editing.sending(KIND_KEY, value);
+    const result = await editing.call(() =>
+      setDishPriceKind(code, dish.id, value),
+    );
+    editing.answered(KIND_KEY);
+    if (!result.ok) {
+      editing.failField(KIND_KEY, {
+        fieldId: KIND_ID,
+        problem: problemText(words, result.problem, dish.name),
+        sentence: kindNotSavedSentence(
+          strings,
+          words,
+          dish.name,
+          result.problem,
+        ),
+        value: value,
+      });
       return;
     }
-    editing.sending(KIND_KEY, next);
+    confirmedKindRef.current = result.value.priceKind;
+    editing.landedField(KIND_KEY, null);
+  }
+
+  // The price choice changed. The chosen radio shows at once; the save
+  // waits for the choice to settle (D-229): the first arrow starts a round
+  // in the page's queue, every arrow inside the wait restarts it, and when
+  // the wait ends the round sends the last choice, or nothing when the
+  // walk ended on the saved one. One round is one run, so a link waits for
+  // it and the browser warns while it is on its way, as for any save. Try
+  // again passes force with the choice that failed, which sends at once.
+  function setKind(next: PriceKind, force = false) {
+    if (force) {
+      startTransition(async () => {
+        showKind(next);
+        await editing.run(() => sendKind(next));
+      });
+      return;
+    }
+    const settle = (settleRef.current ??= settleChoice<PriceKind>({
+      waitMs: SETTLE_MS,
+      saved: () => confirmedKindRef.current,
+    }));
+    const round = settle.choose(next);
     startTransition(async () => {
       showKind(next);
-      await editing.run(async () => {
-        const result = await editing.call(() =>
-          setDishPriceKind(code, dish.id, next),
-        );
-        editing.answered(KIND_KEY);
-        if (!result.ok) {
-          editing.failField(KIND_KEY, {
-            fieldId: KIND_ID,
-            problem: problemText(words, result.problem, dish.name),
-            sentence: kindNotSavedSentence(
-              strings,
-              words,
-              dish.name,
-              result.problem,
-            ),
-            value: next,
-          });
+      if (round === null) {
+        await roundRef.current;
+        return;
+      }
+      roundRef.current = editing.run(async () => {
+        const value = await round;
+        if (value === null) {
+          editing.reset(KIND_KEY);
           return;
         }
-        editing.landedField(KIND_KEY, null);
+        try {
+          await sendKind(value);
+        } finally {
+          settle.finished(value);
+        }
       });
+      await roundRef.current;
     });
   }
 

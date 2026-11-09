@@ -92,7 +92,14 @@ export async function expectFlashArrival(
     const h1 = main?.querySelector("h1");
     return {
       firstInMain: main?.firstElementChild === section,
-      aboveHeading: h1 !== null && section.nextElementSibling === h1,
+      // Above the heading in document order: on a dish's page the
+      // breadcrumb sits between the two (D-222, D-229).
+      aboveHeading:
+        h1 !== null &&
+        h1 !== undefined &&
+        (section.compareDocumentPosition(h1) &
+          Node.DOCUMENT_POSITION_FOLLOWING) !==
+          0,
       order: [...section.children].map((child) =>
         child.getAttribute("role") === "alert"
           ? "alert"
@@ -103,9 +110,7 @@ export async function expectFlashArrival(
   expect(place.firstInMain, "the banner is main's first element child").toBe(
     true,
   );
-  expect(place.aboveHeading, "the heading comes right after the banner").toBe(
-    true,
-  );
+  expect(place.aboveHeading, "the heading comes after the banner").toBe(true);
   expect(
     place.order,
     "the banner reads its dismiss button, its heading, then its words, the icon beside them",

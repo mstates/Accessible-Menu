@@ -2,19 +2,14 @@
 
 import { refresh } from "next/cache";
 import { z } from "zod";
-import { expireRestaurant } from "@/core/cache";
 import {
   moveOwnerDish,
   setOwnerDishCalories,
-  setOwnerDishCookedToOrder,
   setOwnerDishPrice,
   setOwnerDishPriceKind,
   setOwnerDishText,
-  writeOwnerDishAvailability,
-  type AvailabilityPatch,
   type DishWriteError,
 } from "@/core/supabase/dishes";
-import { AVAILABILITY } from "@/domain/availability";
 import { parseCalories, type Calories } from "@/domain/calories";
 import {
   addOwnerSize,
@@ -38,16 +33,16 @@ import {
   type PriceKind,
   type SizeText,
 } from "@/domain/dish";
-import { normalizeMenuCode } from "@/domain/menu-url";
 import { parsePrice } from "@/domain/money";
 import type { ListProblem } from "../editing/list-words";
 import { dishScope } from "../owner-scope";
 import type { DishMoveProblem } from "./dish-words";
 
-// A dish's own page saves through these (D-111, D-128): its description,
-// its price choice, its one price, and its note (D-139), its calories and
-// its Cooked to order mark (D-167), its sizes, its availability (D-160),
-// and its move to another section (D-129). Nothing here redirects: a missing
+// A dish's General page saves through these (D-111, D-128): its
+// description, its price choice, its one price, and its note (D-139), its
+// calories (D-167), its sizes, and its move to another section (D-129).
+// The dish's other pages save by a press, through form-actions.ts (D-223,
+// D-229). Nothing here redirects: a missing
 // session comes back as a result and the typed text stays on screen. Every
 // call that reached the database with a live session ends with refresh(),
 // so its own response carries the re-rendered page. The code, the dish, and
@@ -73,7 +68,6 @@ export type DishMoveResult<Value = null> =
   { ok: true; value: Value } | { ok: false; problem: ServerMoveProblem };
 
 const idSchema = z.uuid();
-const availabilitySchema = z.enum(AVAILABILITY);
 const dishTextSchema = z.enum(DISH_TEXTS);
 const sizeTextSchema = z.enum(SIZE_TEXTS);
 const kindSchema = z.enum(PRICE_KINDS);
@@ -207,67 +201,6 @@ export async function setDishPriceKind(
   refresh();
   if (!result.ok) return refuse(fromDishWrite(result.error));
   return { ok: true, value: { priceKind: result.value.priceKind } };
-}
-
-// The Cooked to order mark (D-167): on or off, saved at once.
-export async function setDishCookedToOrder(
-  rawCode: string,
-  rawDish: string,
-  rawOn: unknown,
-): Promise<DishPageResult<{ cookedToOrder: boolean }>> {
-  const scope = await dishScope(rawCode, rawDish);
-  if (!scope.ok) return scope;
-  const on = z.boolean().safeParse(rawOn);
-  if (!on.success) return failed;
-  const result = await setOwnerDishCookedToOrder(
-    scope.client,
-    scope.sectionId,
-    scope.dishId,
-    on.data,
-  );
-  refresh();
-  if (!result.ok) return refuse(fromDishWrite(result.error));
-  return { ok: true, value: { cookedToOrder: result.value.cookedToOrder } };
-}
-
-// How the dish stands (D-160): available, sold out today, or off the menu
-// for now. A sold-out mark is the server's own clock, never a browser's.
-export async function setDishAvailability(
-  rawCode: string,
-  rawDish: string,
-  rawChoice: unknown,
-): Promise<DishPageResult<{ available: boolean; soldOutAt: string | null }>> {
-  const scope = await dishScope(rawCode, rawDish);
-  if (!scope.ok) return scope;
-  const choice = availabilitySchema.safeParse(rawChoice);
-  if (!choice.success) return failed;
-  let patch: AvailabilityPatch;
-  if (choice.data === "off") {
-    patch = { available: false, sold_out_at: null };
-  } else if (choice.data === "sold-out") {
-    patch = { available: true, sold_out_at: new Date().toISOString() };
-  } else {
-    patch = { available: true, sold_out_at: null };
-  }
-  const result = await writeOwnerDishAvailability(
-    scope.client,
-    scope.sectionId,
-    scope.dishId,
-    scope.userId,
-    patch,
-  );
-  // Availability reaches diners without Publish (D-84, D-160): the
-  // restaurant's pages re-render on their next request.
-  if (result.ok) expireRestaurant(normalizeMenuCode(rawCode));
-  refresh();
-  if (!result.ok) return refuse(fromDishWrite(result.error));
-  return {
-    ok: true,
-    value: {
-      available: result.value.available,
-      soldOutAt: result.value.soldOutAt,
-    },
-  };
 }
 
 // A new size, blank, and how many sizes the dish has now that it is in.

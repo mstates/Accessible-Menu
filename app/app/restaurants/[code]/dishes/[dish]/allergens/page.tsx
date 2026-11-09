@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
+import { readNotice } from "@/core/notice";
 import {
   listOwnerOptionOtherAllergenNames,
   listOwnerSameNamedOptions,
@@ -17,8 +19,9 @@ import { rankOtherAllergenNames } from "@/domain/allergens";
 import { dishPlaces, optionPlaces } from "@/features/owner/allergens/places";
 import { placeIn } from "@/features/owner/choices/choice-words";
 import { dishPageTitle } from "@/features/owner/dish/dish-pages";
-import { DishAllergensPage } from "@/features/owner/dish/DishAllergensPage";
+import { DishAllergensForm } from "@/features/owner/dish/DishAllergensForm";
 import { DishPageFrame } from "@/features/owner/dish/DishPageFrame";
+import { saveDishAllergens } from "@/features/owner/dish/form-actions";
 import { loadDish } from "@/features/owner/dish/load-dish";
 import { signInPath } from "@/features/owner/paths";
 
@@ -42,13 +45,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-// A dish's Allergens page (D-148, D-222): its allergens and their check,
-// and the same-named offer (D-129). The page is named for the page, in the
-// title and in the h1, with the dish, its section, and its menu right
-// after it (D-225). The other allergens in use on dishes and on options
-// and the same-named dishes and options are read on every render, and
-// every save ends with a refresh, so what the page shows is what the
-// server holds.
+// A dish's Allergens page (D-148, D-222, D-229): its allergens and their
+// check, and the same-named offer (D-129), saved by one press. The page is
+// named for the page, in the title and in the h1, with the dish, its
+// section, and its menu right after it (D-225). The other allergens in use
+// on dishes and on options and the same-named dishes and options are read
+// on every render; a save that lands loads the page again, with its result
+// in the request's cookie, so what the page shows is what the server
+// holds.
 export default async function RestaurantDishAllergensPage({ params }: Props) {
   const { code, dish: dishId } = await params;
   const { supabase, email, restaurant, found } = await loadDish(code, dishId);
@@ -100,6 +104,10 @@ export default async function RestaurantDishAllergensPage({ params }: Props) {
     ...dishPlaces(namesakes, ownLists, context),
     ...optionPlaces(sameOptions, ownLists, context),
   ];
+  const action = saveDishAllergens.bind(null, restaurant.code, dish.id);
+  const notice = readNotice((await headers()).get("cookie"), [
+    "allergens-saved",
+  ]);
 
   return (
     <DishPageFrame
@@ -111,10 +119,12 @@ export default async function RestaurantDishAllergensPage({ params }: Props) {
       lists={lists}
       showing={showing}
       page={PAGE}
+      notice={notice}
     >
-      <DishAllergensPage
+      <DishAllergensForm
         strings={en.owner.dish}
         editing={en.owner.editing}
+        pendingLabel={en.ui.pending}
         code={restaurant.code}
         dish={dish}
         allergenCopy={en.allergens}
@@ -122,6 +132,7 @@ export default async function RestaurantDishAllergensPage({ params }: Props) {
         sameNamed={sameNamed}
         timeZone={restaurant.timezone}
         lang={en.lang}
+        action={action}
       />
     </DishPageFrame>
   );

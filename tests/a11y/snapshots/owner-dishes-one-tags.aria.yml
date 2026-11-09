@@ -33,6 +33,7 @@
         - link "Availability Available, no schedule"
       - listitem:
         - link "Choice lists 1 choice list"
+  - paragraph: Changes on this page save when you press Save dietary tags.
   - group "Dietary tags":
     - checkbox "Vegan"
     - text: Vegan No meat, fish, dairy, eggs, or honey.
@@ -44,7 +45,6 @@
   - heading "Cooked to order" [level=2]
   - checkbox "Cooked to order"
   - text: Cooked to order For meat, fish, or eggs that can be served rare or undercooked. Diners read Cooked to order. with this dish, and the menu carries the advisory once.
-  - status: All changes saved
-  - log
+  - button "Save dietary tags"
 - contentinfo: Accessible Menu
 - alert

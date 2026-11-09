@@ -33,6 +33,7 @@
         - link "Availability Available, schedule set"
       - listitem:
         - link "Choice lists None"
+  - paragraph: Changes on this page save when you press Save availability.
   - radiogroup "Availability":
     - radio "Available" [checked]
     - text: Available
@@ -68,9 +69,10 @@
   - button "Today only"
   - text: First day
   - textbox "First day"
-  - text: /For example, October \d+ or \d+\/\d+\/\d+\. Last day/
+  - paragraph: /For example, October \d+ or \d+\/\d+\/\d+\./
+  - text: Last day
   - textbox "Last day"
-  - text: /For example, October \d+ or \d+\/\d+\/\d+\./
+  - paragraph: /For example, October \d+ or \d+\/\d+\/\d+\./
   - paragraph: Which of the month's Fridays, for a special on the first Friday of each month. Needs a day above.
   - group "Weeks of the month":
     - text: Weeks of the month
@@ -112,7 +114,7 @@
     - checkbox "December"
     - text: December
   - paragraph: "/Diners read: \"Every day, 4 to 9 pm\\.\" (Shows now, [^.]+|Next shows [^.]+)\\./"
-  - status: All changes saved
+  - button "Save availability"
   - log
 - contentinfo: Accessible Menu
 - alert

@@ -15,17 +15,6 @@ export type TagsStrings = Copy["owner"]["dish"]["tags"];
 export type AvailabilityStrings = Copy["owner"]["dish"]["availability"];
 export type ScheduleStrings = Copy["owner"]["dish"]["schedule"];
 
-export const SCHEDULE_PARTS = [
-  "days",
-  "weeks",
-  "months",
-  "hours",
-  "from",
-  "until",
-  "today",
-] as const;
-export type SchedulePart = (typeof SCHEDULE_PARTS)[number];
-
 // What the server decided a dish's availability is now, as the page gets
 // it: the state, and the end of a sold-out mark as an instant.
 export type ShowingNow = { state: Availability; until: string | null };

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { en } from "../../src/copy";
-import { fill } from "../../src/copy/fill";
 import {
   dishWords,
   kindLabel,
@@ -83,13 +82,6 @@ describe("the words the dish's texts are said in", () => {
     });
     expect(notSavedSentence(sizes, "calories", "Cup")).toBe(
       "The calories for Cup were not saved.",
-    );
-  });
-
-  // D-167: the Cooked to order mark, under its own heading after Schedule.
-  it("names the Cooked to order mark's failure", () => {
-    expect(fill(strings.cookedToOrder.notSaved, { dish })).toBe(
-      `The Cooked to order mark for ${dish} was not saved.`,
     );
   });
 });

@@ -17,8 +17,8 @@ const allowed: Record<string, string> = {
   "src/domain/dish.ts": "the dish's row shape carries the mark to the decider",
   "src/core/supabase/dishes.ts":
     "reads and writes the column, and never reads its meaning",
-  "src/features/owner/dish/actions.ts":
-    "writes the mark the owner's choice means",
+  "src/features/owner/dish/form-actions.ts":
+    "writes the mark the owner's choice means, in the Availability page's one save (D-229)",
   "src/features/owner/dish/load-dish.ts":
     "hands the row to the decider once per request, for the page nav's Availability line and the Availability page (D-222); no route or frame names the mark",
   "src/domain/snapshot.ts":

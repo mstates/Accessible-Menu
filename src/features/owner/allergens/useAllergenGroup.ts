@@ -681,10 +681,19 @@ export function useAllergenGroup({
       shown: shown.reviewed,
       set: setCheck,
       error: editing.failures[CHECK_KEY]?.problem ?? null,
-      stamp,
     },
     lists,
-    sameNamed: { places: shown.reviewed ? places : [], apply },
+    // The line and the stamp follow the shown state: this group saves as
+    // the owner goes, so what is shown is what is saved or on its way.
+    reads: { lists, checked: shown.reviewed, stamp },
+    // Apply works from what is shown here too, so it is never held back,
+    // and it says its outcome through the page's status, not a line.
+    sameNamed: {
+      places: shown.reviewed ? places : [],
+      apply,
+      dirty: false,
+      result: null,
+    },
     tryAgain,
     confirm,
     // The state the next write carries, for a handler that runs after a
@@ -694,6 +703,3 @@ export function useAllergenGroup({
 }
 
 export type AllergenGroupState = ReturnType<typeof useAllergenGroup>;
-
-// What the component draws: the group's whole state.
-export type AllergenGroupView = AllergenGroupState;

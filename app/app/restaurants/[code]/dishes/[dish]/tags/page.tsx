@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
+import { readNotice } from "@/core/notice";
 import { dishPageTitle } from "@/features/owner/dish/dish-pages";
 import { DishPageFrame } from "@/features/owner/dish/DishPageFrame";
-import { DishTagsPage } from "@/features/owner/dish/DishTagsPage";
+import { DishTagsForm } from "@/features/owner/dish/DishTagsForm";
+import { saveDishTags } from "@/features/owner/dish/form-actions";
 import { loadDish } from "@/features/owner/dish/load-dish";
 import { signInPath } from "@/features/owner/paths";
 
@@ -28,10 +31,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-// A dish's Dietary tags page (D-66, D-167, D-222): its three tags and its
-// Cooked to order mark. The page is named for the page, in the title and
-// in the h1, with the dish, its section, and its menu right after it
-// (D-225). Every save ends with a refresh, so what the page shows is what
+// A dish's Dietary tags page (D-66, D-167, D-222, D-229): its three tags
+// and its Cooked to order mark, saved by one press. The page is named for
+// the page, in the title and in the h1, with the dish, its section, and
+// its menu right after it (D-225). A save that lands loads the page again,
+// with its result in the request's cookie, so what the page shows is what
 // the server holds.
 export default async function RestaurantDishTagsPage({ params }: Props) {
   const { code, dish: dishId } = await params;
@@ -39,6 +43,8 @@ export default async function RestaurantDishTagsPage({ params }: Props) {
   if (!email) redirect(signInPath);
   if (!restaurant || !found) notFound();
   const { dish, section, menu, lists, showing } = found;
+  const action = saveDishTags.bind(null, restaurant.code, dish.id);
+  const notice = readNotice((await headers()).get("cookie"), ["tags-saved"]);
 
   return (
     <DishPageFrame
@@ -50,13 +56,16 @@ export default async function RestaurantDishTagsPage({ params }: Props) {
       lists={lists}
       showing={showing}
       page={PAGE}
+      notice={notice}
     >
-      <DishTagsPage
+      <DishTagsForm
         strings={en.owner.dish}
         editing={en.owner.editing}
+        pendingLabel={en.ui.pending}
         code={restaurant.code}
         dish={dish}
         dietaryCopy={en.dietary}
+        action={action}
       />
     </DishPageFrame>
   );

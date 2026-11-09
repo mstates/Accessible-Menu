@@ -2,21 +2,26 @@
 
 import { fill } from "@/copy/fill";
 import type { DietaryCopy } from "@/domain/dietary";
-import { DIETARY_TAG_IDS } from "@/domain/types";
+import { DIETARY_TAG_IDS, type DietaryTagId } from "@/domain/types";
 import { Checkbox, CheckboxGroup } from "@/ui/CheckboxGroup";
 import { handToBox } from "../editing/hand-to-box";
 import type { DishStrings } from "./dish-words";
-import {
-  TAGS_HEADING_ID,
-  TAGS_SENTENCE_ID,
-  tagBoxId,
-  type DishTagsState,
-} from "./useDishTags";
+import { TAGS_HEADING_ID, TAGS_SENTENCE_ID, tagBoxId } from "./showing-ids";
+
+// What the component draws: the boxes' state, a problem under a box if
+// one stands, and the sentence diners read, which follows the saved tags
+// (D-229).
+export type DishTagsView = {
+  shown: readonly DietaryTagId[];
+  set: (id: DietaryTagId, on: boolean) => void;
+  errorOf: (id: DietaryTagId) => string | null;
+  sentence: { text: string } | null;
+};
 
 type Props = {
   strings: DishStrings["tags"];
   names: DietaryCopy;
-  tags: DishTagsState;
+  tags: DishTagsView;
   // The group sits directly under the page's h1, which carries its heading
   // id (D-222, D-225), so it draws no heading of its own.
   underPageHeading?: boolean;

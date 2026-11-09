@@ -24,8 +24,9 @@ import type { ShowingNow } from "./schedule-words";
 // as one entry here. General is the dish's own address and is named for
 // the dish; each other page is named by the heading its first group had on
 // the one long page, so a nav item, an h1, and a title's first part are the
-// same words. How a page saves (D-223) joins each entry as one field when
-// that task comes; nothing stands in for it now. Pure: no React, no
+// same words. How a page saves (D-223, D-229) is one field per entry: a
+// page of boxes and radios saves by one named press, and a page of typed
+// fields and lists saves as the owner goes (D-111). Pure: no React, no
 // network.
 
 export const DISH_PAGE_KEYS = [
@@ -37,6 +38,25 @@ export const DISH_PAGE_KEYS = [
 ] as const;
 export type DishPageKey = (typeof DISH_PAGE_KEYS)[number];
 export type DishSubPageKey = DishPageSlug;
+
+// How each page saves (D-223): by a press on the page's one Save, or as
+// the owner goes. The three press pages render one form each with Save at
+// its foot; the two as-you-go pages render the saved status. A page moves
+// from one to the other as a change here and in its own hook, nothing
+// else.
+export type DishPageSaving = "press" | "as-you-go";
+
+export const DISH_PAGE_SAVING: Readonly<Record<DishPageKey, DishPageSaving>> = {
+  general: "as-you-go",
+  allergens: "press",
+  tags: "press",
+  availability: "press",
+  choices: "as-you-go",
+};
+
+export function dishPageSaving(key: DishPageKey): DishPageSaving {
+  return DISH_PAGE_SAVING[key];
+}
 
 // The id a sub page's h1 carries (D-225): the first group on each page
 // labels itself by its heading, and on its own page that heading is the

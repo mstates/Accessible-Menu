@@ -68,22 +68,6 @@ function sizeCaloriesField(page: Page, size: string) {
   });
 }
 
-function cookedBox(page: Page) {
-  return page.getByRole("checkbox", {
-    name: strings.cookedToOrder.label,
-    exact: true,
-  });
-}
-
-// Ticks the box by its visible words, inside its wrapper: the heading above
-// says the same words. React Aria keeps the input under the label, where a
-// pointer cannot reach it directly.
-function cookedWords(page: Page) {
-  return page
-    .locator("#dish-cooked-to-order")
-    .getByText(strings.cookedToOrder.label, { exact: true });
-}
-
 function status(page: Page) {
   return page.locator('main [role="status"]');
 }
@@ -194,54 +178,4 @@ test("a size's calories save on Enter and read back after a reload", async ({
   await page.keyboard.press("Enter");
   await expect.poll(() => said(page, saved)).toBe(1);
   await expect(sizeCaloriesField(page, "Cup")).toHaveValue("180");
-});
-
-test("Cooked to order ticked and unticked each say Saved. once and hold after a reload", async ({
-  page,
-}) => {
-  const { dishes } = ownerFixture();
-  await openDish(page, "one", "tags");
-  await expect(cookedBox(page)).not.toBeChecked();
-  await cookedWords(page).click();
-  await expect(cookedBox(page)).toBeChecked();
-  await expect.poll(() => said(page, saved)).toBe(1);
-  expect((await row("items", dishes.one.id)).cooked_to_order).toBe(true);
-  await reload(page);
-  await expect(cookedBox(page)).toBeChecked();
-
-  // As it was: unticked, said once, held after a reload.
-  await cookedWords(page).click();
-  await expect(cookedBox(page)).not.toBeChecked();
-  await expect.poll(() => said(page, saved)).toBe(1);
-  expect((await row("items", dishes.one.id)).cooked_to_order).toBe(false);
-  await expectNoMissingIds(page);
-  await reload(page);
-  await expect(cookedBox(page)).not.toBeChecked();
-});
-
-test("a Cooked to order tick the server refuses goes back, is said once with Try again, and Try again lands it", async ({
-  page,
-}) => {
-  const { dishes } = ownerFixture();
-  const dish = dishes.one.name;
-  await openDish(page, "one", "tags");
-  await fetch(`${standin}/__test/fail?times=1`);
-  await cookedWords(page).click();
-  const failure = `${fill(strings.cookedToOrder.notSaved, { dish })} ${editing.problems.failed}`;
-  await expect.poll(() => said(page, failure)).toBe(1);
-  await expect(status(page)).toHaveText(failure);
-  await expect(cookedBox(page)).not.toBeChecked();
-  await expect(cookedBox(page)).toHaveAttribute("aria-invalid", "true");
-  await page
-    .getByRole("button", { name: editing.tryAgain, exact: true })
-    .click();
-  await expect.poll(() => said(page, editing.savedAgain)).toBe(1);
-  await expect(cookedBox(page)).toBeChecked();
-  expect((await row("items", dishes.one.id)).cooked_to_order).toBe(true);
-  await expectNoMissingIds(page);
-
-  // As it was.
-  await cookedWords(page).click();
-  await expect.poll(() => said(page, saved)).toBe(1);
-  expect((await row("items", dishes.one.id)).cooked_to_order).toBe(false);
 });

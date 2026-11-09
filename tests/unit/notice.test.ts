@@ -3,6 +3,7 @@ import {
   clearedNoticeCookie,
   DASHBOARD_NOTICES,
   DETAILS_NOTICES,
+  DISH_NOTICES,
   NOTICE_COOKIE,
   noticeCookie,
   readNotice,
@@ -11,6 +12,7 @@ import {
 import {
   dashboardPath,
   restaurantDetailsPath,
+  restaurantDishPagePath,
   signInPath,
 } from "../../src/features/owner/paths";
 
@@ -51,6 +53,15 @@ describe("the notice cookie (D-211, D-219)", () => {
     expect(noticeCookie("sign-in-link", signInPath)).toBe(
       "notice=sign-in-link; Path=/app/sign-in; Max-Age=60; SameSite=Lax",
     );
+    const dish = "0b2f0a9e-1111-4222-8333-444455556666";
+    expect(
+      noticeCookie(
+        "allergens-saved",
+        restaurantDishPagePath("12345678", dish, "allergens"),
+      ),
+    ).toBe(
+      `notice=allergens-saved; Path=/app/restaurants/12345678/dishes/${dish}/allergens; Max-Age=60; SameSite=Lax`,
+    );
   });
 
   it("takes only a path, so nothing else reaches the cookie string", () => {
@@ -84,6 +95,11 @@ describe("the notice cookie (D-211, D-219)", () => {
       "checkout-missing",
     ]);
     expect(SIGN_IN_NOTICES).toEqual(["sign-in-link", "sign-in-google"]);
+    expect(DISH_NOTICES).toEqual([
+      "allergens-saved",
+      "tags-saved",
+      "availability-saved",
+    ]);
   });
 });
 
