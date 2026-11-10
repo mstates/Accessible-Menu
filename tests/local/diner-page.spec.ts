@@ -13,7 +13,7 @@ import {
   restaurantDetailsPath,
   restaurantDishPagePath,
   restaurantDishPath,
-  restaurantMenuPath,
+  restaurantMenuPagePath,
 } from "../../src/features/owner/paths";
 import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
@@ -104,15 +104,27 @@ async function choose(page: Page, label: string): Promise<void> {
   await hearLog(page);
 }
 
-function publishButton(page: Page, name: string) {
-  return page
-    .getByRole("region", { name: publishing.heading, exact: true })
-    .getByRole("button", { name, exact: true });
-}
-
-async function press(page: Page, name: string, sentence: string) {
-  await publishButton(page, name).click();
-  await expect.poll(() => said(page, sentence)).toBe(1);
+// Publish or Unpublish on a menu's Publishing page (D-224), landed for
+// real: the page loads again with the flash that names the menu (D-231).
+// That page has no log, so it is opened on its own, never through
+// openOwner.
+async function press(
+  page: Page,
+  menu: { id: string; name: string },
+  which: "publish" | "unpublish",
+): Promise<void> {
+  await page.goto(restaurantMenuPagePath(code, menu.id, "publishing"));
+  await page.waitForLoadState("networkidle");
+  await saveAndLand(
+    page,
+    publishing[which],
+    fill(
+      which === "publish"
+        ? publishing.flash.published
+        : publishing.flash.unpublished,
+      { menu: menu.name },
+    ),
+  );
 }
 
 // Menus and dishes by name, from the stand-in's rows.
@@ -162,8 +174,7 @@ test("a price change is live on the diner page within a minute of Publish", asyn
     "a draft reaches no diner before Publish",
   ).toContain("$9, 320 calories");
 
-  await openOwner(page, restaurantMenuPath(code, withSections.id));
-  await press(page, publishing.publish, publishing.spoken.published);
+  await press(page, withSections, "publish");
   await expect
     .poll(async () => (await served(page, bare)).html, { timeout: 60_000 })
     .toContain("$10, 320 calories");
@@ -173,8 +184,7 @@ test("a price change is live on the diner page within a minute of Publish", asyn
   await field(page, dish.price.amountLabel).fill("9");
   await page.keyboard.press("Enter");
   await expect.poll(() => said(page, saved)).toBe(1);
-  await openOwner(page, restaurantMenuPath(code, withSections.id));
-  await press(page, publishing.publish, publishing.spoken.published);
+  await press(page, withSections, "publish");
   await expect
     .poll(async () => (await served(page, bare)).html)
     .toContain("$9, 320 calories");
@@ -633,12 +643,11 @@ test("a known code with nothing published shows the name and one line, never a 4
   const { withSections } = ownerFixture();
   const drinks = await menuId("Drinks");
   const brunch = await menuId("Brunch");
-  await openOwner(page, restaurantMenuPath(code, withSections.id));
-  await press(page, publishing.unpublish, publishing.spoken.unpublished);
-  await openOwner(page, restaurantMenuPath(code, drinks));
-  await press(page, publishing.unpublish, publishing.spoken.unpublished);
-  await openOwner(page, restaurantMenuPath(code, brunch));
-  await press(page, publishing.unpublish, publishing.spoken.unpublished);
+  const drinksMenu = { id: drinks, name: "Drinks" };
+  const brunchMenu = { id: brunch, name: "Brunch" };
+  await press(page, withSections, "unpublish");
+  await press(page, drinksMenu, "unpublish");
+  await press(page, brunchMenu, "unpublish");
 
   const read = await served(page, bare);
   expect(read.status).toBe(200);
@@ -662,18 +671,15 @@ test("a known code with nothing published shows the name and one line, never a 4
     expect(statement.html).not.toContain(`href="${menuPath(code, id)}"`);
   }
 
-  await openOwner(page, restaurantMenuPath(code, withSections.id));
-  await press(page, publishing.publish, publishing.spoken.published);
+  await press(page, withSections, "publish");
   await expect
     .poll(async () => (await served(page, bare)).html)
     .toContain("House salad");
-  await openOwner(page, restaurantMenuPath(code, drinks));
-  await press(page, publishing.publish, publishing.spoken.published);
+  await press(page, drinksMenu, "publish");
   await expect
     .poll(async () => (await served(page, bare)).html)
     .toContain(">Drinks<");
-  await openOwner(page, restaurantMenuPath(code, brunch));
-  await press(page, publishing.publish, publishing.spoken.published);
+  await press(page, brunchMenu, "publish");
   await expect
     .poll(async () => (await served(page, bare)).html)
     .toContain(">Brunch<");
@@ -837,12 +843,10 @@ test("with one menu published the page names it under the restaurant's name and 
   page,
 }) => {
   const name = "CI Diner (test restaurant, not real)";
-  const drinks = await menuId("Drinks");
-  const brunch = await menuId("Brunch");
-  await openOwner(page, restaurantMenuPath(code, drinks));
-  await press(page, publishing.unpublish, publishing.spoken.unpublished);
-  await openOwner(page, restaurantMenuPath(code, brunch));
-  await press(page, publishing.unpublish, publishing.spoken.unpublished);
+  const drinks = { id: await menuId("Drinks"), name: "Drinks" };
+  const brunch = { id: await menuId("Brunch"), name: "Brunch" };
+  await press(page, drinks, "unpublish");
+  await press(page, brunch, "unpublish");
   try {
     const alone = await served(page, bare);
     expect(alone.status).toBe(200);
@@ -852,10 +856,8 @@ test("with one menu published the page names it under the restaurant's name and 
     expect(alone.html).toContain(">Dinner menu<");
     expect(alone.html).not.toContain(`aria-label="${en.menu.menusLabel}"`);
   } finally {
-    await openOwner(page, restaurantMenuPath(code, drinks));
-    await press(page, publishing.publish, publishing.spoken.published);
-    await openOwner(page, restaurantMenuPath(code, brunch));
-    await press(page, publishing.publish, publishing.spoken.published);
+    await press(page, drinks, "publish");
+    await press(page, brunch, "publish");
   }
   await expect
     .poll(async () => (await served(page, bare)).html)

@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
 import { pageTitle } from "../../src/copy/title";
@@ -56,6 +56,7 @@ import { US_MAJOR_ALLERGENS } from "../../src/domain/allergens";
 import { ownerEnv, ownerFixture } from "./owner-env";
 import { expectChromeNamesAgree } from "./chrome-names";
 import { hearLog, heard, stopClock } from "./owner-lists";
+import { expectInOrder, expectLayout, pageNav } from "./page-nav";
 import { restaurantName } from "./pages";
 import { expectFlashArrival, flashBanner, setNotice } from "./saved-banner";
 import { expectWrites, guardWrites } from "./write-guard";
@@ -517,13 +518,6 @@ async function openDish(
   await page.waitForLoadState("networkidle");
 }
 
-// The page nav (D-222), named by the dish.
-function pageNav(page: Page, dish: string) {
-  return page
-    .locator("main")
-    .getByRole("navigation", { name: dish, exact: true });
-}
-
 // What the page nav's five links are named on each dish, from the data
 // file: the page's name and, after it, the page's state line. The soup is
 // checked, has no tag, is available with a special's hours, and has no
@@ -589,28 +583,6 @@ async function expectPageNav(page: Page, which: Priced, current: DishPage) {
     } else {
       await expect(link).not.toHaveAttribute("aria-current");
     }
-  }
-}
-
-// Each locator comes after the one before it in the document.
-async function expectInOrder(locators: Locator[], message: string) {
-  for (const [index, locator] of locators.entries()) {
-    await expect(locator).toHaveCount(1);
-    const before = locators[index - 1];
-    if (!before) continue;
-    const next = await locator.elementHandle();
-    expect(
-      await before.evaluate(
-        (element, after) =>
-          after !== null &&
-          Boolean(
-            element.compareDocumentPosition(after) &
-            Node.DOCUMENT_POSITION_FOLLOWING,
-          ),
-        next,
-      ),
-      message,
-    ).toBe(true);
   }
 }
 
@@ -770,84 +742,23 @@ test("a dish's sub page is named for the page, its title names the page first, t
   await expectPageNav(page, "market", "tags");
 });
 
-// D-222's layout: once main has 36rem of room at the root's font size, the
-// page nav takes a left column with the content beside it, their tops
-// level; narrower, one column, the nav under the h1 and the content under
-// the nav, each the width of the other. The break is a container query in
-// rem on main's width, so it follows the root's size however the size was
-// raised, and at the largest text the columns stack wherever the room runs
-// out, in every engine, which is the right reflow; both are measured, at
-// every size, and the room is read the way the query reads it.
-async function expectLayout(page: Page) {
-  const dish = ownerFixture().dishes.sizes.name;
-  const boxes = await page.evaluate((dish) => {
-    const nav = document.querySelector(
-      `main nav[aria-label="${CSS.escape(dish)}"]`,
-    );
-    const h1 = document.querySelector("main h1");
-    const content = nav?.nextElementSibling;
-    const container = nav?.parentElement?.parentElement;
-    if (!nav || !h1 || !content || !container) {
-      throw new Error("the page nav, the h1, or the content is missing");
-    }
-    const box = (element: Element) => {
-      const rect = element.getBoundingClientRect();
-      return {
-        top: rect.top,
-        bottom: rect.bottom,
-        left: rect.left,
-        right: rect.right,
-        width: rect.width,
-      };
-    };
-    return {
-      root: parseFloat(getComputedStyle(document.documentElement).fontSize),
-      width: container.getBoundingClientRect().width,
-      nav: box(nav),
-      h1: box(h1),
-      content: box(content),
-    };
-  }, dish);
-  const wide = boxes.width >= 36 * boxes.root;
-  const where = `${Math.round(boxes.width)}px of room at a ${boxes.root}px root`;
-  expect(
-    boxes.nav.top,
-    `${where}: the nav starts under the h1`,
-  ).toBeGreaterThanOrEqual(boxes.h1.bottom - 0.5);
-  if (wide) {
-    expect(
-      boxes.nav.right,
-      `${where}: the nav ends before the content starts`,
-    ).toBeLessThanOrEqual(boxes.content.left + 0.5);
-    expect(
-      Math.abs(boxes.nav.top - boxes.content.top),
-      `${where}: the nav's and the content's tops are level`,
-    ).toBeLessThanOrEqual(1);
-  } else {
-    expect(
-      boxes.content.top,
-      `${where}: the content starts under the nav`,
-    ).toBeGreaterThanOrEqual(boxes.nav.bottom - 0.5);
-    expect(
-      Math.abs(boxes.nav.width - boxes.content.width),
-      `${where}: the nav spans the content's width`,
-    ).toBeLessThanOrEqual(1);
-  }
-}
-
+// D-222's layout, measured by expectLayout in page-nav.ts, which a menu's
+// pages share (D-224): the nav in a left column once main has 36rem of
+// room, under the h1 below that, at the default and the largest text.
 test(
   "the page nav sits left of the content once main has 36rem of room and under the h1 below that, at the default and the largest text",
   { tag: "@arrival" },
   async ({ page }) => {
     const path = dishPath("sizes", "allergens");
+    const dish = ownerFixture().dishes.sizes.name;
     await open(page, path);
     await page.waitForLoadState("networkidle");
-    await expectLayout(page);
+    await expectLayout(page, dish);
     await setLargestText(page);
     await open(page, path);
     await page.waitForLoadState("networkidle");
     await expectRootAtLargest(page);
-    await expectLayout(page);
+    await expectLayout(page, dish);
   },
 );
 

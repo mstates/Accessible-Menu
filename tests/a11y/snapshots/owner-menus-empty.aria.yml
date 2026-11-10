@@ -16,14 +16,12 @@
         - link "Menus"
       - listitem: Lunch
   - heading "Lunch" [level=1]
-  - region "Publishing":
-    - heading "Publishing" [level=2]
-    - paragraph: Not published yet. Diners do not see this menu.
-    - paragraph: "Publish is waiting on:"
+  - navigation "Lunch":
     - list:
-      - listitem: Lunch has no dishes.
-    - button "Publish"
-    - paragraph: Publish sends this menu's words, prices, allergens, and choices to diners. Availability and specials reach diners on their own, with no Publish.
+      - listitem:
+        - link "Sections"
+      - listitem:
+        - link "Publishing Not published yet"
   - paragraph: Sections are the headings on this menu, like Starters and Mains. Edit dishes opens a section's own page, with its dishes and its note. Each change saves when you leave its field.
   - status: All changes saved
   - paragraph: No sections yet. Add the first one below.

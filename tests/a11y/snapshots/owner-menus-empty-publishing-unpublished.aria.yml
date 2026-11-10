@@ -1,0 +1,43 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+  - status
+- navigation "CI Diner (test restaurant, not real)":
+  - paragraph: CI Diner (test restaurant, not real)
+  - list:
+    - listitem:
+      - link "Details"
+    - listitem:
+      - link "Menus"
+- main:
+  - region "Success":
+    - button "Dismiss this message"
+    - heading "Success" [level=2]
+    - alert: Lunch is unpublished. Diners no longer see it.
+  - navigation "Breadcrumb":
+    - list:
+      - listitem:
+        - link "Menus"
+      - listitem:
+        - link "Lunch"
+  - heading "Publishing" [level=1]
+  - navigation "Lunch":
+    - list:
+      - listitem:
+        - link "Sections"
+      - listitem:
+        - link "Publishing Not published yet"
+  - paragraph: Not published yet. Diners do not see this menu.
+  - heading "What changed" [level=2]
+  - paragraph: Nothing is published yet, and this menu has no dishes yet.
+  - heading "Allergens" [level=2]
+  - paragraph: This menu has no dishes yet.
+  - heading "Publish" [level=2]
+  - paragraph: "Publish is waiting on:"
+  - list:
+    - listitem:
+      - link "Lunch has no dishes."
+  - button "Publish"
+  - paragraph: Publish sends this menu's words, prices, allergens, and choices to diners. Availability and specials reach diners on their own, with no Publish.
+- contentinfo: Accessible Menu
+- alert

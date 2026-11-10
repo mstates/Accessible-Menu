@@ -9,6 +9,7 @@ import {
   restaurantDetailsPath,
   restaurantDishPagePath,
   restaurantDishPath,
+  restaurantMenuPagePath,
   restaurantMenuPath,
   restaurantMenusPath,
   restaurantNewPath,
@@ -731,10 +732,12 @@ function titlesSeen(page: Page): Promise<string[]> {
 }
 
 // Q-51 and D-134: a page that arrives by a link is read by Next's route
-// announcer with its whole title, never its h1 alone, on the six owner
-// pages a restaurant has: Details, Menus, a menu's page, a section's page,
-// a dish's General page, and a dish's Allergens page, reached through the
-// page nav (D-222). The walk reaches each by the link an owner would press,
+// announcer with its whole title, never its h1 alone, on the seven owner
+// pages a restaurant has: Details, Menus, a menu's Sections page and its
+// Publishing page, reached through the menu's page nav (D-224), a
+// section's page, a dish's General page, and a dish's Allergens page,
+// reached through the dish's (D-222). The walk reaches each by the link an
+// owner would press,
 // and comes back to a menu's page and a section's page a second time, at
 // another menu and another section, once the client already knows those
 // routes. After the dashboard's load and after each arrival, the announcer
@@ -779,6 +782,8 @@ for (const pace of ["at once", "after a pause"] as const) {
       const menusPath = restaurantMenusPath(code);
       const menuPage = (menu: { id: string }) =>
         restaurantMenuPath(code, menu.id);
+      const menuSubPage = (menu: { id: string }) =>
+        restaurantMenuPagePath(code, menu.id, "publishing");
       const sectionPage = (section: { id: string }) =>
         restaurantSectionPath(code, section.id);
       const dishPage = (dish: { id: string }) =>
@@ -809,6 +814,21 @@ for (const pace of ["at once", "after a pause"] as const) {
         },
         {
           link: inMain(menuPage(withSections)),
+          path: menuPage(withSections),
+          title: pageTitle(en, withSections.name, restaurant),
+        },
+        // Sections to Publishing by the menu's page nav, and back by the
+        // breadcrumb's link to the menu (D-224): the nav's Sections link
+        // leads to the same address, so the breadcrumb's is the one named.
+        {
+          link: inMain(menuSubPage(withSections)),
+          path: menuSubPage(withSections),
+          title: pageTitle(en, en.owner.publishing.heading, restaurant, [
+            withSections.name,
+          ]),
+        },
+        {
+          link: breadcrumbTo(menuPage(withSections)),
           path: menuPage(withSections),
           title: pageTitle(en, withSections.name, restaurant),
         },

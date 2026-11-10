@@ -7,7 +7,7 @@ import {
   restaurantSectionPath,
 } from "../../src/features/owner/paths";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
-import { hearLog, heard } from "../a11y/owner-lists";
+import { hearLog, heard, listRows } from "../a11y/owner-lists";
 import { chromeName, expectNamedByOneLabel } from "./chrome-name";
 
 // A rename saved with Enter, landed for real against the stand-in (D-140,
@@ -66,7 +66,8 @@ for (const list of lists) {
     const savedTimes = async () =>
       (await heard(page)).filter((said) => said === saved).length;
 
-    const row = page.locator("main ul > li").nth(1);
+    // A row of the list, never an item of a page nav above it (D-224).
+    const row = listRows(page).nth(1);
     const heading = row.getByRole("heading", { level: 2 });
     const field = row.locator('input[id$="-name"]');
     const id = (await field.getAttribute("id")) ?? "";

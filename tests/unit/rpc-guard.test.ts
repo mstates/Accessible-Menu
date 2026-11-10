@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const reads = [
   "menu_publish_states",
+  "menu_snapshot",
   "publish_problems",
   "restaurant_name_by_code",
   "section_dish_counts",

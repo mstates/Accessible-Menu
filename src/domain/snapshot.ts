@@ -39,17 +39,32 @@ const sizeSchema = z.strictObject({
   ...calories,
 });
 
+// A draft may hold a size with no name or no price (D-139): what
+// menu_snapshot() builds from the rows as they are, before Publish has
+// refused anything. It is the one place a draft differs from what was
+// published, so the shape below is built once, from its size.
+const draftSizeSchema = z.strictObject({
+  id: z.uuid(),
+  name: z.string().nullable(),
+  price_cents: z.number().int().nullable(),
+  ...calories,
+});
+
 // A blank one price and a dish by size with no live size both publish as
 // no price shown (D-139).
-export const snapshotPriceSchema = z.discriminatedUnion("kind", [
-  z.strictObject({
-    kind: z.literal("one"),
-    price_cents: z.number().int().nullable(),
-    ...calories,
-  }),
-  z.strictObject({ kind: z.literal("sizes"), sizes: z.array(sizeSchema) }),
-  z.strictObject({ kind: z.literal("market"), ...calories }),
-]);
+function priceOf<Size extends z.ZodType>(size: Size) {
+  return z.discriminatedUnion("kind", [
+    z.strictObject({
+      kind: z.literal("one"),
+      price_cents: z.number().int().nullable(),
+      ...calories,
+    }),
+    z.strictObject({ kind: z.literal("sizes"), sizes: z.array(size) }),
+    z.strictObject({ kind: z.literal("market"), ...calories }),
+  ]);
+}
+
+export const snapshotPriceSchema = priceOf(sizeSchema);
 
 const optionSchema = z.strictObject({
   id: z.uuid(),
@@ -65,33 +80,45 @@ const listSchema = z.strictObject({
   options: z.array(optionSchema).min(1),
 });
 
-const itemSchema = z.strictObject({
-  id: z.uuid(),
-  name: z.string(),
-  description: z.string().nullable(),
-  note: z.string().nullable(),
-  price: snapshotPriceSchema,
-  cooked_to_order: z.boolean(),
-  dietary_tags: z.array(z.enum(DIETARY_TAG_IDS)),
-  allergens: snapshotAllergensSchema,
-  choice_lists: z.array(listSchema),
-});
+// The v1 shape around a size: the published one and the draft's are this
+// same shape, so a key added to one is added to both.
+function shapeOf<Size extends z.ZodType>(size: Size) {
+  const itemSchema = z.strictObject({
+    id: z.uuid(),
+    name: z.string(),
+    description: z.string().nullable(),
+    note: z.string().nullable(),
+    price: priceOf(size),
+    cooked_to_order: z.boolean(),
+    dietary_tags: z.array(z.enum(DIETARY_TAG_IDS)),
+    allergens: snapshotAllergensSchema,
+    choice_lists: z.array(listSchema),
+  });
 
-const sectionSchema = z.strictObject({
-  id: z.uuid(),
-  name: z.string(),
-  note: z.string().nullable(),
-  choice_lists: z.array(listSchema),
-  items: z.array(itemSchema),
-});
+  const sectionSchema = z.strictObject({
+    id: z.uuid(),
+    name: z.string(),
+    note: z.string().nullable(),
+    choice_lists: z.array(listSchema),
+    items: z.array(itemSchema),
+  });
 
-export const menuSnapshotSchema = z.strictObject({
-  v: z.literal(1),
-  menu: z.strictObject({ id: z.uuid(), name: z.string() }),
-  sections: z.array(sectionSchema),
-});
+  return z.strictObject({
+    v: z.literal(1),
+    menu: z.strictObject({ id: z.uuid(), name: z.string() }),
+    sections: z.array(sectionSchema),
+  });
+}
+
+export const menuSnapshotSchema = shapeOf(sizeSchema);
+
+// The draft as menu_snapshot() builds it for the owner's review before
+// Publish (D-224): the same shape, with a size's name and price as the
+// draft holds them. Every published snapshot is also a draft.
+export const menuDraftSchema = shapeOf(draftSizeSchema);
 
 export type MenuSnapshot = z.infer<typeof menuSnapshotSchema>;
+export type MenuDraft = z.infer<typeof menuDraftSchema>;
 export type SnapshotSection = MenuSnapshot["sections"][number];
 export type SnapshotItem = SnapshotSection["items"][number];
 export type SnapshotChoiceList = SnapshotSection["choice_lists"][number];

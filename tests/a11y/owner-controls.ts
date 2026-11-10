@@ -175,21 +175,58 @@ export async function menusControls(page: Page): Promise<Control[]> {
   ];
 }
 
-// A menu's page: Publish, and Unpublish while the menu is published
-// (D-82), then the rows' controls.
+// A menu's Sections page (D-224): the page nav's two links, Sections and
+// Publishing with its state, then the rows' controls. Publish and
+// Unpublish are on the menu's Publishing page.
 export async function menuControls(page: Page): Promise<Control[]> {
   const words = en.owner.sections;
+  return [
+    site,
+    ...nav,
+    ...(await pageNavControls(page)),
+    ...(await rowControls(page, words, "section", words.editDishes)),
+  ];
+}
+
+// A menu's Publishing page (D-224): the breadcrumb's link to the menu, the
+// page nav's two, every line of the review that leads somewhere, read from
+// the page since they follow the data file (a dish or an option whose
+// allergens are not confirmed, and what Publish waits on), then Publish,
+// and Unpublish while the menu is published.
+export async function menuPublishingControls(
+  page: Page,
+  menu: string,
+): Promise<Control[]> {
   const publishing = en.owner.publishing;
   const published =
     (await page
       .getByRole("button", { name: publishing.unpublish, exact: true })
       .count()) > 0;
+  const leads = await page
+    .locator("main ul:not(nav ul) a")
+    .evaluateAll((links) =>
+      links.map((each) => (each.textContent ?? "").replace(/\s+/g, " ").trim()),
+    );
   return [
     site,
     ...nav,
+    link(menu),
+    ...(await pageNavControls(page)),
+    ...leads.map((name) => link(name)),
     button(publishing.publish),
     ...(published ? [button(publishing.unpublish)] : []),
-    ...(await rowControls(page, words, "section", words.editDishes)),
+  ];
+}
+
+// The same after a press that landed (D-231): and the flash's dismiss
+// button (D-219).
+export async function landedMenuPublishingControls(
+  page: Page,
+  menu: string,
+): Promise<Control[]> {
+  return [
+    ...(await menuPublishingControls(page, menu)),
+    button(en.ui.banner.dismiss),
   ];
 }
 

@@ -37,12 +37,16 @@ export async function saveAndLand(
 }
 
 // The summary of the problems a Save found, or of the failure the server
-// answered (D-229): a box named by its heading that takes focus.
-export function summary(page: Page) {
+// answered (D-229): a box named by its heading that takes focus. A dish's
+// form pages name it one way and a menu's Publishing page another (D-231).
+export function summary(
+  page: Page,
+  heading: string = en.owner.dish.form.summary,
+) {
   return page.locator('main [tabindex="-1"]').filter({
     has: page.getByRole("heading", {
       level: 2,
-      name: en.owner.dish.form.summary,
+      name: heading,
       exact: true,
     }),
   });
@@ -55,10 +59,11 @@ export async function saveAndFail(
   page: Page,
   submit: string,
   words: string,
+  heading?: string,
 ): Promise<void> {
   const flashes = await flashBanner(page, "success").count();
   await page.getByRole("button", { name: submit, exact: true }).click();
-  const box = summary(page);
+  const box = summary(page, heading);
   await expect(box.getByText(words, { exact: true })).toHaveCount(1);
   await expect(box, "the summary takes focus").toBeFocused();
   await expect(flashBanner(page, "success")).toHaveCount(flashes);

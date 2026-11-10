@@ -1,0 +1,42 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+  - status
+- navigation "CI Diner (test restaurant, not real)":
+  - paragraph: CI Diner (test restaurant, not real)
+  - list:
+    - listitem:
+      - link "Details"
+    - listitem:
+      - link "Menus"
+- main:
+  - navigation "Breadcrumb":
+    - list:
+      - listitem:
+        - link "Menus"
+      - listitem:
+        - link "Dinner"
+  - heading "Publishing" [level=1]
+  - navigation "Dinner":
+    - list:
+      - listitem:
+        - link "Sections"
+      - listitem:
+        - link "Publishing Published"
+  - paragraph: /Published on \w+ \d+, \d+\. Nothing has changed since\./
+  - heading "What changed" [level=2]
+  - paragraph: Nothing has changed since the last publish.
+  - heading "Allergens" [level=2]
+  - paragraph: "Allergens are not confirmed for these yet. You can still publish. With each one, diners read: \"Allergens not confirmed yet. Ask your server.\""
+  - list:
+    - listitem:
+      - link "Garlic bread in Starters"
+    - listitem:
+      - link "Soup of the day in Mains"
+  - heading "Publish" [level=2]
+  - button "Publish"
+  - button "Unpublish"
+  - paragraph: Publish sends this menu's words, prices, allergens, and choices to diners. Availability and specials reach diners on their own, with no Publish.
+  - paragraph: Unpublish takes this menu away from diners at once.
+- contentinfo: Accessible Menu
+- alert

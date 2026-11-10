@@ -16,13 +16,12 @@
         - link "Menus"
       - listitem: Dinner
   - heading "Dinner" [level=1]
-  - region "Publishing":
-    - heading "Publishing" [level=2]
-    - paragraph: /Published on \w+ \d+, \d+\. Nothing has changed since\./
-    - button "Publish"
-    - button "Unpublish"
-    - paragraph: Publish sends this menu's words, prices, allergens, and choices to diners. Availability and specials reach diners on their own, with no Publish.
-    - paragraph: Unpublish takes this menu away from diners at once.
+  - navigation "Dinner":
+    - list:
+      - listitem:
+        - link "Sections"
+      - listitem:
+        - link "Publishing Published"
   - paragraph: Sections are the headings on this menu, like Starters and Mains. Edit dishes opens a section's own page, with its dishes and its note. Each change saves when you leave its field.
   - status: All changes saved
   - list:

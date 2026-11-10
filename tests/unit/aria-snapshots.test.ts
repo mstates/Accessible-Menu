@@ -53,7 +53,11 @@ const pages = [
   "owner-dishes-sizes-availability",
   "owner-dishes-sizes-availability-saved",
   "owner-menus-empty",
+  "owner-menus-empty-publishing",
+  "owner-menus-empty-publishing-unpublished",
   "owner-menus-with-sections",
+  "owner-menus-with-sections-publishing",
+  "owner-menus-with-sections-publishing-published",
   "owner-sections-empty",
   "owner-sections-with-dishes",
 ];

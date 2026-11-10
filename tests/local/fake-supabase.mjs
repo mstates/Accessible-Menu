@@ -1301,6 +1301,8 @@ const server = http.createServer(async (req, res) => {
         name: params.get("name"),
         sort: 99,
         published: false,
+        published_at: null,
+        published_snapshot: null,
         deleted_at: null,
         created_at: stamp(),
       };
@@ -1624,6 +1626,15 @@ const server = http.createServer(async (req, res) => {
         matches(row, params),
       );
       return respondRows(req, res, rows, params);
+    }
+    // The draft as a Publish would send it now, for the review on a menu's
+    // Publishing page and the press's check (D-224): menu_snapshot() is a
+    // scalar function, so it answers with the bare document, or with null
+    // for a menu that is missing or deleted, never with rows. A read: it
+    // is not counted among the writes.
+    if (path === "/rest/v1/rpc/menu_snapshot" && req.method === "GET") {
+      const p_menu = argument(params, "p_menu");
+      return send(res, 200, menuSnapshot(store(), p_menu));
     }
     if (path === "/rest/v1/rpc/publish_menu" && req.method === "POST") {
       const { p_menu } = await body(req);

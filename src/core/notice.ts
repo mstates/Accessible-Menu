@@ -1,8 +1,9 @@
 // The one-time notice a page load carries as its result (D-211, D-219): a
 // Details save that landed, the return from Checkout, a restaurant the
-// trial could not find, a sign-in that failed before the page loaded. Every
-// one is a real page load, so the result travels in a cookie, never in the
-// address: whoever sends the load writes it (a route handler on the server,
+// trial could not find, a sign-in that failed before the page loaded, a
+// save on one of a dish's form pages (D-229), a Publish or an Unpublish on
+// a menu's Publishing page (D-231). Every one is a real page load, so the
+// result travels in a cookie, never in the address: whoever sends the load writes it (a route handler on the server,
 // or the form in the browser just before it loads the page), the page reads
 // it and renders the flash, and the banner clears it once shown, so a
 // refresh or Back shows nothing.
@@ -43,12 +44,17 @@ export const DISH_NOTICES = [
   "availability-saved",
 ] as const;
 
+// A menu's Publishing page (D-224, D-231), loaded again by the page once a
+// Publish or an Unpublish lands, with its own result.
+export const MENU_NOTICES = ["menu-published", "menu-unpublished"] as const;
+
 export type DetailsNotice = (typeof DETAILS_NOTICES)[number];
 export type DashboardNotice = (typeof DASHBOARD_NOTICES)[number];
 export type SignInNotice = (typeof SIGN_IN_NOTICES)[number];
 export type DishNotice = (typeof DISH_NOTICES)[number];
+export type MenuNotice = (typeof MENU_NOTICES)[number];
 export type NoticeKey =
-  DetailsNotice | DashboardNotice | SignInNotice | DishNotice;
+  DetailsNotice | DashboardNotice | SignInNotice | DishNotice | MenuNotice;
 
 // A page's path, checked before it goes into a cookie string, so nothing
 // but a path can add an attribute.

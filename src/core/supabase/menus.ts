@@ -7,6 +7,12 @@ import type {
   OwnerMenu,
   PublishBlocker,
 } from "@/domain/menu";
+import {
+  menuDraftSchema,
+  menuSnapshotSchema,
+  type MenuDraft,
+  type MenuSnapshot,
+} from "@/domain/snapshot";
 import { shaped } from "./log";
 import { listSectionDishes } from "./sections";
 
@@ -344,10 +350,87 @@ export async function listPublishBlockers(
     if (row.problem === "no_dishes") return { kind: "no-dishes" };
     return {
       kind: row.problem === "size_unnamed" ? "size-unnamed" : "size-unpriced",
+      dishId: row.dish,
       dish: row.dish_name,
       section: row.section_name,
     };
   });
+}
+
+// The draft as a Publish would send it now, from menu_snapshot()
+// (migration 12), for the review on the menu's Publishing page (D-224) and
+// for the check the press makes that the draft is still the one reviewed.
+// The function runs as the caller and only reads, so it goes as a GET
+// (D-199), and row level security decides what it can build. It answers
+// with no document for a menu that is missing, deleted, or not this
+// owner's. The raw value comes back beside the parsed one: the review reads
+// the parsed draft, and the token is made from the document as it arrived.
+// A draft the reader does not know is a failed read, never a guess: the
+// page throws on it and the press reports it.
+export type OwnerMenuDraft = { raw: unknown; snapshot: MenuDraft };
+
+export async function readOwnerMenuDraft(
+  client: SupabaseClient,
+  menuId: string,
+): Promise<OwnerMenuDraft | "not-found" | "failed"> {
+  const { data, error } = await client.rpc(
+    "menu_snapshot",
+    { p_menu: menuId },
+    { get: true },
+  );
+  if (error) return "failed";
+  if (data === null || data === undefined) return "not-found";
+  const snapshot = shaped(menuDraftSchema, data, "rpc/menu_snapshot");
+  return snapshot ? { raw: data as unknown, snapshot } : "failed";
+}
+
+// What is published of one menu, read in one statement so the flag, the
+// time, and the snapshot are of one instant: nothing while the menu is not
+// published, or the time with the snapshot. A published snapshot the v1
+// reader refuses comes back as unreadable, with its time, and never as a
+// failure: the Publishing page must still render, since Publish is what
+// replaces it (Michael, November 10, 2026). The shape miss is logged as any
+// other is. Owners read the three columns and write none of them
+// (migrations 1, 3, and 12).
+export type OwnerMenuPublished = {
+  publishedAt: string;
+  snapshot: MenuSnapshot | "unreadable";
+};
+
+const publishedColumns = "published, published_at, published_snapshot";
+
+const publishedSchema = z.object({
+  published: z.boolean(),
+  published_at: z.string().nullable(),
+  published_snapshot: z.unknown(),
+});
+
+export async function readOwnerMenuPublished(
+  client: SupabaseClient,
+  restaurantId: string,
+  menuId: string,
+): Promise<OwnerMenuPublished | null | "not-found" | "failed"> {
+  const { data, error } = await client
+    .from("menus")
+    .select(publishedColumns)
+    .eq("id", menuId)
+    .eq("restaurant_id", restaurantId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) return "failed";
+  if (!data) return "not-found";
+  const row = shaped(publishedSchema, data, "menus");
+  if (!row) return "failed";
+  if (!row.published || row.published_at === null) return null;
+  const snapshot = shaped(
+    menuSnapshotSchema,
+    row.published_snapshot,
+    "menus.published_snapshot",
+  );
+  return {
+    publishedAt: row.published_at,
+    snapshot: snapshot ?? "unreadable",
+  };
 }
 
 export type PublishError =

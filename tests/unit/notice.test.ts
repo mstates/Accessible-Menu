@@ -4,6 +4,7 @@ import {
   DASHBOARD_NOTICES,
   DETAILS_NOTICES,
   DISH_NOTICES,
+  MENU_NOTICES,
   NOTICE_COOKIE,
   noticeCookie,
   readNotice,
@@ -13,6 +14,7 @@ import {
   dashboardPath,
   restaurantDetailsPath,
   restaurantDishPagePath,
+  restaurantMenuPagePath,
   signInPath,
 } from "../../src/features/owner/paths";
 
@@ -62,6 +64,16 @@ describe("the notice cookie (D-211, D-219)", () => {
     ).toBe(
       `notice=allergens-saved; Path=/app/restaurants/12345678/dishes/${dish}/allergens; Max-Age=60; SameSite=Lax`,
     );
+    // A menu's Publishing page (D-231): the path of the page a landed
+    // press loads again, so the notice reaches no other page.
+    const menu = "9d7e6c5b-aaaa-4bbb-8ccc-ddddeeeeffff";
+    const publishing = restaurantMenuPagePath("12345678", menu, "publishing");
+    expect(noticeCookie("menu-published", publishing)).toBe(
+      `notice=menu-published; Path=/app/restaurants/12345678/menus/${menu}/publishing; Max-Age=60; SameSite=Lax`,
+    );
+    expect(noticeCookie("menu-unpublished", publishing)).toBe(
+      `notice=menu-unpublished; Path=/app/restaurants/12345678/menus/${menu}/publishing; Max-Age=60; SameSite=Lax`,
+    );
   });
 
   it("takes only a path, so nothing else reaches the cookie string", () => {
@@ -100,6 +112,19 @@ describe("the notice cookie (D-211, D-219)", () => {
       "tags-saved",
       "availability-saved",
     ]);
+    expect(MENU_NOTICES).toEqual(["menu-published", "menu-unpublished"]);
+  });
+
+  it("holds eleven results in all, each key one page's alone", () => {
+    const every = [
+      ...DETAILS_NOTICES,
+      ...DASHBOARD_NOTICES,
+      ...SIGN_IN_NOTICES,
+      ...DISH_NOTICES,
+      ...MENU_NOTICES,
+    ];
+    expect(every).toHaveLength(11);
+    expect(new Set(every).size).toBe(every.length);
   });
 });
 
@@ -139,6 +164,17 @@ describe("the notice's read, of a Cookie header or document.cookie", () => {
     expect(readNotice("notice=checkout-success", SIGN_IN_NOTICES)).toBe(null);
     expect(readNotice("notice=checkout-success", DETAILS_NOTICES)).toBe(null);
     expect(readNotice("notice=sign-in-link", DASHBOARD_NOTICES)).toBe(null);
+    expect(readNotice("notice=allergens-saved", MENU_NOTICES)).toBe(null);
+  });
+
+  it("finds a menu's Publish and its Unpublish, each by its own key (D-231)", () => {
+    expect(readNotice("sb-auth=abc; notice=menu-published", MENU_NOTICES)).toBe(
+      "menu-published",
+    );
+    expect(readNotice("notice=menu-unpublished", MENU_NOTICES)).toBe(
+      "menu-unpublished",
+    );
+    expect(readNotice("notice=menu-published", DISH_NOTICES)).toBe(null);
   });
 
   it("finds the page's own among two notices, whichever comes first", () => {

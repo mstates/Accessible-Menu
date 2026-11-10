@@ -11,6 +11,7 @@ import { open, pageChecks } from "./checks";
 import { ownerEnv, ownerFixture } from "./owner-env";
 import { breadcrumbMarks, menuControls } from "./owner-controls";
 import { listRowChecks } from "./owner-lists";
+import { expectInOrder, pageNav } from "./page-nav";
 import { restaurantName } from "./pages";
 import { guardWrites } from "./write-guard";
 
@@ -71,11 +72,11 @@ listRowChecks({
   path: sectionsPath,
   h1: () => ownerFixture().withSections.name,
   // The name field and Move up, Move down, and Delete; the add field and
-  // Add, and, above them, Publish and Unpublish, since the menu with
-  // sections is published (D-82, migration 12). A section's note is on its
-  // own page (D-135), so its row is the row every list has.
+  // Add. Publish and Unpublish are on the menu's Publishing page (D-224).
+  // A section's note is on its own page (D-135), so its row is the row
+  // every list has.
   rowControls: 4,
-  pageControls: 4,
+  pageControls: 2,
   rowLink: {
     label: strings.editDishes,
     target: () => {
@@ -123,7 +124,13 @@ function menusCrumb(page: Page) {
   return breadcrumb(page).getByRole("link", { name: nav.menus, exact: true });
 }
 
-test("a menu's page is named for its menu, the nav marks Menus as the part it sits in, and the breadcrumb is the way back", async ({
+// A menu's Sections page (D-224): the menu's own address, named for the
+// menu as it has always been, now the first of the menu's two pages. The
+// page nav, named by the menu, marks Sections as the current page; the
+// breadcrumb above the h1 still ends with the menu as text. What the nav's
+// two links are named, where they lead, and the layout are checked on both
+// pages in owner-publishing.spec.ts.
+test("a menu's Sections page is named for its menu, the nav marks Menus as the part it sits in, the breadcrumb is the way back, and the page nav marks Sections", async ({
   page,
 }) => {
   const { withSections } = ownerFixture();
@@ -142,10 +149,38 @@ test("a menu's page is named for its menu, the nav marks Menus as the part it si
   ).toHaveAttribute("aria-current", "true");
   await expect(marked).toHaveText(nav.menus);
   await expect(marked).toHaveAttribute("href", menusPath);
+  const current = page.locator('a[aria-current="page"]');
   await expect(
-    page.locator('a[aria-current="page"]'),
-    "no link points to this page, so none says it is the current page",
+    current,
+    "one link says it is the current page, the page nav's Sections",
+  ).toHaveCount(1);
+  await expect(current).toHaveText(en.owner.menuPages.sections);
+  await expect(
+    pageNav(page, withSections.name).locator('a[aria-current="page"]'),
+    "and it is in the page nav",
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole("region", {
+      name: en.owner.publishing.heading,
+      exact: true,
+    }),
+    "the Publishing group has left this page",
   ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", {
+      name: en.owner.publishing.publish,
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expectInOrder(
+    [
+      breadcrumb(page),
+      page.locator("main h1"),
+      pageNav(page, withSections.name),
+      page.locator("main").getByText(strings.lead, { exact: true }),
+    ],
+    "the breadcrumb, the h1, the page nav, then the lead",
+  );
 
   await expect(breadcrumb(page)).toHaveCount(1);
   await expect(

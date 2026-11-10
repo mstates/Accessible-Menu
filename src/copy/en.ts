@@ -372,13 +372,26 @@ export const en = {
       deletePublished:
         "It is published. Deleting it takes it away from diners at once.",
     },
-    // Publish and Unpublish for one menu (D-82, migration 12), at the top of
-    // the menu's own page, and the dashboard's summary of a restaurant's
+    // A menu's pages (D-224): Sections first, at the menu's own address,
+    // then Publishing. The state words sit inside the Publishing link,
+    // after its name, so the link's name says the page and where it stands:
+    // "Publishing Changes not yet published". Sections has no state line.
+    menuPages: {
+      sections: "Sections",
+      state: {
+        notPublished: "Not published yet",
+        published: "Published",
+        changed: "Changes not yet published",
+      },
+    },
+    // Publish and Unpublish for one menu (D-82, migration 12), on the menu's
+    // Publishing page (D-224), and the dashboard's summary of a restaurant's
     // menus. Publish sends the menu's content to diners as a snapshot; a
     // sold-out mark and a special's schedule reach diners on their own
     // (D-84). A size with no name or no price blocks Publish (D-139), and
     // so does a menu with no dishes in any of its sections (D-177), which
-    // the list names by the menu alone.
+    // the list names by the menu alone. The heading is the page's name: its
+    // h1, its nav item, and the first part of its title.
     publishing: {
       heading: "Publishing",
       state: {
@@ -399,7 +412,6 @@ export const en = {
       publishHint:
         "Publish sends this menu's words, prices, allergens, and choices to diners. Availability and specials reach diners on their own, with no Publish.",
       unpublishHint: "Unpublish takes this menu away from diners at once.",
-      spoken: { published: "Published.", unpublished: "Unpublished." },
       refused: {
         sizeUnnamed:
           "{menu} was not published. {dish} has a size with no name. Name it or remove it, then publish again.",
@@ -412,6 +424,89 @@ export const en = {
         notUnpublishedGone:
           "{menu} was not unpublished. It is not there any more.",
         notUnpublished: "{menu} was not unpublished.",
+        // The draft is not the one the page reviewed: an edit landed after
+        // the page loaded, in another tab or by another person.
+        moved:
+          "{menu} changed since this page showed it, so nothing was published. Reload the page to read what changed, then publish again.",
+      },
+      // The heading of the box a refused press focuses (D-229's summary,
+      // D-231), and of the area that holds the two buttons.
+      problemHeading: "There is a problem",
+      actionsHeading: "Publish",
+      // The flash a landed press brings with the page loaded again (D-219,
+      // D-231), naming the menu.
+      flash: {
+        published: "{menu} is published.",
+        unpublished: "{menu} is unpublished. Diners no longer see it.",
+      },
+      // The review before Publish (D-224, Q-150): what changed since the
+      // last publish, as counts, one sentence a kind of change. A menu that
+      // is not published has nothing to compare with, so it says what
+      // Publish would show. The last sentence stands for a difference no
+      // other sentence names, so a changed menu never reads as unchanged.
+      review: {
+        heading: "What changed",
+        first:
+          "Nothing is published yet. Publishing shows diners the whole menu: {sections} and {dishes}.",
+        firstEmpty:
+          "Nothing is published yet, and this menu has no dishes yet.",
+        none: "Nothing has changed since the last publish.",
+        sectionCount: {
+          one: "{count} section",
+          other: "{count} sections",
+        },
+        dishCount: {
+          one: "{count} dish",
+          other: "{count} dishes",
+        },
+        dishesAdded: {
+          one: "{count} dish added.",
+          other: "{count} dishes added.",
+        },
+        dishesChanged: {
+          one: "{count} dish changed.",
+          other: "{count} dishes changed.",
+        },
+        dishesMoved: {
+          one: "{count} dish moved to another section.",
+          other: "{count} dishes moved to another section.",
+        },
+        dishesRemoved: {
+          one: "{count} dish taken off.",
+          other: "{count} dishes taken off.",
+        },
+        dishesReordered: "The order of dishes changed.",
+        sectionsAdded: {
+          one: "{count} section added.",
+          other: "{count} sections added.",
+        },
+        sectionsChanged: {
+          one: "{count} section changed.",
+          other: "{count} sections changed.",
+        },
+        sectionsRemoved: {
+          one: "{count} section taken off.",
+          other: "{count} sections taken off.",
+        },
+        sectionsReordered: "The order of sections changed.",
+        menuRenamed: "The menu's name changed.",
+        other: "Something else on this menu changed.",
+      },
+      // The dishes and the options whose allergen list is not confirmed
+      // (D-224, D-166), each a link to the page where its check is. Nothing
+      // here blocks Publish: the lead says what the list is, then that the
+      // menu can still be published, then the sentence diners read, which
+      // comes from domain/allergens.ts. A menu with no dishes never reads
+      // as all confirmed (D-177).
+      unconfirmed: {
+        heading: "Allergens",
+        lead: "Allergens are not confirmed for these yet. You can still publish. With each one, diners read: {sentence}",
+        dish: "{dish} in {section}",
+        option: "{option} in {place}",
+        allDishes: "Every dish on this menu has its allergens confirmed.",
+        allDishesAndOptions:
+          "Every dish and every option on this menu has its allergens confirmed.",
+        noDishes: "This menu has no dishes yet.",
       },
       summary: {
         none: "No menu is published yet.",

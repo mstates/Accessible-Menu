@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  menuDraftSchema,
   menuSnapshotSchema,
   SNAPSHOT_NEVER_HOLDS,
   snapshotKeys,
@@ -181,6 +182,57 @@ describe("the published snapshot (migration 12, D-82)", () => {
   });
 });
 
+// The draft as menu_snapshot() builds it for the review before Publish
+// (D-224): the same v1 shape, but a size may have no name or no price yet
+// (D-139), which is the one thing a published snapshot never holds.
+describe("the draft's reader (D-224)", () => {
+  function soupSizes(document: unknown): Record<string, unknown>[] {
+    const sections = (document as MenuSnapshot).sections;
+    const soup = sections[0]?.items.find((i) => i.name === "Soup of the day");
+    if (!soup || soup.price.kind !== "sizes") throw new Error("no soup");
+    return soup.price.sizes as Record<string, unknown>[];
+  }
+
+  it("reads everything a published snapshot holds", () => {
+    expect(menuDraftSchema.parse(fixture)).toEqual(dinner());
+  });
+
+  it("takes a size with no name, a size with no price, and a size with neither", () => {
+    for (const blank of [
+      { name: null },
+      { price_cents: null },
+      { name: null, price_cents: null },
+    ]) {
+      const draft = structuredClone(fixture);
+      Object.assign(soupSizes(draft)[0] ?? {}, blank);
+      expect(
+        menuDraftSchema.safeParse(draft).success,
+        JSON.stringify(blank),
+      ).toBe(true);
+      expect(menuSnapshotSchema.safeParse(draft).success).toBe(false);
+    }
+  });
+
+  it("refuses what the published reader refuses otherwise: another version, a key it does not know, a list with no option", () => {
+    expect(
+      menuDraftSchema.safeParse({ ...(fixture as object), v: 2 }).success,
+    ).toBe(false);
+    const extra = structuredClone(fixture) as Record<string, unknown>;
+    extra.published_at = "2026-10-12T00:00:00Z";
+    expect(menuDraftSchema.safeParse(extra).success).toBe(false);
+    const stamped = structuredClone(fixture);
+    (soupSizes(stamped)[0] ?? {}).updated_at = "2026-10-12T00:00:00Z";
+    expect(menuDraftSchema.safeParse(stamped).success).toBe(false);
+    const empty = structuredClone(dinner());
+    const salad = empty.sections[0]?.items.find(
+      (i) => i.name === "House salad",
+    );
+    if (!salad) throw new Error("no salad");
+    salad.choice_lists[0]!.options = [];
+    expect(menuDraftSchema.safeParse(empty).success).toBe(false);
+  });
+});
+
 // The stand-in's builder (tests/local/menu-snapshot.mjs) writes the same
 // shape over the stand-in's rows, which mirror CI Diner's, so the local
 // checks press a Publish that means what the database's does.
@@ -251,6 +303,10 @@ describe("the stand-in's snapshot builder", () => {
       menuSnapshotSchema.safeParse(menuSnapshot(withBlank, dinnerId)).success,
       "a snapshot with a blank size is one the schema refuses, which is why Publish refuses first",
     ).toBe(false);
+    expect(
+      menuDraftSchema.safeParse(menuSnapshot(withBlank, dinnerId)).success,
+      "the same document is a draft the review can read (D-224)",
+    ).toBe(true);
   });
 
   it("reports a menu with no dishes once, by the menu, with no sections, a section with no dish, or only deleted dishes, and nothing for a dish off the menu or past its schedule (D-177)", () => {

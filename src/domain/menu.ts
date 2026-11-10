@@ -44,9 +44,16 @@ export type MenuPublishState = {
 // no name or no price under a live dish by size (D-139, D-144), named by
 // the dish and its section, in the order the pages show them; or the menu
 // itself, with no live dish in any of its sections (D-177, migration 14),
-// which the page names since it knows its menu.
+// which the page names since it knows its menu. A size's row carries its
+// dish's id, so the Publishing page can link to the page that fixes it
+// (D-224).
 export type PublishBlocker =
-  | { kind: "size-unnamed" | "size-unpriced"; dish: string; section: string }
+  | {
+      kind: "size-unnamed" | "size-unpriced";
+      dishId: string;
+      dish: string;
+      section: string;
+    }
   | { kind: "no-dishes" };
 
 // Also a table constraint in the database (migration 3), which is the

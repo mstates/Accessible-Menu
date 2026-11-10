@@ -21,11 +21,11 @@ import { expectWrites } from "./write-guard";
 
 const editing = en.owner.editing;
 
-// The row list's items. The menu's page also lists what blocks Publish,
-// inside the Publishing region (D-171, D-177), so a list inside a section
-// is left out.
+// The row list's items. A page that sits under a page nav (D-222), a
+// menu's Sections page, also holds the nav's list of links, so a list
+// inside a nav is left out.
 export function listRows(page: Page) {
-  return page.locator("main ul:not(section ul) > li");
+  return page.locator("main ul:not(nav ul) > li");
 }
 
 function savedStatus(page: Page) {

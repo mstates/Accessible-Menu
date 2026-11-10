@@ -34,6 +34,18 @@ export function restaurantMenuPath(code: string, menuId: string): string {
   return `${restaurantMenusPath(code)}/${menuId}`;
 }
 
+// A menu's other page (D-224): Publishing, under the menu's own address.
+// Sections is the menu's own address.
+export type MenuPageSlug = "publishing";
+
+export function restaurantMenuPagePath(
+  code: string,
+  menuId: string,
+  slug: MenuPageSlug,
+): string {
+  return `${restaurantMenuPath(code, menuId)}/${slug}`;
+}
+
 // One section's own page, where its dishes are edited (D-128). The section
 // is named by its id, and the address does not name its menu, so the page
 // stays where it is when the section moves to another menu (D-129).

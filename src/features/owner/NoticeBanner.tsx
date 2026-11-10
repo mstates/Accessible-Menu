@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Copy } from "@/copy";
+import { fill } from "@/copy/fill";
 import { clearedNoticeCookie, readNotice, type NoticeKey } from "@/core/notice";
 import { Banner, type BannerKind } from "@/ui/Banner";
 
@@ -12,6 +13,9 @@ type Props = {
   path: string;
   // The page's heading, where focus goes when the flash is dismissed.
   headingId: string;
+  // The menu a Publish or an Unpublish landed on, which its words name
+  // (D-231).
+  menu?: string;
   className?: string;
 };
 
@@ -22,6 +26,7 @@ type Props = {
 function result(
   copy: Copy,
   notice: NoticeKey,
+  menu: string,
 ): { kind: BannerKind; words: string } {
   switch (notice) {
     case "details-saved":
@@ -42,6 +47,16 @@ function result(
       return { kind: "success", words: copy.owner.dish.tags.saved };
     case "availability-saved":
       return { kind: "success", words: copy.owner.dish.availability.saved };
+    case "menu-published":
+      return {
+        kind: "success",
+        words: fill(copy.owner.publishing.flash.published, { menu }),
+      };
+    case "menu-unpublished":
+      return {
+        kind: "success",
+        words: fill(copy.owner.publishing.flash.unpublished, { menu }),
+      };
   }
 }
 
@@ -75,6 +90,7 @@ export function NoticeBanner({
   notice,
   path,
   headingId,
+  menu = "",
   className,
 }: Props) {
   const ref = useRef<HTMLElement>(null);
@@ -101,7 +117,7 @@ export function NoticeBanner({
   }, [headingId]);
 
   if (!shown) return null;
-  const { kind, words } = result(copy, notice);
+  const { kind, words } = result(copy, notice, menu);
   return (
     <Banner
       ref={ref}
