@@ -9,7 +9,7 @@ import { labelShape } from "./label-shape";
 // pageChecks in checks.ts runs it on every page the gate visits, in
 // Chromium only, since only Chromium speaks the protocol.
 //
-// Three readings for every control:
+// Four readings for every control:
 //
 // The name. Chrome's computed name must be Playwright's, with runs of
 // white space read as one space.
@@ -32,8 +32,13 @@ import { labelShape } from "./label-shape";
 // the whole name as one clipped text node that begins with those words;
 // for a Select's button, a comma and the button's own visible value follow
 // them (D-195).
+//
+// And the description's pieces. Each element Chrome lists as describing a
+// control is listed once, and no two of them hold the same words: a hint
+// tied by the field and again by something around it would be read twice,
+// and while a field is invalid its problem alone describes it (D-230).
 
-type Reading = "name" | "label pieces" | "one node";
+type Reading = "name" | "label pieces" | "one node" | "description pieces";
 
 export type Allowed = {
   // The page, by its path and query.
@@ -71,7 +76,7 @@ const CONTROLS = new Set([
   "menuitemradio",
 ]);
 
-type Related = { backendDOMNodeId: number };
+type Related = { backendDOMNodeId: number; idref?: string; text?: string };
 type AXNode = {
   ignored: boolean;
   role?: { value?: unknown };
@@ -249,6 +254,36 @@ export async function expectChromeNamesAgree(page: Page): Promise<void> {
             }; the page holds ${JSON.stringify(shape.pieces)} and Chrome names it "${chrome}"`,
           );
         }
+      }
+
+      // The description's pieces, each once (D-230).
+      const describers =
+        node.properties?.find((property) => property.name === "describedby")
+          ?.value.relatedNodes ?? [];
+      const nodesSeen = new Set<number>();
+      const wordsSeen = new Set<string>();
+      for (const describer of describers) {
+        const words = collapse(describer.text ?? "");
+        if (
+          nodesSeen.has(describer.backendDOMNodeId) &&
+          !allowed(path, role, "description pieces", chrome, words)
+        ) {
+          problems.push(
+            `${role} "${chrome}": described by the same element twice${
+              describer.idref ? `, #${describer.idref}` : ""
+            }`,
+          );
+        } else if (
+          words !== "" &&
+          wordsSeen.has(words) &&
+          !allowed(path, role, "description pieces", chrome, words)
+        ) {
+          problems.push(
+            `${role} "${chrome}": described twice by the words "${words}"`,
+          );
+        }
+        nodesSeen.add(describer.backendDOMNodeId);
+        wordsSeen.add(words);
       }
     }
   } finally {

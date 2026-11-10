@@ -7,11 +7,11 @@ import {
   RadioButton,
   RadioField,
   RadioGroup as AriaRadioGroup,
-  Text,
   type RadioFieldProps,
   type RadioGroupProps,
 } from "react-aria-components";
 import { fieldDescription } from "./field-description";
+import { FieldHint } from "./FieldHint";
 
 type GroupProps = Omit<RadioGroupProps, "children"> & {
   // The group's visible label, or none when a heading names the group
@@ -26,7 +26,8 @@ type GroupProps = Omit<RadioGroupProps, "children"> & {
 // Group semantics, the arrow keys, and the error wiring come from React
 // Aria. A description may come and go with the choice, as market price's
 // sentence does, and React Aria ties it to the group and each radio while
-// it shows (D-147).
+// it shows (D-147). While the group is invalid it and its radios are
+// described by its problem alone, the hint still shown (FieldHint, D-230).
 export function RadioGroup({
   label,
   description,
@@ -40,14 +41,23 @@ export function RadioGroup({
       {...fieldDescription(description)}
       className="flex flex-col gap-2"
     >
-      {label ? <Label className="font-semibold">{label}</Label> : null}
-      {description ? (
-        <Text slot="description" className="text-sm text-foreground-muted">
-          {description}
-        </Text>
-      ) : null}
-      {children}
-      <FieldError className="text-sm font-semibold">{errorMessage}</FieldError>
+      {({ isInvalid }) => (
+        <>
+          {label ? <Label className="font-semibold">{label}</Label> : null}
+          {description ? (
+            <FieldHint
+              isInvalid={isInvalid}
+              className="text-sm text-foreground-muted"
+            >
+              {description}
+            </FieldHint>
+          ) : null}
+          {children}
+          <FieldError className="text-sm font-semibold">
+            {errorMessage}
+          </FieldError>
+        </>
+      )}
     </AriaRadioGroup>
   );
 }
@@ -67,37 +77,43 @@ type ItemProps = Omit<RadioFieldProps, "children"> & {
 // ids the caller ties as well, the caller's first, then the hint's, then
 // the group's. It finds the hint through a ref on the slotted Text, so the
 // tie would follow a hint that came or went; every caller's hint is fixed
-// for as long as its radio exists. The field draws no box of its own
-// (contents), so the label and the hint sit in the group's column as two
-// items, as they did before the field. The chosen state is a dot drawn in
+// for as long as its radio exists. While the radio is invalid its hint
+// stays shown and is not tied, so its problem alone describes it
+// (FieldHint, D-230). The field draws no box of its own (contents), so the
+// label and the hint sit in the group's column as two items, as they did
+// before the field. The chosen state is a dot drawn in
 // currentColor inside a round box with an edge, not a fill alone, so it
 // survives forced colors, the way the Checkbox's check mark does.
 export function Radio({ children, description, ...props }: ItemProps) {
   return (
     <RadioField {...props} className="contents">
-      <RadioButton className="group flex items-start gap-3 py-1">
-        <span
-          aria-hidden="true"
-          className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border bg-background group-data-[focus-visible]:outline-3 group-data-[focus-visible]:outline-offset-2 group-data-[focus-visible]:outline-focus"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            className="size-3 opacity-0 group-data-[selected]:opacity-100"
-            fill="currentColor"
-          >
-            <circle cx="12" cy="12" r="12" />
-          </svg>
-        </span>
-        <span className="min-w-0">{children}</span>
-      </RadioButton>
-      {description ? (
-        <Text
-          slot="description"
-          className="-mt-1 pl-9 text-sm text-foreground-muted"
-        >
-          {description}
-        </Text>
-      ) : null}
+      {({ isInvalid }) => (
+        <>
+          <RadioButton className="group flex items-start gap-3 py-1">
+            <span
+              aria-hidden="true"
+              className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border bg-background group-data-[focus-visible]:outline-3 group-data-[focus-visible]:outline-offset-2 group-data-[focus-visible]:outline-focus"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className="size-3 opacity-0 group-data-[selected]:opacity-100"
+                fill="currentColor"
+              >
+                <circle cx="12" cy="12" r="12" />
+              </svg>
+            </span>
+            <span className="min-w-0">{children}</span>
+          </RadioButton>
+          {description ? (
+            <FieldHint
+              isInvalid={isInvalid}
+              className="-mt-1 pl-9 text-sm text-foreground-muted"
+            >
+              {description}
+            </FieldHint>
+          ) : null}
+        </>
+      )}
     </RadioField>
   );
 }

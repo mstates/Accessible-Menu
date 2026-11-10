@@ -321,10 +321,12 @@ describe("naming each field in an error (D-105)", () => {
     if (result.success) return;
     expect(fieldErrors(result.error.issues, strings)).toEqual({
       name: errors.nameRequired,
-      "hours.mon.1.open": "Add am or pm to the time Monday opens again.",
+      "hours.mon.1.open":
+        "Add am or pm to the time Monday opens again, like 11 am or 5:30 pm.",
       "hours.mon.1.close":
         "Enter the time Monday closes again, like 11 am, 5:30 pm, or 17:30.",
-      "hours.tue.0.close": "Tuesday needs both an opening and a closing time.",
+      "hours.tue.0.close":
+        "Tuesday needs both an opening and a closing time, like 11 am to 9 pm.",
       "hours.wed": "Wednesday has times that overlap.",
     });
   });
@@ -356,9 +358,12 @@ describe("the errors a checked day takes off the page (D-124)", () => {
   const all = {
     name: "Add the restaurant's name.",
     "hours.mon": "Monday opens and closes at the same time.",
-    "hours.mon.0.open": "Add am or pm to the time Monday opens.",
-    "hours.mon.1.close": "Monday needs both an opening and a closing time.",
-    "hours.tue.0.open": "Add am or pm to the time Tuesday opens.",
+    "hours.mon.0.open":
+      "Add am or pm to the time Monday opens, like 11 am or 5:30 pm.",
+    "hours.mon.1.close":
+      "Monday needs both an opening and a closing time, like 11 am to 9 pm.",
+    "hours.tue.0.open":
+      "Add am or pm to the time Tuesday opens, like 11 am or 5:30 pm.",
     "hours.sun": "Sunday has times that overlap.",
   };
 

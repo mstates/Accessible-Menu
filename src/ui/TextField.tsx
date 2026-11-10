@@ -1,16 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import {
   TextField as AriaTextField,
   FieldError,
   Input,
   Label,
-  Text,
   TextArea,
   type TextFieldProps,
 } from "react-aria-components";
 import { fieldDescription } from "./field-description";
+import { FieldHint } from "./FieldHint";
 import { OneNode } from "./OneNode";
 
 type Props = TextFieldProps & {
@@ -20,6 +20,10 @@ type Props = TextFieldProps & {
   // Dinner", as one node (D-140, D-193).
   labelSuffix?: string;
   description?: string;
+  // The id of a hint shown elsewhere and shared by several fields, the
+  // hours grid's (D-105): tied after the caller's own ids while the field
+  // is valid, and left out while it is invalid (D-230).
+  hintId?: string;
   errorMessage?: string;
   multiline?: boolean;
   // Text shown beside the input and hidden from assistive technology, the
@@ -54,16 +58,34 @@ const inputClassName =
 // still has focus, after Enter, and Chrome reads a focused field again when
 // its name changes, which drowned out the polite "Saved." (D-140). So the
 // node holds the whole name focus arrived with, as one string.
+//
+// While the field is invalid it is described by its problem alone, and its
+// hint stays on screen (D-230, Q-157): VoiceOver on iOS reads a field's
+// description, and again as its hint after the value, so a hint tied beside
+// the problem was read with it each time. Its own hint leaves React Aria's
+// description slot (FieldHint), and a hint shared by id is left out of the
+// ids handed over. Validity for the shared one is the caller's isInvalid,
+// or React Aria's own, reported up from its render props before paint, since
+// an error the server sent through the Form makes a field invalid with no
+// prop saying so, and React Aria clears it once the owner changes the field
+// and leaves it.
 export function TextField({
   label,
   labelSuffix,
   description,
+  hintId,
   errorMessage,
   multiline = false,
   prefix,
   ...props
 }: Props) {
   const [held, setHeld] = useState<string | null>(null);
+  const [reported, setReported] = useState(false);
+  const invalid = props.isInvalid === true || reported;
+  const describedBy =
+    [props["aria-describedby"], invalid ? undefined : hintId]
+      .filter(Boolean)
+      .join(" ") || undefined;
   const whole = labelSuffix ? (held ?? `${label} ${labelSuffix}`) : null;
   const required = props.isRequired ? <span aria-hidden="true"> *</span> : null;
   const input = multiline ? (
@@ -74,6 +96,7 @@ export function TextField({
   return (
     <AriaTextField
       {...props}
+      aria-describedby={describedBy}
       {...fieldDescription(description)}
       onFocusChange={(focused) => {
         setHeld(focused && labelSuffix ? `${label} ${labelSuffix}` : null);
@@ -81,26 +104,53 @@ export function TextField({
       }}
       className="flex flex-col gap-1"
     >
-      <Label className="font-semibold">
-        {whole === null ? label : <OneNode visible={label} whole={whole} />}
-        {required}
-      </Label>
-      {prefix ? (
-        <div className="flex items-center gap-2">
-          <span aria-hidden="true" className="font-semibold">
-            {prefix}
-          </span>
-          {input}
-        </div>
-      ) : (
-        input
+      {({ isInvalid }) => (
+        <>
+          {hintId ? (
+            <Validity isInvalid={isInvalid} onChange={setReported} />
+          ) : null}
+          <Label className="font-semibold">
+            {whole === null ? label : <OneNode visible={label} whole={whole} />}
+            {required}
+          </Label>
+          {prefix ? (
+            <div className="flex items-center gap-2">
+              <span aria-hidden="true" className="font-semibold">
+                {prefix}
+              </span>
+              {input}
+            </div>
+          ) : (
+            input
+          )}
+          {description ? (
+            <FieldHint
+              isInvalid={isInvalid}
+              className="text-sm text-foreground-muted"
+            >
+              {description}
+            </FieldHint>
+          ) : null}
+          <FieldError className="text-sm font-semibold">
+            {errorMessage}
+          </FieldError>
+        </>
       )}
-      {description ? (
-        <Text slot="description" className="text-sm text-foreground-muted">
-          {description}
-        </Text>
-      ) : null}
-      <FieldError className="text-sm font-semibold">{errorMessage}</FieldError>
     </AriaTextField>
   );
+}
+
+// React Aria's validity, handed up to the field before paint, so a hint
+// shared by id is untied while the field is invalid (D-230).
+function Validity({
+  isInvalid,
+  onChange,
+}: {
+  isInvalid: boolean;
+  onChange: (invalid: boolean) => void;
+}) {
+  useLayoutEffect(() => {
+    onChange(isInvalid);
+  }, [isInvalid, onChange]);
+  return null;
 }

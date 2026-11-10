@@ -54,6 +54,7 @@ import {
 } from "../../src/features/owner/allergens/allergen-words";
 import { US_MAJOR_ALLERGENS } from "../../src/domain/allergens";
 import { ownerEnv, ownerFixture } from "./owner-env";
+import { expectChromeNamesAgree } from "./chrome-names";
 import { hearLog, heard, stopClock } from "./owner-lists";
 import { restaurantName } from "./pages";
 import { expectFlashArrival, flashBanner, setNotice } from "./saved-banner";
@@ -1256,9 +1257,13 @@ test("calories in the wrong shape are refused in the field with nothing sent, sa
   await page.keyboard.press("Enter");
   const refused = `${fill(strings.notSaved.calories, { dish: dishes.one.name })} ${strings.errors.caloriesFormat}`;
   await expect(calories).toHaveAttribute("aria-invalid", "true");
-  await expect(calories).toHaveAccessibleDescription(
-    `${strings.price.caloriesHint} ${strings.errors.caloriesFormat}`,
-  );
+  await expect(
+    calories,
+    "the problem alone while it stands, the hint still shown (D-230)",
+  ).toHaveAccessibleDescription(strings.errors.caloriesFormat);
+  await expect(
+    page.getByText(strings.price.caloriesHint, { exact: true }),
+  ).toBeVisible();
   await expect(savedStatus(page)).toHaveText(refused);
   await expect(log(page).getByText(refused, { exact: true })).toHaveCount(1);
   await expect(
@@ -1366,6 +1371,10 @@ test("the schedule reads a special's hours in one format with one hint on both f
   await expect(ends).toHaveValue("9 pm");
   await expect(starts).toHaveAccessibleDescription(schedule.hoursHint);
   await expect(ends).toHaveAccessibleDescription(schedule.hoursHint);
+  await expect(
+    boxGroup(page, schedule.hoursLabel),
+    "the hint is the fields' own, so the Hours group around them is not described by it again (D-230)",
+  ).toHaveAccessibleDescription("");
   await expect(scheduleField(page, schedule.firstDay)).toHaveValue("");
   await expect(
     scheduleField(page, schedule.firstDay),
@@ -2092,7 +2101,7 @@ test("after a switch to Market price the group and its radios are described by i
   await expectNoAxeViolations(page);
 });
 
-test("on a page loaded at Market price, a switch away leaves nothing pointing at a missing id, and the sentence describes the group again once the choice comes back", async ({
+test("on a page loaded at Market price, a switch away leaves nothing pointing at a missing id; once the choice comes back the failure alone describes the group, the sentence shown, and the sentence describes it again once the failure clears", async ({
   page,
 }) => {
   const writes = expectWrites(page, { hold: true });
@@ -2113,9 +2122,22 @@ test("on a page loaded at Market price, a switch away leaves nothing pointing at
   await expect(marketSentence(page)).toHaveCount(1);
   await expect(
     priceGroup(page),
-    "the sentence, then the problem",
-  ).toHaveAccessibleDescription(
-    `${strings.price.marketHint} ${editing.problems.outOfDate}`,
+    "while the failure stands, the problem alone, the sentence still shown (D-230)",
+  ).toHaveAccessibleDescription(editing.problems.outOfDate);
+  await expectNoMissingIds(page);
+
+  // A round of arrows back on the saved choice sends nothing and clears
+  // the failure (D-229), and the sentence describes the group again
+  // (D-147).
+  await radio(page, strings.price.market).focus();
+  for (let step = 0; step < 3; step += 1) {
+    await page.keyboard.press("ArrowDown");
+  }
+  await expect(radio(page, strings.price.market)).toBeChecked();
+  await expect(savedStatus(page)).toHaveText(editing.saved);
+  await expect(priceGroup(page)).not.toHaveAttribute("aria-invalid");
+  await expect(priceGroup(page)).toHaveAccessibleDescription(
+    strings.price.marketHint,
   );
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
@@ -2366,8 +2388,9 @@ test("Save allergens with a name that means one of the nine, a name with a comma
   await expectNoAxeViolations(page);
 });
 
-test("Save availability with Starts at 4, First day soon, and Last day later sends nothing and focuses the summary with a link per problem in field order; Starts alone focuses Starts; a week with no day focuses the week's box", async ({
+test("Save availability with Starts at 4, First day soon, and Last day later sends nothing and focuses the summary with a link per problem in field order, each field at fault described by its problem alone; Starts alone focuses Starts; a week with no day focuses the week's box; a field made valid reads its hint again", async ({
   page,
+  browserName,
 }) => {
   await openDish(page, "one", "availability");
   const starts = scheduleField(page, schedule.starts);
@@ -2396,15 +2419,35 @@ test("Save availability with Starts at 4, First day soon, and Last day later sen
     await expect(links.nth(index)).toHaveAttribute("href", `#${id}`);
   }
   await expect(starts).toHaveAttribute("aria-invalid", "true");
+  // While a field is invalid it is described by its problem alone (D-230):
+  // one element, the problem's, and never the hint, which stays on screen.
+  await expect(starts).toHaveAttribute("aria-describedby", /^\S+$/);
+  const startsTie = (await starts.getAttribute("aria-describedby")) ?? "";
+  await expect(
+    page.locator(`[id="${startsTie}"]`),
+    "Starts is tied to its problem alone",
+  ).toHaveText(schedule.errors.timeAmPmStarts);
   await expect(starts).toHaveAccessibleDescription(
-    `${schedule.errors.timeAmPmStarts} ${schedule.hoursHint}`,
+    schedule.errors.timeAmPmStarts,
   );
-  await expect(ends).toHaveAccessibleDescription(
-    `${schedule.errors.timePairEnds} ${schedule.hoursHint}`,
+  await expect(ends).toHaveAccessibleDescription(schedule.errors.timePairEnds);
+  await expect(first).toHaveAccessibleDescription(schedule.errors.dateFormat);
+  await expect(last).toHaveAccessibleDescription(schedule.errors.dateFormat);
+  await expect(
+    boxGroup(page, schedule.hoursLabel),
+    "the Hours group is not described by the hint either",
+  ).toHaveAccessibleDescription("");
+  await expect(
+    page.getByText(schedule.hoursHint, { exact: true }),
+    "the hint stays on screen",
+  ).toBeVisible();
+  await expect(page.getByText(schedule.dateHint, { exact: true })).toHaveCount(
+    2,
   );
-  await expect(first).toHaveAccessibleDescription(
-    `${schedule.errors.dateFormat} ${schedule.dateHint}`,
-  );
+  if (browserName === "chromium") {
+    // Chrome's own reading: each piece of a description read once.
+    await expectChromeNamesAgree(page);
+  }
   await links.nth(2).click();
   await expect(first, "a link focuses its field").toBeFocused();
   await expectNoMissingIds(page);
@@ -2416,8 +2459,15 @@ test("Save availability with Starts at 4, First day soon, and Last day later sen
   await save.click();
   await expect(starts, "Starts, the first field at fault").toBeFocused();
   await expect(summary(page)).toHaveCount(0);
+  await expect(starts).toHaveAccessibleDescription(
+    schedule.errors.timeAmPmStarts,
+  );
   await expect(ends).toHaveAttribute("aria-invalid", "true");
   await expect(first).not.toHaveAttribute("aria-invalid");
+  await expect(
+    first,
+    "a field made valid is described by its hint again",
+  ).toHaveAccessibleDescription(schedule.dateHint);
 
   // A week says which of the month's Mondays, so with no day it is one
   // problem, on the week's box: its wrapper takes the focus and hands it
@@ -2440,6 +2490,8 @@ test("Save availability with Starts at 4, First day soon, and Last day later sen
   );
   await expect(summary(page)).toHaveCount(0);
   await expect(starts).not.toHaveAttribute("aria-invalid");
+  await expect(starts).toHaveAccessibleDescription(schedule.hoursHint);
+  await expect(ends).toHaveAccessibleDescription(schedule.hoursHint);
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });

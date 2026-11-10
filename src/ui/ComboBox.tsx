@@ -11,10 +11,10 @@ import {
   ListBox,
   ListBoxItem,
   Popover,
-  Text,
   useSlottedContext,
 } from "react-aria-components";
 import { fieldDescription } from "./field-description";
+import { FieldHint } from "./FieldHint";
 import { OneNode } from "./OneNode";
 
 export type ComboBoxItem = { id: string; text: string };
@@ -112,61 +112,70 @@ export function ComboBox({
       {...fieldDescription(description)}
       className="flex flex-col gap-1"
     >
-      <Label className="font-semibold">
-        {whole === null ? label : <OneNode visible={label} whole={whole} />}
-      </Label>
-      <div className="flex items-center gap-2">
-        <Input
-          className={`${inputClassName} min-h-11`}
-          autoComplete="off"
-          onKeyDown={(event) => {
-            if (
-              event.key !== "Enter" ||
-              event.nativeEvent.isComposing ||
-              event.keyCode === 229
-            ) {
-              return;
-            }
-            if (event.currentTarget.getAttribute("aria-activedescendant")) {
-              return;
-            }
-            onCommit();
-          }}
-        />
-        <OpenButton label={buttonLabel}>
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 20 20"
-            className="size-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M5 8l5 5 5-5" />
-          </svg>
-        </OpenButton>
-      </div>
-      {description ? (
-        <Text slot="description" className="text-sm text-foreground-muted">
-          {description}
-        </Text>
-      ) : null}
-      <FieldError className="text-sm font-semibold">{errorMessage}</FieldError>
-      <Popover className="max-h-80 w-(--trigger-width) overflow-auto rounded border border-border bg-background-raised shadow-lg">
-        <ListBox className="p-1 outline-none">
-          {(item: ComboBoxItem) => (
-            <ListBoxItem
-              id={item.id}
-              textValue={item.text}
-              className="cursor-default rounded px-3 py-2 outline-none data-[focused]:bg-foreground data-[focused]:text-background data-[selected]:font-semibold"
+      {({ isInvalid: invalid }) => (
+        <>
+          <Label className="font-semibold">
+            {whole === null ? label : <OneNode visible={label} whole={whole} />}
+          </Label>
+          <div className="flex items-center gap-2">
+            <Input
+              className={`${inputClassName} min-h-11`}
+              autoComplete="off"
+              onKeyDown={(event) => {
+                if (
+                  event.key !== "Enter" ||
+                  event.nativeEvent.isComposing ||
+                  event.keyCode === 229
+                ) {
+                  return;
+                }
+                if (event.currentTarget.getAttribute("aria-activedescendant")) {
+                  return;
+                }
+                onCommit();
+              }}
+            />
+            <OpenButton label={buttonLabel}>
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 20 20"
+                className="size-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M5 8l5 5 5-5" />
+              </svg>
+            </OpenButton>
+          </div>
+          {description ? (
+            <FieldHint
+              isInvalid={invalid}
+              className="text-sm text-foreground-muted"
             >
-              {item.text}
-            </ListBoxItem>
-          )}
-        </ListBox>
-      </Popover>
+              {description}
+            </FieldHint>
+          ) : null}
+          <FieldError className="text-sm font-semibold">
+            {errorMessage}
+          </FieldError>
+          <Popover className="max-h-80 w-(--trigger-width) overflow-auto rounded border border-border bg-background-raised shadow-lg">
+            <ListBox className="p-1 outline-none">
+              {(item: ComboBoxItem) => (
+                <ListBoxItem
+                  id={item.id}
+                  textValue={item.text}
+                  className="cursor-default rounded px-3 py-2 outline-none data-[focused]:bg-foreground data-[focused]:text-background data-[selected]:font-semibold"
+                >
+                  {item.text}
+                </ListBoxItem>
+              )}
+            </ListBox>
+          </Popover>
+        </>
+      )}
     </AriaComboBox>
   );
 }

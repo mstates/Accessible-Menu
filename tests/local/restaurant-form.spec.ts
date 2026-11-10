@@ -99,6 +99,71 @@ test("a save with errors sent from the keyboard focuses the error summary, and i
   ).toHaveCount(0);
 });
 
+// While a time is invalid it is described by its problem alone, and the
+// hint above the days stays on screen (D-230): a day's problem on both of
+// its times, and a time's own problem from the server, which React Aria
+// clears once the owner changes that time and leaves it (the input's change
+// event), so the hint is tied to it again.
+test("a refused Details save describes each time at fault by its problem alone with the hint still shown, and a time edited after the refusal reads the hint again", async ({
+  page,
+}) => {
+  await openDetails(page);
+  const wednesday = strings.days.wed;
+  const time = (day: string, side: "open" | "close") =>
+    page.getByRole("textbox", {
+      name: timeFieldLabel(strings.fields, day, 0, side),
+      exact: true,
+    });
+  const mondayOpens = time(monday, "open");
+  const mondayCloses = time(monday, "close");
+  const wednesdayOpens = time(wednesday, "open");
+  const wednesdayCloses = time(wednesday, "close");
+  await expect(wednesdayOpens).toHaveAccessibleDescription(
+    strings.fields.timeHint,
+  );
+
+  await mondayOpens.fill("9 am");
+  await mondayCloses.fill("9 am");
+  await wednesdayCloses.fill("9 pm");
+  await wednesdayOpens.fill("4");
+  await wednesdayOpens.press("Enter");
+  const summary = page.locator("main div[tabindex='-1']").filter({
+    has: page.getByRole("heading", { name: strings.errors.summary }),
+  });
+  await expect(summary).toBeFocused();
+
+  const sameTime = fill(strings.errors.sameTime, { day: monday });
+  await expect(mondayOpens).toHaveAttribute("aria-invalid", "true");
+  await expect(mondayOpens).toHaveAccessibleDescription(sameTime);
+  await expect(mondayCloses).toHaveAccessibleDescription(sameTime);
+  const amPm = fill(strings.errors.timeAmPm, {
+    field: timeFieldLabel(strings.fields, wednesday, 0, "open"),
+  });
+  await expect(wednesdayOpens).toHaveAttribute("aria-invalid", "true");
+  await expect(wednesdayOpens).toHaveAccessibleDescription(amPm);
+  await expect(
+    wednesdayCloses,
+    "a valid time keeps its hint",
+  ).toHaveAccessibleDescription(strings.fields.timeHint);
+  await expect(
+    page.getByText(strings.fields.timeHint, { exact: true }),
+    "the hint stays on screen",
+  ).toBeVisible();
+  await expectNoMissingIds(page);
+
+  await wednesdayOpens.fill("4 pm");
+  await page.keyboard.press("Tab");
+  await expect(
+    wednesdayOpens,
+    "changed and left, the time's problem from the server goes",
+  ).not.toHaveAttribute("aria-invalid");
+  await expect(wednesdayOpens).toHaveAccessibleDescription(
+    strings.fields.timeHint,
+  );
+  await expectNoMissingIds(page);
+  await expectNoAxeViolations(page);
+});
+
 test("on Details, the Open 24 hours box, the icons box, and the State and Time zone Selects are each named by one label of one node, which Chrome reads whole, the box's visible words take a tap, a pick renames the State button, and axe finds nothing", async ({
   page,
 }) => {

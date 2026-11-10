@@ -179,18 +179,19 @@ function reads(value: Schedule): string {
 }
 
 // A Save the browser refuses (D-229): nothing sent, the first field at
-// fault focused with its problem, or the summary with three or more.
+// fault focused with its problem, or the summary with three or more. The
+// field is described by its problem alone while it stands, never its hint
+// (D-230).
 async function expectRefusedInField(
   page: Page,
   at: ReturnType<Page["getByRole"]>,
   message: string,
-  hint: string,
   sent: number,
 ) {
   await saveButton(page).click();
   await expect(at, "the first field at fault is focused").toBeFocused();
   await expect(at).toHaveAttribute("aria-invalid", "true");
-  await expect(at).toHaveAccessibleDescription(`${message} ${hint}`);
+  await expect(at).toHaveAccessibleDescription(message);
   await expect(summary(page)).toHaveCount(0);
   expect(await writesSoFar(), "nothing is sent").toBe(sent);
 }
@@ -532,7 +533,6 @@ test("the hours pair saves as one and comes back in one format, each refusal is 
     page,
     field(page, schedule.starts),
     schedule.errors.timeAmPmStarts,
-    schedule.hoursHint,
     sent,
   );
   await field(page, schedule.starts).fill("4 pm");
@@ -541,7 +541,6 @@ test("the hours pair saves as one and comes back in one format, each refusal is 
     page,
     field(page, schedule.ends),
     schedule.errors.timePairEnds,
-    schedule.hoursHint,
     sent,
   );
   await field(page, schedule.ends).fill("4 pm");
@@ -549,7 +548,6 @@ test("the hours pair saves as one and comes back in one format, each refusal is 
     page,
     field(page, schedule.ends),
     schedule.errors.sameTime,
-    schedule.hoursHint,
     sent,
   );
 
@@ -560,7 +558,6 @@ test("the hours pair saves as one and comes back in one format, each refusal is 
     page,
     field(page, schedule.starts),
     schedule.errors.timePairStarts,
-    schedule.hoursHint,
     sent,
   );
   await expect(field(page, schedule.ends)).toHaveAttribute(
@@ -568,7 +565,7 @@ test("the hours pair saves as one and comes back in one format, each refusal is 
     "true",
   );
   await expect(field(page, schedule.ends)).toHaveAccessibleDescription(
-    `${schedule.errors.timeFormatEnds} ${schedule.hoursHint}`,
+    schedule.errors.timeFormatEnds,
   );
   await expectNoMissingIds(page);
 
@@ -604,7 +601,6 @@ test("a date reads in each of its forms and comes back with its year, a day-firs
     page,
     field(page, schedule.lastDay),
     schedule.errors.dateFormat,
-    schedule.dateHint,
     sent,
   );
   await field(page, schedule.lastDay).fill("Oct 30, 2099");
@@ -612,7 +608,6 @@ test("a date reads in each of its forms and comes back with its year, a day-firs
     page,
     field(page, schedule.lastDay),
     schedule.errors.dateOrder,
-    schedule.dateHint,
     sent,
   );
 

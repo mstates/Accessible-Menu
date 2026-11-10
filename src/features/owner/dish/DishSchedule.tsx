@@ -116,11 +116,12 @@ function Boxes<Key extends string>({
 // year with theirs; under the group, the sentence diners read and when the
 // special next shows, or that there is no schedule. The two time fields
 // share one hint by id, the hours grid's pattern (D-105), and each date
-// field has its own the same way; each field is described by its problem
-// and then the hint while a problem stands. A
-// group's hint is a lead before it, since a description on the group would
-// be read with every box. Everything saves by the page's one Save
-// (D-223, D-229).
+// field has its own the same way; while a problem stands the field is
+// described by its problem alone, the hint still shown (D-230). The Hours
+// group itself is not described by the hint: its fields are, and the hint
+// is read inside it. A group's hint is a lead before it, since a
+// description on the group would be read with every box. Everything saves
+// by the page's one Save (D-223, D-229).
 export function DishSchedule({ strings, dayNames, lang, schedule }: Props) {
   const { ids } = schedule;
   const line = schedule.sentence
@@ -135,13 +136,13 @@ export function DishSchedule({ strings, dayNames, lang, schedule }: Props) {
       value={field.value}
       onChange={field.onChange}
       autoComplete="off"
-      aria-describedby={ids.hoursHint}
+      hintId={ids.hoursHint}
       isInvalid={field.error ? true : undefined}
       errorMessage={field.error ?? undefined}
     />
   );
-  // A date field's hint sits under it by id, as the hours' does, so a
-  // problem is read before the hint, not after it.
+  // A date field's hint sits under it, tied by id as the hours' is, and
+  // not read while a problem stands (D-230).
   const date = (field: ScheduleFieldView, label: string) => (
     <div className="flex flex-col gap-1">
       <TextField
@@ -150,7 +151,7 @@ export function DishSchedule({ strings, dayNames, lang, schedule }: Props) {
         value={field.value}
         onChange={field.onChange}
         autoComplete="off"
-        aria-describedby={`${field.id}-hint`}
+        hintId={`${field.id}-hint`}
         isInvalid={field.error ? true : undefined}
         errorMessage={field.error ?? undefined}
       />
@@ -173,11 +174,7 @@ export function DishSchedule({ strings, dayNames, lang, schedule }: Props) {
         list={schedule.days}
       />
 
-      <fieldset
-        id={ids.hours}
-        aria-describedby={ids.hoursHint}
-        className="flex flex-col gap-4"
-      >
+      <fieldset id={ids.hours} className="flex flex-col gap-4">
         <legend className="font-semibold">{strings.hoursLabel}</legend>
         <p id={ids.hoursHint} className="text-sm text-foreground-muted">
           {strings.hoursHint}

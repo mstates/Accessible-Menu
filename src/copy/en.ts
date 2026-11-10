@@ -265,9 +265,10 @@ export const en = {
           "Enter a phone number with 7 to 25 digits, spaces, or punctuation.",
         website: "Enter a web address like example.com.",
         websiteLength: "Keep the web address to 500 characters.",
-        timeAmPm: "Add am or pm to the time {field}.",
+        timeAmPm: "Add am or pm to the time {field}, like 11 am or 5:30 pm.",
         timeFormat: "Enter the time {field}, like 11 am, 5:30 pm, or 17:30.",
-        timePair: "{day} needs both an opening and a closing time.",
+        timePair:
+          "{day} needs both an opening and a closing time, like 11 am to 9 pm.",
         ranges: "{day} can have two time ranges at most.",
         overlap: "{day} has times that overlap.",
         sameTime:
@@ -722,7 +723,7 @@ export const en = {
         dinersRead: "Diners read: {sentence}",
         notSaved: "The dietary tags of {dish} were not saved.",
         tagsMoved:
-          "The dietary tags changed since this page showed them, so nothing was saved. Look at the tags as they are now.",
+          "The dietary tags changed since this page showed them, so nothing was saved. Reload the page to see the tags as they are now, then make your changes and save again.",
         // The page's one Save (D-223, D-229) and the flash its landing
         // brings (D-219).
         submit: "Save dietary tags",
@@ -794,18 +795,20 @@ export const en = {
         nextShows: "Next shows {date}.",
         never: "No day ahead fits this schedule, so diners do not see it.",
         scheduleMoved:
-          "The schedule changed since this page showed it, so nothing was saved. Look at the schedule as it is now.",
+          "The schedule changed since this page showed it, so nothing was saved. Reload the page to see the schedule as it is now, then make your changes and save again.",
         errors: {
-          timeAmPmStarts: "Add am or pm to the time it starts.",
-          timeAmPmEnds: "Add am or pm to the time it ends.",
+          timeAmPmStarts:
+            "Add am or pm to the time it starts, like 11 am or 5:30 pm.",
+          timeAmPmEnds:
+            "Add am or pm to the time it ends, like 11 am or 5:30 pm.",
           timeFormatStarts:
             "Enter the time it starts, like 11 am, 5:30 pm, or 17:30.",
           timeFormatEnds:
             "Enter the time it ends, like 11 am, 5:30 pm, or 17:30.",
           timePairStarts:
-            "Add the time it starts, or leave both blank for all day.",
+            "Add the time it starts, like 11 am, or leave both blank for all day.",
           timePairEnds:
-            "Add the time it ends, or leave both blank for all day.",
+            "Add the time it ends, like 9 pm, or leave both blank for all day.",
           sameTime:
             "The special starts and ends at the same time. Leave both blank for all day.",
           dateFormat: "Type a date like October 31 or 10/31/2026.",
@@ -912,7 +915,7 @@ export const en = {
         listsChanged:
           "The allergen list changed since this page showed it, so it is not checked. Look at the list as it is now, then check it.",
         listsMoved:
-          "The allergen list changed since this page showed it, so nothing was saved. Look at the list as it is now.",
+          "The allergen list changed since this page showed it, so nothing was saved. Reload the page to see the list as it is now, then make your changes and save again.",
         // An uncheck found the dish unchecked already, from another tab or
         // another device.
         checkChanged:
@@ -1100,7 +1103,8 @@ export const en = {
           nameRequired: "An option needs a name.",
           nameLength: "Keep the name to 60 characters.",
           nameTaken: "This list already has an option called {option}.",
-          priceFormat: "Type a price like 2, 1.50, or $2.",
+          priceFormat:
+            "Type a price like 2, 1.50, or $2. Leave it blank when it costs nothing extra.",
           priceRange: "Keep the price under $100,000.",
           caloriesFormat:
             "Type calories as a whole number, like 760, or a range, like 760 to 860.",

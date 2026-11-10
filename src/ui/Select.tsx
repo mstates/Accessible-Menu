@@ -14,11 +14,11 @@ import {
   Select as AriaSelect,
   SelectStateContext,
   SelectValue,
-  Text,
   useSlottedContext,
   type SelectProps as AriaSelectProps,
 } from "react-aria-components";
 import { fieldDescription } from "./field-description";
+import { FieldHint } from "./FieldHint";
 import { OneNode } from "./OneNode";
 
 export type SelectItem = { id: string; label: string };
@@ -79,66 +79,75 @@ export function Select({
       {...fieldDescription(description)}
       className="flex flex-col gap-1"
     >
-      <Label elementType="label" htmlFor={id} className="font-semibold">
-        <Words label={label} placeholder={props.placeholder} />
-        {props.isRequired ? <span aria-hidden="true"> *</span> : null}
-      </Label>
-      <Trigger>
-        <SelectValue className="min-w-0" />
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 20 20"
-          className="size-4 shrink-0"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M5 8l5 5 5-5" />
-        </svg>
-      </Trigger>
-      {description ? (
-        <Text slot="description" className="text-sm text-foreground-muted">
-          {description}
-        </Text>
-      ) : null}
-      <FieldError className="text-sm font-semibold">{errorMessage}</FieldError>
-      <Popover className="max-h-80 w-(--trigger-width) overflow-auto rounded border border-border bg-background-raised shadow-lg">
-        {groups ? (
-          <ListBox className="p-1 outline-none">
-            {groups.map((group) => (
-              <ListBoxSection key={group.id} id={group.id}>
-                <Header className="px-3 pt-2 pb-1 text-sm font-semibold text-foreground-muted">
-                  {group.label}
-                </Header>
-                {group.items.map((item) => (
+      {({ isInvalid }) => (
+        <>
+          <Label elementType="label" htmlFor={id} className="font-semibold">
+            <Words label={label} placeholder={props.placeholder} />
+            {props.isRequired ? <span aria-hidden="true"> *</span> : null}
+          </Label>
+          <Trigger>
+            <SelectValue className="min-w-0" />
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 20 20"
+              className="size-4 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M5 8l5 5 5-5" />
+            </svg>
+          </Trigger>
+          {description ? (
+            <FieldHint
+              isInvalid={isInvalid}
+              className="text-sm text-foreground-muted"
+            >
+              {description}
+            </FieldHint>
+          ) : null}
+          <FieldError className="text-sm font-semibold">
+            {errorMessage}
+          </FieldError>
+          <Popover className="max-h-80 w-(--trigger-width) overflow-auto rounded border border-border bg-background-raised shadow-lg">
+            {groups ? (
+              <ListBox className="p-1 outline-none">
+                {groups.map((group) => (
+                  <ListBoxSection key={group.id} id={group.id}>
+                    <Header className="px-3 pt-2 pb-1 text-sm font-semibold text-foreground-muted">
+                      {group.label}
+                    </Header>
+                    {group.items.map((item) => (
+                      <ListBoxItem
+                        key={item.id}
+                        id={item.id}
+                        textValue={item.label}
+                        className={itemClassName}
+                      >
+                        {item.label}
+                      </ListBoxItem>
+                    ))}
+                  </ListBoxSection>
+                ))}
+              </ListBox>
+            ) : (
+              <ListBox items={items ?? []} className="p-1 outline-none">
+                {(item) => (
                   <ListBoxItem
-                    key={item.id}
                     id={item.id}
                     textValue={item.label}
                     className={itemClassName}
                   >
                     {item.label}
                   </ListBoxItem>
-                ))}
-              </ListBoxSection>
-            ))}
-          </ListBox>
-        ) : (
-          <ListBox items={items ?? []} className="p-1 outline-none">
-            {(item) => (
-              <ListBoxItem
-                id={item.id}
-                textValue={item.label}
-                className={itemClassName}
-              >
-                {item.label}
-              </ListBoxItem>
+                )}
+              </ListBox>
             )}
-          </ListBox>
-        )}
-      </Popover>
+          </Popover>
+        </>
+      )}
     </AriaSelect>
   );
 }

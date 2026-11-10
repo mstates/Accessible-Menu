@@ -451,7 +451,8 @@ const SIDES = ["open", "close"] as const;
 // the owner types it, the server reads it, and nothing is reformatted while
 // they type. A saved time comes back in one format from formatTime, so the
 // owner sees what was understood. Every time field is described by the hint
-// above the days. Focus follows the add and remove buttons: the state change
+// above the days while it is valid, and by its problem alone while one
+// stands (D-230). Focus follows the add and remove buttons: the state change
 // is flushed first so the element to focus is already on the page. A
 // day-level error (overlap, a time that opens and closes at the same time)
 // is one paragraph, after the box, that the fieldset and every time field of
@@ -478,7 +479,6 @@ function DayHours({
   const secondOpenId = fieldId(hoursFieldName(day, 1, "open"));
   const errorId = fieldId(`hours.${day}.error`);
   const describedBy = error ? errorId : undefined;
-  const fieldDescribedBy = error ? `${errorId} ${timeHintId}` : timeHintId;
   const isInvalid = error ? true : undefined;
   const shown = isOpenAllDay(defaultRanges)
     ? []
@@ -546,7 +546,8 @@ function DayHours({
               autoComplete="off"
               label={timeFieldLabel(strings.fields, label, 0, "open")}
               defaultValue={timeValue(0, "open")}
-              aria-describedby={fieldDescribedBy}
+              aria-describedby={describedBy}
+              hintId={timeHintId}
               isInvalid={isInvalid}
             />
             <TextField
@@ -555,7 +556,8 @@ function DayHours({
               autoComplete="off"
               label={timeFieldLabel(strings.fields, label, 0, "close")}
               defaultValue={timeValue(0, "close")}
-              aria-describedby={fieldDescribedBy}
+              aria-describedby={describedBy}
+              hintId={timeHintId}
               isInvalid={isInvalid}
             />
           </div>
@@ -567,7 +569,8 @@ function DayHours({
                 autoComplete="off"
                 label={timeFieldLabel(strings.fields, label, 1, "open")}
                 defaultValue={timeValue(1, "open")}
-                aria-describedby={fieldDescribedBy}
+                aria-describedby={describedBy}
+                hintId={timeHintId}
                 isInvalid={isInvalid}
               />
               <TextField
@@ -576,7 +579,8 @@ function DayHours({
                 autoComplete="off"
                 label={timeFieldLabel(strings.fields, label, 1, "close")}
                 defaultValue={timeValue(1, "close")}
-                aria-describedby={fieldDescribedBy}
+                aria-describedby={describedBy}
+                hintId={timeHintId}
                 isInvalid={isInvalid}
               />
               <Button onPress={() => showSecond(false)}>

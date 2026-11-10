@@ -5,11 +5,11 @@ import {
   Input,
   Label,
   SearchField as AriaSearchField,
-  Text,
   type SearchFieldProps,
 } from "react-aria-components";
 import { Button } from "./Button";
 import { fieldDescription } from "./field-description";
+import { FieldHint } from "./FieldHint";
 
 type Props = SearchFieldProps & {
   id: string;
@@ -36,7 +36,8 @@ const inputClassName =
 // Aria puts it on the input and the label's for agrees with it from the
 // first render; no name on the input itself. The description is handed to
 // React Aria as well as shown, so the hint stays tied to the input
-// (fieldDescription).
+// (fieldDescription), and while the field is invalid it is described by its
+// problem alone, the hint still shown (FieldHint, D-230).
 //
 // Return goes to React Aria's onSubmit, which takes the key from the form:
 // without an onSubmit the browser submits the form the field sits in,
@@ -72,36 +73,45 @@ export function SearchField({
       {...fieldDescription(description)}
       className="group flex flex-col gap-1"
     >
-      <Label className="font-semibold">{label}</Label>
-      <div className="flex items-center gap-2">
-        <Input
-          enterKeyHint="search"
-          autoComplete="off"
-          className={`${inputClassName} min-h-11 appearance-none [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:hidden`}
-        />
-        <span className="group-data-[empty]:hidden">
-          <Button aria-label={clearLabel}>
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 20 20"
-              className="size-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
+      {({ isInvalid }) => (
+        <>
+          <Label className="font-semibold">{label}</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              enterKeyHint="search"
+              autoComplete="off"
+              className={`${inputClassName} min-h-11 appearance-none [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:hidden`}
+            />
+            <span className="group-data-[empty]:hidden">
+              <Button aria-label={clearLabel}>
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 20 20"
+                  className="size-5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M5 5l10 10M15 5L5 15" />
+                </svg>
+              </Button>
+            </span>
+          </div>
+          {description ? (
+            <FieldHint
+              isInvalid={isInvalid}
+              className="text-sm text-foreground-muted"
             >
-              <path d="M5 5l10 10M15 5L5 15" />
-            </svg>
-          </Button>
-        </span>
-      </div>
-      {description ? (
-        <Text slot="description" className="text-sm text-foreground-muted">
-          {description}
-        </Text>
-      ) : null}
-      <FieldError className="text-sm font-semibold">{errorMessage}</FieldError>
+              {description}
+            </FieldHint>
+          ) : null}
+          <FieldError className="text-sm font-semibold">
+            {errorMessage}
+          </FieldError>
+        </>
+      )}
     </AriaSearchField>
   );
 }
