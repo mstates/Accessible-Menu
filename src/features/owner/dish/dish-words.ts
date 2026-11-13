@@ -1,6 +1,5 @@
 import type { Copy } from "@/copy";
 import { fill } from "@/copy/fill";
-import type { DishText, OwnerSize, PriceKind, SizeText } from "@/domain/dish";
 import {
   failureSentence,
   problemText,
@@ -8,23 +7,27 @@ import {
   type ListProblem,
   type TextWords,
 } from "../editing/list-words";
+import type { GeneralProblem } from "./general-form";
 
 // Every sentence a dish's page shows or speaks, built in one place from
 // copy (D-128, D-139). The page is the dish, so its labels do not name it;
 // every sentence the log says does, since a sentence is heard on its own.
-// A size's texts are named for their size. The allergen group's own
-// sentences are in allergen-words.ts (D-148). Pure: no React, no network.
+// A size's controls and problems are named for their size. The allergen
+// group's own sentences are in allergen-words.ts (D-148). Pure: no React,
+// no network.
 
 export type DishStrings = Copy["owner"]["dish"];
 export type MoveStrings = DishStrings["move"];
 
-// The words the dish's own texts are committed, failed, and said in
-// (texts.ts): the page's rules and errors, with the dish as the placeholder
-// every sentence names. A dish that is gone is the page's parent gone.
+// The words a dish's form pages say a failed save in (D-229, D-237): the
+// page's rules and errors, with the dish as the placeholder every sentence
+// names. A dish that is gone is the page's parent gone. A dish's pages
+// hold no list of their own to fall out of step with, so that kind reads
+// as a page that is out of date.
 export function dishWords(
   strings: DishStrings,
   editing: EditingStrings,
-): TextWords<DishText> {
+): TextWords {
   return {
     noun: "dish",
     strings: {
@@ -32,79 +35,12 @@ export function dishWords(
         nameTaken: strings.errors.nameTaken,
         gone: strings.errors.parentGone,
         parentGone: strings.errors.parentGone,
-        listChanged: strings.errors.listChanged,
+        listChanged: editing.problems.outOfDate,
       },
     },
     editing,
     rules: strings.errors,
-    fields: {
-      description: {
-        label: strings.descriptionLabel,
-        suffix: "",
-        hint: strings.descriptionHint,
-        multiline: true,
-        notSaved: strings.notSaved.description,
-      },
-      price: {
-        label: strings.price.amountLabel,
-        suffix: "",
-        hint: strings.price.amountHint,
-        notSaved: strings.notSaved.price,
-      },
-      calories: {
-        label: strings.price.caloriesLabel,
-        suffix: "",
-        hint: strings.price.caloriesHint,
-        notSaved: strings.notSaved.calories,
-      },
-      note: {
-        label: strings.noteLabel,
-        suffix: "",
-        hint: strings.noteHint,
-        notSaved: strings.notSaved.note,
-      },
-    },
-  };
-}
-
-// The words a size's two texts are committed, failed, and said in, named
-// for their size: "Size for Cup", "Price for Cup was not saved."
-export function sizeWords(
-  strings: DishStrings,
-  editing: EditingStrings,
-): TextWords<SizeText> {
-  return {
-    noun: "size",
-    strings: {
-      errors: {
-        nameTaken: strings.errors.nameTaken,
-        gone: strings.errors.gone,
-        parentGone: strings.errors.parentGone,
-        listChanged: strings.errors.listChanged,
-      },
-    },
-    editing,
-    rules: strings.errors,
-    fields: {
-      name: {
-        label: strings.price.sizeNameLabel,
-        suffix: strings.price.labelFor,
-        hint: strings.price.sizeHint,
-        notSaved: strings.notSaved.sizeName,
-      },
-      price: {
-        label: strings.price.sizePriceLabel,
-        suffix: strings.price.labelFor,
-        hint: strings.price.amountHint,
-        notSaved: strings.notSaved.sizePrice,
-      },
-      calories: {
-        label: strings.price.sizeCaloriesLabel,
-        suffix: strings.price.labelFor,
-        hint: strings.price.caloriesHint,
-        notSaved: strings.notSaved.sizeCalories,
-      },
-    },
+    fields: {},
   };
 }
 
@@ -112,12 +48,20 @@ export function sizeWords(
 // while it has none, "size 2".
 export function sizeLabel(
   strings: DishStrings,
-  size: OwnerSize,
+  name: string,
   position: number,
 ): string {
-  return size.name === ""
-    ? fill(strings.price.unnamedSize, { position })
-    : size.name;
+  return name === "" ? fill(strings.price.unnamedSize, { position }) : name;
+}
+
+// A size as its group is named (D-236): its name, or "Size 2" while it has
+// none.
+export function sizeLegend(
+  strings: DishStrings,
+  name: string,
+  position: number,
+): string {
+  return name === "" ? fill(strings.price.sizeLegend, { position }) : name;
 }
 
 // A size control's whole name, its visible label first, then its size:
@@ -136,11 +80,6 @@ export function sizeSuffix(strings: DishStrings, size: string): string {
   return fill(strings.price.labelFor, { size });
 }
 
-// The price choice's visible words.
-export function kindLabel(strings: DishStrings, kind: PriceKind): string {
-  return strings.price[kind];
-}
-
 // "Size added. 2 sizes."
 export function sizeAddedSentence(strings: DishStrings, total: number): string {
   const count = fill(
@@ -150,45 +89,47 @@ export function sizeAddedSentence(strings: DishStrings, total: number): string {
   return fill(strings.price.sizeAdded, { count });
 }
 
-// "Cup removed."
+// "Cup removed.", and "Size 2 removed." for a size with no name, which
+// opens the sentence.
 export function sizeRemovedSentence(
   strings: DishStrings,
-  size: string,
+  name: string,
+  position: number,
 ): string {
-  return fill(strings.price.sizeRemoved, { size });
+  return fill(strings.price.sizeRemoved, {
+    size: sizeLegend(strings, name, position),
+  });
 }
 
-// "The price choice for Soup of the day was not saved. We could not save
-// that. Try again in a minute."
-export function kindNotSavedSentence(
+// What a Save found wrong with one field of the General form (D-237), in
+// the page's words. A size's problem names its size, by its name or its
+// place, since the same words are its link in the summary; a name another
+// size has names that size.
+export function generalProblemText(
+  strings: DishStrings,
+  problem: GeneralProblem,
+): string {
+  if (problem.rule === "nameTaken") {
+    return fill(strings.errors.nameTaken, { size: problem.other ?? "" });
+  }
+  const size = problem.size
+    ? sizeLabel(strings, problem.size.name, problem.size.position)
+    : "";
+  return fill(strings.errors[problem.rule], { size });
+}
+
+// The sentence for a General save the server did not take (D-237): what
+// was not saved, then why. "The changes to Soup of the day were not saved.
+// This dish is no longer here. Go back to Menus."
+export function generalNotSavedSentence(
   strings: DishStrings,
   words: TextWords,
   dish: string,
   problem: ListProblem,
 ): string {
   return failureSentence(
-    fill(strings.notSaved.priceKind, { dish }),
+    fill(strings.general.notSaved, { dish }),
     problemText(words, problem, dish),
-  );
-}
-
-export function notAddedSentence(
-  strings: DishStrings,
-  words: TextWords,
-  problem: ListProblem,
-): string {
-  return failureSentence(strings.notAdded, problemText(words, problem, ""));
-}
-
-export function notRemovedSentence(
-  strings: DishStrings,
-  words: TextWords,
-  size: string,
-  problem: ListProblem,
-): string {
-  return failureSentence(
-    fill(strings.notRemoved, { size }),
-    problemText(words, problem, size),
   );
 }
 

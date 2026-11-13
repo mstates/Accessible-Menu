@@ -369,16 +369,13 @@ test("a size with no name blocks Publish: the page names it as a link to its dis
 }) => {
   const { withSections, withDishes, dishes } = ownerFixture();
 
-  await page.goto(restaurantDishPath(code, dishes.sizes.id));
-  await page.waitForLoadState("networkidle");
-  await hearLog(page);
-  await page
-    .getByRole("button", { name: dish.price.addSize, exact: true })
-    .click();
-  const added = fill(dish.price.sizeAdded, {
-    count: fill(dish.price.sizeCount.other, { count: 3 }),
-  });
-  await expect.poll(() => said(page, added)).toBe(1);
+  // An older draft's size with no name, planted in the stand-in: the
+  // General page can no longer save one (D-237), and Publish still refuses
+  // a draft that holds one (D-82).
+  const planted = await fetch(
+    `${standin}/__test/add-size?dish=${dishes.sizes.id}`,
+  );
+  expect(planted.ok, "the stand-in took the size").toBe(true);
 
   await openPublishing(page, withSections);
   const blocker = fill(strings.problems.sizeUnnamed, {
@@ -420,23 +417,17 @@ test("a size with no name blocks Publish: the page names it as a link to its dis
   await page.waitForURL(`**${restaurantDishPath(code, dishes.sizes.id)}`);
   await expect(main(page).locator("h1")).toHaveText(dishes.sizes.name);
 
-  // As it was.
+  // As it was: the blank size is on the General page as its third row, and
+  // a Save drops a row left wholly blank (D-237).
   await page.goto(restaurantDishPath(code, dishes.sizes.id));
   await page.waitForLoadState("networkidle");
-  await hearLog(page);
-  const unnamed = fill(dish.price.unnamedSize, { position: 3 });
-  await page
-    .getByRole("button", {
-      name: fill(dish.price.sizeAction, {
-        action: dish.price.removeSize,
-        size: unnamed,
-      }),
-      exact: true,
-    })
-    .click();
-  await expect
-    .poll(() => said(page, fill(dish.price.sizeRemoved, { size: unnamed })))
-    .toBe(1);
+  await expect(
+    main(page).locator(`ol[aria-label="${dish.price.sizesLabel}"] > li`),
+  ).toHaveCount(3);
+  await saveAndLand(page, dish.general.submit, dish.general.saved);
+  await expect(
+    main(page).locator(`ol[aria-label="${dish.price.sizesLabel}"] > li`),
+  ).toHaveCount(2);
   await openPublishing(page, withSections);
   await expect(main(page).getByText(strings.waitingLead)).toHaveCount(0);
   await expect(main(page).getByText(publishedNow)).toBeVisible();

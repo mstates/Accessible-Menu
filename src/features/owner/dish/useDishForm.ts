@@ -44,6 +44,10 @@ type Props<Payload, Detail> = {
   path: string;
   headingId: string;
   dirty: boolean;
+  // Another press of the page's own is on its way, General's Move this
+  // dish (D-237): an owner link holds with no question until it is
+  // answered, as it does for a save.
+  busy?: boolean;
   // The problems shown under the fields and in the summary, the page's
   // state, so a page can drop one whose field is gone.
   errors: FormError[];
@@ -66,6 +70,7 @@ export function useDishForm<Payload, Detail = never>({
   path,
   headingId,
   dirty,
+  busy = false,
   errors,
   setErrors,
   failureOf,
@@ -81,7 +86,7 @@ export function useDishForm<Payload, Detail = never>({
   });
   const unsaved = useUnsaved({
     dirty,
-    pending: pending || leaving,
+    pending: pending || leaving || busy,
     headingId,
   });
 

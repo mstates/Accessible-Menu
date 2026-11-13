@@ -45,6 +45,7 @@ const pages = [
   "owner-dishes-market",
   "owner-dishes-one",
   "owner-dishes-one-choices",
+  "owner-dishes-one-saved",
   "owner-dishes-one-tags",
   "owner-dishes-one-tags-saved",
   "owner-dishes-sizes",

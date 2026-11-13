@@ -1,0 +1,68 @@
+- link "Skip to main content"
+- banner:
+  - link "Accessible Menu"
+  - status
+- navigation "CI Diner (test restaurant, not real)":
+  - paragraph: CI Diner (test restaurant, not real)
+  - list:
+    - listitem:
+      - link "Details"
+    - listitem:
+      - link "Menus"
+- main:
+  - region "Success":
+    - button "Dismiss this message"
+    - heading "Success" [level=2]
+    - alert: General saved.
+  - navigation "Breadcrumb":
+    - list:
+      - listitem:
+        - link "Menus"
+      - listitem:
+        - link "Dinner"
+      - listitem:
+        - link "Starters"
+      - listitem: House salad
+  - heading "House salad" [level=1]
+  - navigation "House salad":
+    - list:
+      - listitem:
+        - link "General"
+      - listitem:
+        - link "Allergens Confirmed"
+      - listitem:
+        - link "Dietary tags 2 tags"
+      - listitem:
+        - link "Availability Available, no schedule"
+      - listitem:
+        - link "Choice lists 1 choice list"
+  - paragraph:
+    - 'link "Next dish: Garlic bread"'
+  - paragraph: Changes on this page save when you press Save general.
+  - heading "Description" [level=2]
+  - text: Description
+  - textbox "Description"
+  - text: What is in it and how it is made. Diners read it in full. Note
+  - textbox "Note"
+  - text: A short line diners read with this dish, like "Comes with fries or a salad."
+  - heading "Price" [level=2]
+  - radiogroup "Price":
+    - radio "One price" [checked]
+    - text: One price
+    - radio "Prices by size"
+    - text: Prices by size
+    - radio "Market price"
+    - text: Market price
+  - text: Price
+  - textbox "Price": /\d+\.\d+/
+  - text: /In dollars, like \d+ or \d+\.\d+\. Calories/
+  - textbox "Calories": /\d+/
+  - text: /A number, like \d+, or a range, like \d+ to \d+\./
+  - button "Save general"
+  - heading "Move this dish" [level=2]
+  - text: Move to, Choose a section
+  - button "Move to, Choose a section": Choose a section
+  - button "Move dish"
+  - log
+- contentinfo: Accessible Menu
+- alert

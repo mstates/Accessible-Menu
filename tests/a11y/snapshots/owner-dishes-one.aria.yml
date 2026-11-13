@@ -32,10 +32,15 @@
         - link "Availability Available, no schedule"
       - listitem:
         - link "Choice lists 1 choice list"
-  - paragraph: Each change saves when you leave its field.
+  - paragraph:
+    - 'link "Next dish: Garlic bread"'
+  - paragraph: Changes on this page save when you press Save general.
+  - heading "Description" [level=2]
   - text: Description
   - textbox "Description"
-  - text: What is in it and how it is made. Diners read it in full.
+  - text: What is in it and how it is made. Diners read it in full. Note
+  - textbox "Note"
+  - text: A short line diners read with this dish, like "Comes with fries or a salad."
   - heading "Price" [level=2]
   - radiogroup "Price":
     - radio "One price" [checked]
@@ -48,12 +53,8 @@
   - textbox "Price": /\d+\.\d+/
   - text: /In dollars, like \d+ or \d+\.\d+\. Calories/
   - textbox "Calories": /\d+/
-  - text: /A number, like \d+, or a range, like \d+ to \d+\. Note/
-  - textbox "Note"
-  - text: A short line diners read with this dish, like "Comes with fries or a salad."
-  - status: All changes saved
-  - paragraph:
-    - 'link "Next dish: Garlic bread"'
+  - text: /A number, like \d+, or a range, like \d+ to \d+\./
+  - button "Save general"
   - heading "Move this dish" [level=2]
   - text: Move to, Choose a section
   - button "Move to, Choose a section": Choose a section

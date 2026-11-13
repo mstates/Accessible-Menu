@@ -3,6 +3,8 @@
 import { z } from "zod";
 import { expireRestaurant } from "@/core/cache";
 import {
+  dishGeneralSchema,
+  saveOwnerDishGeneral,
   writeOwnerDishAllergens,
   writeOwnerDishShowing,
   writeOwnerDishTagsPage,
@@ -11,6 +13,7 @@ import {
 } from "@/core/supabase/dishes";
 import { OTHER_ALLERGEN_LIMITS } from "@/domain/allergens";
 import { AVAILABILITY } from "@/domain/availability";
+import { PRICE_KINDS } from "@/domain/dish";
 import { DAY_KEYS } from "@/domain/hours";
 import { normalizeMenuCode } from "@/domain/menu-url";
 import { MONTH_KEYS, parseSchedule, WEEK_KEYS } from "@/domain/schedule";
@@ -26,14 +29,17 @@ import { dishScope } from "../owner-scope";
 import { validateAllergenForm } from "./allergens-form";
 import { validateAvailabilityForm } from "./availability-form";
 import type { AllergenSaveDetail, SaveResult } from "./form-result";
+import { validateGeneralForm } from "./general-form";
 
-// The three dish pages that save by a press save through these (D-223,
-// D-229): Allergens, Dietary tags, and Availability, one action each,
-// bound to the restaurant and the dish in the route. Each takes the page
-// as the owner left it and what the page showed, runs the page's own
-// validation again, and writes in as few statements as the database
-// allows, each landing only if the dish still holds what the page showed
-// (D-149). Nothing here redirects or refreshes: the browser loads the page
+// The four dish pages that save by a press save through these (D-223,
+// D-229, D-237): General, Allergens, Dietary tags, and Availability, one
+// action each, bound to the restaurant and the dish in the route. Each
+// takes the page as the owner left it and what the page showed, runs the
+// page's own validation again, and writes in as few statements as the
+// database allows, each landing only if the dish still holds what the
+// page showed (D-149); General's is one call, whole or not at all, with
+// the compare under a lock inside the database (migration 16). Nothing
+// here redirects or refreshes: the browser loads the page
 // again when a save lands, so the new document carries the result. The
 // code, the dish, and the payload are user input: they are checked here
 // and in dishScope, the dish is read as one of this restaurant's that is
@@ -55,6 +61,100 @@ function failed(problem: ServerProblem = { kind: "failed" }): {
 
 const moved = { status: "moved" } as const;
 const saved = { status: "saved" } as const;
+
+const typed = z.string().max(200);
+
+const generalPayload = z.object({
+  // The form's fields as the owner left them, every price choice's among
+  // them; only the chosen one's are read (Q-171).
+  fields: z.object({
+    description: z.string().max(5000),
+    note: typed,
+    kind: z.enum(PRICE_KINDS),
+    price: typed,
+    calories: typed,
+    sizes: z
+      .array(
+        z.object({
+          key: z.string().max(60),
+          id: z.uuid().nullable(),
+          name: typed,
+          price: typed,
+          calories: typed,
+        }),
+      )
+      .max(200),
+  }),
+  // The document the page showed, as it arrived from the reader: an object,
+  // handed on to the database untouched.
+  shown: z.record(z.string(), z.unknown()),
+});
+
+export type GeneralPayload = z.infer<typeof generalPayload>;
+
+// The table rules a General save can meet, by constraint, as the page's
+// own rules: the database's refusal is the page's rule said again, as the
+// backstop it is. The page checks every one before it sends, so these
+// answer only if the two ever disagree.
+const GENERAL_TABLE_RULES: Readonly<Record<string, string>> = {
+  items_description_text: "descriptionLength",
+  items_note_text: "noteLength",
+  items_price_cents_check: "priceRange",
+  items_price_cents_range: "priceRange",
+  items_calories_shape: "caloriesFormat",
+  item_sizes_name_text: "sizeNameLength",
+  item_sizes_price_cents: "priceRange",
+  item_sizes_calories_shape: "caloriesFormat",
+};
+
+function fromGeneralWrite(error: DishWriteError): SaveResult {
+  switch (error.kind) {
+    case "moved":
+      return moved;
+    // A dish that is not there is the page's own parent gone.
+    case "not-found":
+      return failed({ kind: "parent-gone" });
+    // The names index: two sizes of the dish would share a name.
+    case "name-taken":
+      return failed({ kind: "invalid", rule: "sizeNamesDiffer" });
+    case "refused": {
+      const rule = GENERAL_TABLE_RULES[error.rule];
+      return rule ? failed({ kind: "invalid", rule }) : failed();
+    }
+    default:
+      return failed();
+  }
+}
+
+// The General page (D-237): the description, the note, the price choice
+// with its one price or its sizes, and the calories, in one call that
+// lands whole or not at all. The page's own checks run again here, on the
+// fields as typed, against the document the page showed; what is written
+// is the next document, with every choice that is not the chosen one
+// copied from the shown one. The database locks the dish, reads the
+// document again, and refuses as moved when it is not the one the page
+// showed. A draft until Publish, so no diner page is told.
+export async function saveDishGeneral(
+  rawCode: string,
+  rawDish: string,
+  rawPayload: unknown,
+): Promise<SaveResult> {
+  const scope = await dishScope(rawCode, rawDish);
+  if (!scope.ok) return failed(scope.problem);
+  const payload = generalPayload.safeParse(rawPayload);
+  if (!payload.success) return failed();
+  const shown = dishGeneralSchema.safeParse(payload.data.shown);
+  if (!shown.success) return failed();
+  const check = validateGeneralForm(payload.data.fields, shown.data);
+  if (check.next === null) return failed();
+  const result = await saveOwnerDishGeneral(
+    scope.client,
+    scope.dishId,
+    payload.data.shown,
+    check.next,
+  );
+  return result.ok ? saved : fromGeneralWrite(result.error);
+}
 
 const listsSchema = z.object({
   allergens: z.array(z.enum(ALLERGEN_IDS)).max(ALLERGEN_IDS.length),

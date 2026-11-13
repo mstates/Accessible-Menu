@@ -2462,3 +2462,162 @@ describe("the icons toggle (migration 15, D-189, Q-107)", () => {
     expect(code).not.toMatch(/create |alter |drop |function|view/);
   });
 });
+
+describe("General's own Save (migration 16, D-237, Q-170)", () => {
+  const name = "20261112000001_general_save.sql";
+  const path = join(dir, name);
+  const text = existsSync(path) ? readFileSync(path, "utf8") : "";
+  // The statements alone: comments out, so a word in the notes is not read
+  // as a statement.
+  const code = text
+    .split("\n")
+    .map((line) => line.replace(/--.*$/, ""))
+    .join("\n");
+  const reader =
+    /create function public\.item_general\(p_item uuid\) returns jsonb\s+language sql stable set search_path = '' as \$\$([\s\S]*?)\$\$;/.exec(
+      code,
+    );
+  const writer =
+    /create function public\.save_item_general\(p_item uuid, p_shown jsonb, p_next jsonb\) returns void\s+language plpgsql volatile set search_path = '' as \$\$([\s\S]*?)\$\$;/.exec(
+      code,
+    );
+
+  it("is the sixteenth migration and creates two callable functions and nothing else", () => {
+    expect(files.indexOf(name)).toBe(15);
+    const callable = [
+      ...code.matchAll(/create (?:or replace )?function public\.(\w+)/g),
+    ].map((match) => match[1]);
+    expect(callable).toEqual(["item_general", "save_item_general"]);
+    expect(code).not.toMatch(/create (table|view|policy|trigger|type|index)/);
+    expect(code).not.toMatch(/alter /);
+    expect(code).not.toMatch(/drop /);
+    expect(code).not.toMatch(/create or replace/);
+  });
+
+  it("changes no privilege on a table: its only grants and revokes are on its two functions", () => {
+    const grants = [...code.matchAll(/grant [^;]*;/g)].map((match) => match[0]);
+    expect(grants).toEqual([
+      "grant execute on function public.item_general(uuid) to authenticated;",
+      "grant execute on function public.save_item_general(uuid, jsonb, jsonb) to authenticated;",
+    ]);
+    const revokes = [...code.matchAll(/revoke [^;]*;/g)].map(
+      (match) => match[0],
+    );
+    expect(revokes).toEqual([
+      "revoke all on function public.item_general(uuid) from public, anon;",
+      "revoke all on function public.save_item_general(uuid, jsonb, jsonb) from public, anon;",
+    ]);
+  });
+
+  it("runs both as the caller, with an empty search path, so row level security and the column lists stay the gate", () => {
+    expect(reader).not.toBeNull();
+    expect(writer).not.toBeNull();
+    expect(code).not.toMatch(/security definer/);
+    expect(code).not.toMatch(/set_config|set local|set role/);
+  });
+
+  it("reads the six fields and the sizes that are not removed, in price order, as one statement that only reads", () => {
+    const body = reader?.[1] ?? "";
+    for (const key of [
+      "description",
+      "note",
+      "price_kind",
+      "price_cents",
+      "calories_low",
+      "calories_high",
+      "sizes",
+    ]) {
+      expect(body, key).toContain(`'${key}', `);
+    }
+    expect(body).toMatch(
+      /order by z\.price_cents nulls last, z\.created_at, z\.id\)/,
+    );
+    expect(body).toMatch(/z\.item_id = i\.id and z\.deleted_at is null/);
+    expect(body).toMatch(/where i\.id = p_item and i\.deleted_at is null;/);
+    expect(body).toMatch(/'\[\]'::jsonb/);
+    expect(body).not.toMatch(/\b(insert|update|delete)\b/);
+    // The version is the values: no clock and no counter is read.
+    expect(body).not.toMatch(/updated_at/);
+  });
+
+  it("locks the dish, then every size of the dish, before it reads the document again through the reader and compares", () => {
+    const body = writer?.[1] ?? "";
+    const dishLock = body.search(
+      /from public\.items i\s+where i\.id = p_item and i\.deleted_at is null\s+for update;/,
+    );
+    const sizeLock = body.search(
+      /perform 1 from public\.item_sizes z\s+where z\.item_id = p_item\s+order by z\.id\s+for update;/,
+    );
+    const read = body.indexOf(
+      "select public.item_general(p_item) into now_holds;",
+    );
+    const compare = body.search(
+      /if now_holds is distinct from p_shown then\s+raise exception 'general_moved' using errcode = 'P0001';/,
+    );
+    const firstWrite = body.search(/\b(update|insert into) public\./);
+    expect(dishLock).toBeGreaterThan(-1);
+    expect(sizeLock).toBeGreaterThan(dishLock);
+    expect(read).toBeGreaterThan(sizeLock);
+    expect(compare).toBeGreaterThan(read);
+    expect(firstWrite).toBeGreaterThan(compare);
+    // Every size, the removed ones too: the lock has no deleted_at.
+    const locked =
+      /perform 1 from public\.item_sizes z[\s\S]*?for update;/.exec(body);
+    expect(locked?.[0]).not.toMatch(/deleted_at/);
+    // The section and the menu are read and never locked.
+    expect(body.match(/for update/g)).toHaveLength(2);
+    expect(body).not.toMatch(/updated_at/);
+  });
+
+  it("refuses by name, with nothing written before the last refusal", () => {
+    const body = writer?.[1] ?? "";
+    const names = [
+      ...body.matchAll(/raise exception '(\w+)' using errcode = 'P0001';/g),
+    ].map((match) => match[1]);
+    expect(names).toEqual([
+      "general_not_found",
+      "general_moved",
+      "general_malformed",
+      "general_malformed",
+      "general_malformed",
+      "general_malformed",
+    ]);
+    const lastRefusal = body.lastIndexOf("raise exception");
+    const firstWrite = body.search(/\b(update|insert into) public\./);
+    expect(firstWrite).toBeGreaterThan(lastRefusal);
+    // No handler: an error undoes the whole call.
+    expect(body).not.toMatch(/\bexception\s+when\b/);
+    expect(body).not.toMatch(/\bcommit\b|\bsavepoint\b/);
+  });
+
+  it("checks what to write key by key and kind by kind, a size's five keys among them", () => {
+    const body = writer?.[1] ?? "";
+    expect(body).toMatch(
+      /p_next \?& array\['description', 'note', 'price_kind',\s+'price_cents', 'calories_low', 'calories_high', 'sizes'\]/,
+    );
+    expect(body).toMatch(
+      /n\.size \?& array\['id', 'name', 'price_cents',\s+'calories_low', 'calories_high'\]/,
+    );
+    expect(body.match(/jsonb_typeof\(/g)?.length).toBe(14);
+  });
+
+  it("writes the dish, then marks removed sizes, frees changing names, writes the changed sizes, and adds the new ones, in that order", () => {
+    const body = writer?.[1] ?? "";
+    const order = [
+      body.indexOf("update public.items i"),
+      body.search(/update public\.item_sizes z\s+set deleted_at = now\(\)/),
+      body.search(/update public\.item_sizes z\s+set name = null/),
+      body.search(/update public\.item_sizes z\s+set name = n\.name,/),
+      body.indexOf(
+        "insert into public.item_sizes (item_id, name, price_cents)",
+      ),
+      body.search(/update public\.item_sizes z\s+set calories_low = /),
+    ];
+    for (const at of order) expect(at).toBeGreaterThan(-1);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // Owners insert a size's dish, name, and price and nothing else
+    // (migration 6), and remove by a mark, never a row.
+    expect(body).not.toMatch(/\bdelete from\b/);
+    expect(body).not.toMatch(/restaurant_id|created_at|updated_at/);
+  });
+});

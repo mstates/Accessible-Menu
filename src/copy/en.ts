@@ -661,7 +661,6 @@ export const en = {
     // name it; every sentence the log says does, since a sentence is heard
     // on its own. A size's texts are named for their size.
     dish: {
-      lead: "Each change saves when you leave its field.",
       // The dish's pages (D-222): General first, then the pages named by
       // their group headings, so a nav item, an h1, and a title's first part
       // are the same words. The state words sit inside each nav link after
@@ -714,6 +713,8 @@ export const en = {
         showNames: "Show size names",
         // A size with no name yet, named by its place: "size 2".
         unnamedSize: "size {position}",
+        // The same, standing alone as the name of the size's group (D-236).
+        sizeLegend: "Size {position}",
         // A size control's whole name: its visible label first, then its
         // size.
         sizeAction: "{action}, {size}",
@@ -739,18 +740,6 @@ export const en = {
           "Pint",
         ],
       },
-      notSaved: {
-        description: "The description of {dish} was not saved.",
-        note: "The note for {dish} was not saved.",
-        price: "The price of {dish} was not saved.",
-        calories: "The calories of {dish} were not saved.",
-        priceKind: "The price choice for {dish} was not saved.",
-        sizeName: "The name of {size} was not saved.",
-        sizePrice: "The price for {size} was not saved.",
-        sizeCalories: "The calories for {size} were not saved.",
-      },
-      notAdded: "A size was not added.",
-      notRemoved: "{size} was not removed.",
       errors: {
         descriptionLength: "Keep the description to 500 characters.",
         noteLength: "Keep the note to 120 characters.",
@@ -762,9 +751,22 @@ export const en = {
         caloriesRange: "Keep calories under 100,000.",
         caloriesOrder: "Put the lower number first, like 760 to 860.",
         nameTaken: "Another size of this dish is called {size}.",
-        gone: "That size is no longer here. Reload the page.",
+        // A size's own problems at Save (D-237). Each names its size, by
+        // its name or its place, since it is also a link in the summary.
+        sizeNameRequired: "Name {size}, like Cup or Bowl, or remove it.",
+        sizePriceRequired: "Type a price for {size}, like 5 or 5.50.",
+        sizePriceFormat: "Type the price for {size} like 12, 12.50, or $12.",
+        sizePriceRange: "Keep the price for {size} under $100,000.",
+        sizeCaloriesFormat:
+          "Type the calories for {size} as a whole number, like 760, or a range, like 760 to 860.",
+        sizeCaloriesRange: "Keep the calories for {size} under 100,000.",
+        sizeCaloriesOrder:
+          "For {size}, put the lower number first, like 760 to 860.",
+        // The database's own names rule, said again when it refuses a save
+        // the page let through.
+        sizeNamesDiffer:
+          "Two sizes of this dish have the same name. Give each size its own name.",
         parentGone: "This dish is no longer here. Go back to Menus.",
-        listChanged: "The sizes changed. Reload the page.",
       },
       // The link to the next dish in the section, so typing a section is one
       // pass (D-128), and what the last dish says instead.
@@ -781,6 +783,9 @@ export const en = {
         placeholder: "Choose a section",
         submit: "Move dish",
         choose: "Choose a section first.",
+        // What the button says while the form above holds unsaved changes
+        // (D-237), as Apply does on Allergens.
+        saveFirst: "Save general first.",
         moved:
           "{dish} moved to {section} in {menu}. It is the last dish there. You are still on this page.",
         notMoved: "{dish} was not moved.",
@@ -789,7 +794,7 @@ export const en = {
           sectionGone: "That section is no longer here. Reload the page.",
         },
       },
-      // The three pages that save by one press (D-223, D-229): the lead
+      // The pages that save by one press (D-223, D-229, D-237): the lead
       // under the h1 that says so, filled with the page's Save words; the
       // heading of the summary of problems a Save found; and the dialog an
       // owner link opens while the page holds unsaved changes.
@@ -802,6 +807,20 @@ export const en = {
           keep: "Keep editing",
           leave: "Leave",
         },
+      },
+      // The General page as one form (D-237): its one Save, the flash its
+      // landing brings (D-219), what a save that did not land says first,
+      // and the sentence for a save refused because the page's fields
+      // moved under it, which says to reload since a form page does not
+      // refresh (D-230). The heading over the description and the note
+      // (D-236).
+      general: {
+        submit: "Save general",
+        saved: "General saved.",
+        notSaved: "The changes to {dish} were not saved.",
+        moved:
+          "The description, price, or note changed since this page showed them, so nothing was saved. Reload the page to see them as they are now, then make your changes and save again.",
+        descriptionHeading: "Description",
       },
       // The dish's dietary tags (task 5, D-66): three boxes with a hint
       // each, and the sentence diners read under them from

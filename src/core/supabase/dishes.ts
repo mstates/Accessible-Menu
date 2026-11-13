@@ -1,12 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { AllergenLists } from "@/domain/allergens";
-import { caloriesInputText, type Calories } from "@/domain/calories";
+import { caloriesInputText } from "@/domain/calories";
 import {
   PRICE_KINDS,
+  type DishGeneral,
   type OwnerDish,
   type OwnerDishDetail,
-  type PriceKind,
 } from "@/domain/dish";
 import { nameKey } from "@/domain/menu";
 import { priceInputText } from "@/domain/money";
@@ -33,6 +33,9 @@ import { shaped } from "./log";
 // nothing about photos yet, and never who checked a list or when, which the
 // database stamps (D-148). A move to another section goes through
 // move_item(), since section_id is not a column owners write (migration 6).
+// The fields a dish's General page writes, its description, note, price
+// choice, one price, calories, and sizes, are read and written whole,
+// through item_general() and save_item_general() (migration 16, D-237).
 // The sold-out mark is read and written here as a column and never read for
 // its meaning, which domain/availability.ts decides (D-160). Nothing here
 // can publish.
@@ -126,6 +129,9 @@ export type DishWriteError =
   | { kind: "name-taken" }
   | { kind: "not-found" }
   | { kind: "mismatch" }
+  // A General save found the dish holding other values than the page
+  // showed (D-237).
+  | { kind: "moved" }
   // A move named a section that is not a live section of a live menu of
   // this restaurant.
   | { kind: "section-gone" }
@@ -307,41 +313,84 @@ export async function deleteOwnerDish(
   return row ? { ok: true, value: toDish(row) } : failed;
 }
 
-// Writes one column of a dish on its own page. The write is scoped to the
-// section the page read the dish in, so a page whose dish has moved since
-// gets not found, never a silent write. Under row level security a dish the
-// caller does not own matches zero rows without an error, so the write asks
-// for the row back and reads an empty answer as not found.
-async function writeDish(
+// The document a dish's General page shows and writes (D-237), in the
+// shape item_general() returns it (migration 16). Read as it arrives: a
+// size from the reader always has its id.
+const generalSizeSchema = z.object({
+  id: z.string(),
+  name: z.string().nullable(),
+  price_cents: z.number().nullable(),
+  calories_low: z.number().nullable(),
+  calories_high: z.number().nullable(),
+});
+
+export const dishGeneralSchema = z.object({
+  description: z.string().nullable(),
+  note: z.string().nullable(),
+  price_kind: z.enum(PRICE_KINDS),
+  price_cents: z.number().nullable(),
+  calories_low: z.number().nullable(),
+  calories_high: z.number().nullable(),
+  sizes: z.array(generalSizeSchema),
+});
+
+// The raw value comes back beside the parsed one: the form reads the
+// parsed document, and the Save hands the raw one back untouched, since
+// the writer compares it with its own read by value and a key this reader
+// does not know would otherwise be lost on the way.
+export type OwnerDishGeneral = { raw: unknown; general: DishGeneral };
+
+// What the General page shows, from item_general(): one statement, so the
+// dish's fields and its sizes are of one instant. The function runs as the
+// caller and only reads, so it goes as a GET (D-199), and row level
+// security decides what it can read. It answers with no document for a
+// dish that is missing, deleted, or not this owner's.
+export async function readOwnerDishGeneral(
   client: SupabaseClient,
-  sectionId: string,
   id: string,
-  column: "description" | "note" | "price_cents" | "price_kind",
-  value: string | number | null,
-): Promise<DishWriteResult<OwnerDishDetail>> {
-  return writeDishColumns(client, sectionId, id, { [column]: value });
+): Promise<OwnerDishGeneral | "not-found" | "failed"> {
+  const { data, error } = await client.rpc(
+    "item_general",
+    { p_item: id },
+    { get: true },
+  );
+  if (error) return "failed";
+  if (data === null || data === undefined) return "not-found";
+  const general = shaped(dishGeneralSchema, data, "rpc/item_general");
+  return general ? { raw: data as unknown, general } : "failed";
 }
 
-// The same, for a write of more than one column at once: a pair of
-// calories (D-167).
-async function writeDishColumns(
+// The General page's one write (D-237), through save_item_general(): the
+// dish's fields and its sizes in one transaction, whole or not at all,
+// landing only if the dish still holds the document the page showed. The
+// database locks the dish, reads the document again through the same
+// reader, and compares the two by value. shown goes back as the object it
+// arrived as, and all three arguments are always sent: a missing one names
+// a function that does not exist. A refusal by name is told apart by its
+// message; a table rule comes back by its code, as the names index
+// (name-taken) or as the constraint's name (refused).
+export async function saveOwnerDishGeneral(
   client: SupabaseClient,
-  sectionId: string,
   id: string,
-  values: Record<string, unknown>,
-): Promise<DishWriteResult<OwnerDishDetail>> {
-  const { data, error } = await client
-    .from("items")
-    .update(values)
-    .eq("id", id)
-    .eq("section_id", sectionId)
-    .is("deleted_at", null)
-    .select(detailColumns)
-    .maybeSingle();
-  if (error) return refused(error.code, error.message);
-  if (!data) return notFound;
-  const row = shaped(detailSchema, data, "items");
-  return row ? { ok: true, value: toDetail(row, null) } : failed;
+  shown: Record<string, unknown>,
+  next: DishGeneral,
+): Promise<DishWriteResult<null>> {
+  const { error } = await client.rpc("save_item_general", {
+    p_item: id,
+    p_shown: shown,
+    p_next: next,
+  });
+  if (!error) return { ok: true, value: null };
+  switch (error.message) {
+    case "general_moved":
+      return { ok: false, error: { kind: "moved" } };
+    case "general_not_found":
+      return notFound;
+    case "general_malformed":
+      return failed;
+    default:
+      return refused(error.code, error.message);
+  }
 }
 
 // A Postgres array literal, for comparing an array column against the value
@@ -617,57 +666,6 @@ export async function listOwnerOtherAllergenNames(
   );
   if (!rows) throw new Error("other allergens could not be read");
   return rows.flatMap((row) => row.custom_allergens);
-}
-
-// A dish's description or note, stored as null when blank.
-export function setOwnerDishText(
-  client: SupabaseClient,
-  sectionId: string,
-  id: string,
-  field: "description" | "note",
-  value: string | null,
-): Promise<DishWriteResult<OwnerDishDetail>> {
-  return writeDish(client, sectionId, id, field, value);
-}
-
-// A dish's one price, in cents, or null for none (D-139).
-export function setOwnerDishPrice(
-  client: SupabaseClient,
-  sectionId: string,
-  id: string,
-  cents: number | null,
-): Promise<DishWriteResult<OwnerDishDetail>> {
-  return writeDish(client, sectionId, id, "price_cents", cents);
-}
-
-// The two calorie columns a pair of calories lives in (D-167): the low
-// number, and the high one or null for a single number.
-function calorieColumns(calories: Calories | null) {
-  return {
-    calories_low: calories?.low ?? null,
-    calories_high: calories?.high ?? null,
-  };
-}
-
-// A dish's calories, both columns in one statement, or none (D-167).
-export function setOwnerDishCalories(
-  client: SupabaseClient,
-  sectionId: string,
-  id: string,
-  calories: Calories | null,
-): Promise<DishWriteResult<OwnerDishDetail>> {
-  return writeDishColumns(client, sectionId, id, calorieColumns(calories));
-}
-
-// How a dish is priced (D-139). The other choices' values stay stored and
-// come back when the owner switches back (Michael, October 7, 2026).
-export function setOwnerDishPriceKind(
-  client: SupabaseClient,
-  sectionId: string,
-  id: string,
-  kind: PriceKind,
-): Promise<DishWriteResult<OwnerDishDetail>> {
-  return writeDish(client, sectionId, id, "price_kind", kind);
 }
 
 // Moves a dish to another section of its restaurant, last, with its sizes

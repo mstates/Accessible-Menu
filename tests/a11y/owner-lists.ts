@@ -532,6 +532,10 @@ export function listRowChecks(list: ListUnderTest): void {
       page.getByRole("button", { name: editing.reload, exact: true }),
       "a page that is out of date offers Reload",
     ).toHaveCount(1);
+    await expect(
+      page.getByRole("button", { name: editing.tryAgain, exact: true }),
+      "and never Try again: the same page would send the same stale action (D-237)",
+    ).toHaveCount(0);
     expect(
       writes.answered.length,
       "the save was sent and answered in the browser",

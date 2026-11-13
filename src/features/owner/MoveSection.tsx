@@ -74,6 +74,7 @@ export function MoveSection({
               section.name,
               target.name,
             ),
+            result.problem.kind,
           );
           return;
         }

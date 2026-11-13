@@ -330,6 +330,7 @@ describe("the words", () => {
       en.owner.dish.allergens.listsMoved,
       en.owner.dish.tags.tagsMoved,
       en.owner.dish.schedule.scheduleMoved,
+      en.owner.dish.general.moved,
     ]) {
       expect(words, words).toContain("Reload the page");
       expect(words, words).toContain("save again");

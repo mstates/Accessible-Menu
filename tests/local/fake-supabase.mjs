@@ -588,8 +588,14 @@ function showingProblem(row) {
   return null;
 }
 
-// Migration six's rules for one size row, as it would be after a write.
+// Migration six's rules for one size row, as it would be after a write:
+// its own checks, then its name against the dish's other live sizes.
 function sizeProblem(row) {
+  return sizeRuleProblem(row) ?? sizeNameTaken(row, sizes);
+}
+
+// The checks on a size's own values (migrations six and eleven).
+function sizeRuleProblem(row) {
   const { name, price_cents: price } = row;
   if (
     name !== null &&
@@ -609,17 +615,188 @@ function sizeProblem(row) {
   if (!caloriesOk(row.calories_low, row.calories_high)) {
     return check("item_sizes", "item_sizes_calories_shape");
   }
-  if (row.deleted_at === null && name !== null) {
-    const taken = sizes.some(
-      (z) =>
-        z.id !== row.id &&
-        z.item_id === row.item_id &&
-        z.deleted_at === null &&
-        z.name !== null &&
-        nameKey(z.name) === nameKey(name),
-    );
-    if (taken) return unique("item_sizes_name_key");
+  return null;
+}
+
+// item_sizes_name_key: names of a dish's live, named sizes differ,
+// whatever the case or the outer spaces. peers is the list to read against,
+// the store's, or the sizes as one General save would leave them.
+function sizeNameTaken(row, peers) {
+  if (row.deleted_at !== null || row.name === null) return null;
+  const taken = peers.some(
+    (z) =>
+      z.id !== row.id &&
+      z.item_id === row.item_id &&
+      z.deleted_at === null &&
+      z.name !== null &&
+      nameKey(z.name) === nameKey(row.name),
+  );
+  return taken ? unique("item_sizes_name_key") : null;
+}
+
+// What a dish's General page shows and writes (migration 16), as
+// item_general() returns it: the dish's six fields and its live sizes, in
+// price order, a size with no price last, then the order added. Null for a
+// dish that is deleted or missing.
+function sizeOrder(a, b) {
+  if (a.price_cents === null && b.price_cents !== null) return 1;
+  if (a.price_cents !== null && b.price_cents === null) return -1;
+  return (
+    (a.price_cents ?? 0) - (b.price_cents ?? 0) ||
+    a.created_at.localeCompare(b.created_at) ||
+    a.id.localeCompare(b.id)
+  );
+}
+
+function itemGeneral(id) {
+  const dish = items.find((i) => i.id === id && i.deleted_at === null);
+  if (!dish) return null;
+  return {
+    description: dish.description,
+    note: dish.note,
+    price_kind: dish.price_kind,
+    price_cents: dish.price_cents,
+    calories_low: dish.calories_low,
+    calories_high: dish.calories_high,
+    sizes: sizes
+      .filter((z) => z.item_id === dish.id && z.deleted_at === null)
+      .sort(sizeOrder)
+      .map((z) => ({
+        id: z.id,
+        name: z.name,
+        price_cents: z.price_cents,
+        calories_low: z.calories_low,
+        calories_high: z.calories_high,
+      })),
+  };
+}
+
+// A value's kind the way jsonb_typeof names it.
+const jsonKind = (value) =>
+  value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+const kindIn = (value, kinds) =>
+  value !== undefined && kinds.includes(jsonKind(value));
+
+// save_item_general() (migration 16), by the same rule: the dish live in a
+// live section of a live menu, or general_not_found; the document the page
+// showed equal by value to the dish's now, or general_moved; what to write
+// the same kind of document, every key there with a value of its own kind
+// and every size's id one of the dish's live sizes, once, or
+// general_malformed; then the dish's fields and its sizes together. Every
+// change is worked out on copies, in the function's order, and kept only
+// if every row passes its table rules, so a refused save writes nothing.
+// There is no lock here and no transaction: what a second save at the same
+// instant does is proved on a real Postgres, never by this (D-237).
+// Answers null when it landed, or the status and body of its refusal.
+function saveItemGeneral(itemId, shown, next) {
+  const refused = (message) => [
+    400,
+    { code: "P0001", message, details: null, hint: null },
+  ];
+  const dish = items.find(
+    (i) =>
+      i.id === itemId &&
+      i.deleted_at === null &&
+      i.restaurant_id === restaurant.id,
+  );
+  const section =
+    dish &&
+    sections.find((s) => s.id === dish.section_id && s.deleted_at === null);
+  const menu =
+    section &&
+    menus.find((m) => m.id === section.menu_id && m.deleted_at === null);
+  if (!dish || !section || !menu) return refused("general_not_found");
+  if (canonical(itemGeneral(dish.id)) !== canonical(shown ?? null)) {
+    return refused("general_moved");
   }
+
+  const own = sizes.filter(
+    (z) => z.item_id === dish.id && z.deleted_at === null,
+  );
+  const text = ["string", "null"];
+  const number = ["number", "null"];
+  const wellFormed =
+    jsonKind(next) === "object" &&
+    kindIn(next.description, text) &&
+    kindIn(next.note, text) &&
+    kindIn(next.price_kind, ["string"]) &&
+    kindIn(next.price_cents, number) &&
+    kindIn(next.calories_low, number) &&
+    kindIn(next.calories_high, number) &&
+    kindIn(next.sizes, ["array"]) &&
+    next.sizes.every(
+      (size) =>
+        jsonKind(size) === "object" &&
+        kindIn(size.id, text) &&
+        kindIn(size.name, text) &&
+        kindIn(size.price_cents, number) &&
+        kindIn(size.calories_low, number) &&
+        kindIn(size.calories_high, number),
+    );
+  if (!wellFormed) return refused("general_malformed");
+  const listed = next.sizes.filter((size) => size.id !== null);
+  const known = new Set(listed.map((size) => size.id));
+  if (
+    known.size !== listed.length ||
+    listed.some((size) => !own.some((z) => z.id === size.id))
+  ) {
+    return refused("general_malformed");
+  }
+
+  const nextDish = {
+    ...dish,
+    description: next.description,
+    note: next.note,
+    price_kind: next.price_kind,
+    price_cents: next.price_cents,
+    calories_low: next.calories_low,
+    calories_high: next.calories_high,
+  };
+  const dishProblem = itemProblem(nextDish);
+  if (dishProblem) return dishProblem;
+
+  const marked = stamp();
+  const kept = own.map((z) => {
+    const wanted = listed.find((size) => size.id === z.id);
+    return wanted
+      ? {
+          ...z,
+          name: wanted.name,
+          price_cents: wanted.price_cents,
+          calories_low: wanted.calories_low,
+          calories_high: wanted.calories_high,
+        }
+      : { ...z, deleted_at: marked };
+  });
+  // One stamp for every size a save adds: they are of one transaction.
+  const made = stamp();
+  const added = next.sizes
+    .filter((size) => size.id === null)
+    .map((size) => ({
+      id: randomUUID(),
+      item_id: dish.id,
+      restaurant_id: dish.restaurant_id,
+      name: size.name,
+      price_cents: size.price_cents,
+      calories_low: size.calories_low,
+      calories_high: size.calories_high,
+      deleted_at: null,
+      created_at: made,
+    }));
+  const after = [...kept, ...added];
+  for (const row of after) {
+    const problem = sizeRuleProblem(row) ?? sizeNameTaken(row, after);
+    if (problem) return problem;
+  }
+
+  Object.assign(dish, nextDish);
+  for (const row of kept) {
+    Object.assign(
+      sizes.find((z) => z.id === row.id),
+      row,
+    );
+  }
+  sizes.push(...added);
   return null;
 }
 
@@ -1246,6 +1423,84 @@ const server = http.createServer(async (req, res) => {
       const problem = itemProblem(next);
       if (problem) return send(res, ...problem);
       Object.assign(dish, next);
+      return send(res, 200, dish);
+    }
+    // A size added to a dish somewhere else, or one an older draft holds:
+    // with or without a name, a price, a place in time. The page itself
+    // can no longer save a size with no name (D-237).
+    if (path === "/__test/add-size") {
+      const dish = items.find((i) => i.id === params.get("dish"));
+      if (!dish) return send(res, 404, { message: "no such dish" });
+      const price = params.get("price_cents");
+      const row = {
+        id: randomUUID(),
+        item_id: dish.id,
+        restaurant_id: dish.restaurant_id,
+        name: params.get("name"),
+        price_cents: price === null ? null : Number(price),
+        calories_low: null,
+        calories_high: null,
+        deleted_at: null,
+        created_at: stamp(),
+      };
+      const problem = sizeProblem(row);
+      if (problem) return send(res, ...problem);
+      sizes.push(row);
+      return send(res, 200, row);
+    }
+    // A dish's General document as it stands, and the same put back as a
+    // spec found it, rows and all: the dish's six fields, each size the
+    // document holds by its id, brought back if it was marked deleted, and
+    // every other size of the dish marked deleted. Housekeeping for the
+    // specs, outside the function's rule on purpose: the function never
+    // brings a size back, and a published snapshot holds each size's id,
+    // so a size removed and added again would read as a change not
+    // published for the rest of the run.
+    if (path === "/__test/general") {
+      return send(res, 200, itemGeneral(params.get("id")));
+    }
+    if (path === "/__test/put-general") {
+      const dish = items.find((i) => i.id === params.get("id"));
+      if (!dish) return send(res, 404, { message: "no such dish" });
+      const was = await body(req);
+      const own = sizes.filter((z) => z.item_id === dish.id);
+      const strangers = (was.sizes ?? []).filter(
+        (size) => !own.some((z) => z.id === size.id),
+      );
+      if (!Array.isArray(was.sizes) || strangers.length > 0) {
+        return send(res, 400, { message: "not this dish's document" });
+      }
+      Object.assign(dish, {
+        description: was.description,
+        note: was.note,
+        price_kind: was.price_kind,
+        price_cents: was.price_cents,
+        calories_low: was.calories_low,
+        calories_high: was.calories_high,
+      });
+      for (const row of own) {
+        const wanted = was.sizes.find((size) => size.id === row.id);
+        if (wanted) {
+          Object.assign(row, {
+            name: wanted.name,
+            price_cents: wanted.price_cents,
+            calories_low: wanted.calories_low,
+            calories_high: wanted.calories_high,
+            deleted_at: null,
+          });
+        } else if (row.deleted_at === null) {
+          row.deleted_at = stamp();
+        }
+      }
+      return send(res, 200, itemGeneral(dish.id));
+    }
+    // A dish deleted somewhere else, by a plain mark.
+    if (path === "/__test/delete-dish") {
+      const dish = items.find(
+        (i) => i.id === params.get("id") && i.deleted_at === null,
+      );
+      if (!dish) return send(res, 404, { message: "no such dish" });
+      dish.deleted_at = stamp();
       return send(res, 200, dish);
     }
     // A menu deleted somewhere else, by a plain mark.
@@ -1958,6 +2213,21 @@ const server = http.createServer(async (req, res) => {
         const row = items.find((i) => i.id === id);
         row.sort = index + 1;
       });
+      res.writeHead(204);
+      return res.end();
+    }
+    // A dish's General document (migration 16). A read: it is not counted
+    // among the writes. A dish that is deleted or missing answers null.
+    if (path === "/rest/v1/rpc/item_general" && req.method === "GET") {
+      return send(res, 200, itemGeneral(argument(params, "p_item")));
+    }
+    // The General page's one write (migration 16): whole or not at all.
+    if (path === "/rest/v1/rpc/save_item_general" && req.method === "POST") {
+      const { p_item, p_shown, p_next } = await body(req);
+      writes.push(`rpc save_item_general ${JSON.stringify(p_next)}`);
+      if (await knobs(res)) return;
+      const problem = saveItemGeneral(p_item, p_shown, p_next);
+      if (problem) return send(res, ...problem);
       res.writeHead(204);
       return res.end();
     }

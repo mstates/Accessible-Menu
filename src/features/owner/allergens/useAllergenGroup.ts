@@ -275,7 +275,7 @@ export function useAllergenGroup({
   // shows the target as it is now.
   function listsMoved(key: string, sentence: string) {
     editing.dropField(key);
-    editing.failChange(sentence);
+    editing.failChange(sentence, "lists-changed");
   }
 
   function setAllergen(id: UsMajorAllergen, on: boolean, force = false) {
@@ -312,6 +312,7 @@ export function useAllergenGroup({
           }
           editing.failField(key, {
             fieldId: ids.box(id),
+            kind: result.problem.kind,
             problem: problemText(words, result.problem, subject.name),
             sentence: allergensNotSavedSentence(
               copy,
@@ -351,6 +352,7 @@ export function useAllergenGroup({
           }
           editing.failField(key, {
             fieldId: ids.check,
+            kind: result.problem.kind,
             problem: problemText(words, result.problem, subject.name),
             sentence: checkNotSavedSentence(
               copy,
@@ -378,6 +380,7 @@ export function useAllergenGroup({
     const text = problemText(otherTextWords, problem, name);
     editing.failField(otherKey(row.key), {
       fieldId: ids.otherField(row.key),
+      kind: problem.kind,
       problem: text,
       sentence: failureSentence(
         notSavedSentence(otherTextWords, "name", label),
@@ -537,6 +540,7 @@ export function useAllergenGroup({
               fill(copy.notRemoved, { other: label }),
               problemText(otherTextWords, result.problem, label),
             ),
+            result.problem.kind,
           );
           return;
         }
@@ -570,6 +574,7 @@ export function useAllergenGroup({
               result.problem,
               place,
             ),
+            result.problem.kind,
           );
           return;
         }

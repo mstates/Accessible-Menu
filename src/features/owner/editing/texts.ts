@@ -64,6 +64,7 @@ export function failText<F extends string>(
   const text = problemText(home.words, problem, name);
   editing.failField(home.key(field), {
     fieldId: home.id(field),
+    kind: problem.kind,
     problem: text,
     sentence: failureSentence(
       notSavedSentence(home.words, field, home.row.name),

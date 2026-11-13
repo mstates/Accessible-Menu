@@ -32,10 +32,15 @@
         - link "Availability Available, schedule set"
       - listitem:
         - link "Choice lists None"
-  - paragraph: Each change saves when you leave its field.
+  - paragraph:
+    - 'link "Next dish: House salad"'
+  - paragraph: Changes on this page save when you press Save general.
+  - heading "Description" [level=2]
   - text: Description
   - textbox "Description"
-  - text: What is in it and how it is made. Diners read it in full.
+  - text: What is in it and how it is made. Diners read it in full. Note
+  - textbox "Note"
+  - text: A short line diners read with this dish, like "Comes with fries or a salad."
   - heading "Price" [level=2]
   - radiogroup "Price":
     - radio "One price"
@@ -46,32 +51,29 @@
     - text: Market price
   - list "Sizes":
     - listitem:
-      - text: Size for Cup
-      - combobox "Size for Cup": Cup
-      - button "Show size names, Cup"
-      - text: Like Cup, Bowl, Half, or Full. Price for Cup
-      - textbox "Price for Cup": /\d+\.\d+/
-      - text: /In dollars, like \d+ or \d+\.\d+\. Calories for Cup/
-      - textbox "Calories for Cup": /\d+/
-      - text: /A number, like \d+, or a range, like \d+ to \d+\./
-      - button "Remove, Cup": Remove
+      - group "Cup":
+        - text: Cup Size for Cup
+        - combobox "Size for Cup": Cup
+        - button "Show size names, Cup"
+        - text: Like Cup, Bowl, Half, or Full. Price for Cup
+        - textbox "Price for Cup": /\d+\.\d+/
+        - text: /In dollars, like \d+ or \d+\.\d+\. Calories for Cup/
+        - textbox "Calories for Cup": /\d+/
+        - text: /A number, like \d+, or a range, like \d+ to \d+\./
+        - button "Remove, Cup": Remove
     - listitem:
-      - text: Size for Bowl
-      - combobox "Size for Bowl": Bowl
-      - button "Show size names, Bowl"
-      - text: Like Cup, Bowl, Half, or Full. Price for Bowl
-      - textbox "Price for Bowl": /\d+\.\d+/
-      - text: /In dollars, like \d+ or \d+\.\d+\. Calories for Bowl/
-      - textbox "Calories for Bowl": /\d+/
-      - text: /A number, like \d+, or a range, like \d+ to \d+\./
-      - button "Remove, Bowl": Remove
+      - group "Bowl":
+        - text: Bowl Size for Bowl
+        - combobox "Size for Bowl": Bowl
+        - button "Show size names, Bowl"
+        - text: Like Cup, Bowl, Half, or Full. Price for Bowl
+        - textbox "Price for Bowl": /\d+\.\d+/
+        - text: /In dollars, like \d+ or \d+\.\d+\. Calories for Bowl/
+        - textbox "Calories for Bowl": /\d+/
+        - text: /A number, like \d+, or a range, like \d+ to \d+\./
+        - button "Remove, Bowl": Remove
   - button "Add a size"
-  - text: Note
-  - textbox "Note"
-  - text: A short line diners read with this dish, like "Comes with fries or a salad."
-  - status: All changes saved
-  - paragraph:
-    - 'link "Next dish: House salad"'
+  - button "Save general"
   - heading "Move this dish" [level=2]
   - text: Move to, Choose a section
   - button "Move to, Choose a section": Choose a section

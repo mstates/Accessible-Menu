@@ -2,49 +2,33 @@ import { describe, expect, it } from "vitest";
 import { en } from "../../src/copy";
 import {
   dishWords,
-  kindLabel,
-  kindNotSavedSentence,
+  generalNotSavedSentence,
+  generalProblemText,
   lastDishSentence,
   movedSentence,
   nextDishLabel,
-  notAddedSentence,
   notMovedSentence,
-  notRemovedSentence,
   sizeAction,
   sizeAddedSentence,
   sizeLabel,
+  sizeLegend,
   sizeRemovedSentence,
   sizeSuffix,
-  sizeWords,
 } from "../../src/features/owner/dish/dish-words";
+import { problemText } from "../../src/features/owner/editing/list-words";
 import {
-  notSavedSentence,
-  problemText,
-} from "../../src/features/owner/editing/list-words";
+  GENERAL_IDS,
+  sizeFieldId,
+} from "../../src/features/owner/dish/general-form";
 
-// What a dish's page says, built from copy (D-128, D-139, D-141).
+// What a dish's page says, built from copy (D-128, D-139, D-141, D-237).
 
 const strings = en.owner.dish;
 const editing = en.owner.editing;
 const words = dishWords(strings, editing);
-const sizes = sizeWords(strings, editing);
 
 const dish = "Soup of the day";
-describe("the words the dish's texts are said in", () => {
-  it("names the page's fields without the dish, and its sentences with it", () => {
-    expect(words.fields.description?.label).toBe(strings.descriptionLabel);
-    expect(words.fields.description?.suffix).toBe("");
-    expect(words.fields.description?.multiline).toBe(true);
-    expect(words.fields.price?.label).toBe(strings.price.amountLabel);
-    expect(words.fields.note?.label).toBe(strings.noteLabel);
-    expect(notSavedSentence(words, "note", dish)).toBe(
-      `The note for ${dish} was not saved.`,
-    );
-    expect(notSavedSentence(words, "price", dish)).toBe(
-      `The price of ${dish} was not saved.`,
-    );
-  });
-
+describe("the words a dish's form pages say a failed save in", () => {
   it("says a dish that is gone as the page's parent gone", () => {
     expect(problemText(words, { kind: "parent-gone" }, dish)).toBe(
       strings.errors.parentGone,
@@ -64,55 +48,147 @@ describe("the words the dish's texts are said in", () => {
     expect(
       problemText(words, { kind: "invalid", rule: "caloriesOrder" }, dish),
     ).toBe(strings.errors.caloriesOrder);
+    expect(
+      problemText(words, { kind: "invalid", rule: "sizeNamesDiffer" }, dish),
+    ).toBe(strings.errors.sizeNamesDiffer);
   });
 
-  // D-167: calories beside each price, one field a place.
-  it("names the calories field plainly on the dish and for its size", () => {
-    expect(words.fields.calories).toMatchObject({
-      label: strings.price.caloriesLabel,
-      suffix: "",
-      hint: strings.price.caloriesHint,
-    });
-    expect(notSavedSentence(words, "calories", dish)).toBe(
-      `The calories of ${dish} were not saved.`,
-    );
-    expect(sizes.fields.calories).toMatchObject({
-      label: strings.price.sizeCaloriesLabel,
-      suffix: strings.price.labelFor,
-    });
-    expect(notSavedSentence(sizes, "calories", "Cup")).toBe(
-      "The calories for Cup were not saved.",
+  // A dish's pages hold no list of their own, so that kind reads as a page
+  // that is out of date; they have no as-you-go fields at all (D-237).
+  it("holds no field of its own, and reads a changed list as out of date", () => {
+    expect(words.fields).toEqual({});
+    expect(problemText(words, { kind: "mismatch" }, dish)).toBe(
+      editing.problems.outOfDate,
     );
   });
 });
 
-describe("the words a size's texts are said in", () => {
-  it("names a size's fields for their size, and says a taken name", () => {
-    expect(sizes.fields.name?.label).toBe(strings.price.sizeNameLabel);
-    expect(sizes.fields.name?.suffix).toBe(strings.price.labelFor);
-    expect(sizeSuffix(strings, "Cup")).toBe("for Cup");
-    expect(notSavedSentence(sizes, "price", "Cup")).toBe(
-      "The price for Cup was not saved.",
+describe("a General save the server did not take (D-237)", () => {
+  it("says what was not saved, then why", () => {
+    expect(
+      generalNotSavedSentence(strings, words, dish, { kind: "parent-gone" }),
+    ).toBe(
+      `The changes to ${dish} were not saved. This dish is no longer here. Go back to Menus.`,
     );
-    expect(problemText(sizes, { kind: "name-taken" }, "Cup")).toBe(
-      "Another size of this dish is called Cup.",
+    expect(
+      generalNotSavedSentence(strings, words, dish, { kind: "unreachable" }),
+    ).toBe(
+      `The changes to ${dish} were not saved. ${editing.problems.unreachable}`,
     );
-    expect(problemText(sizes, { kind: "gone" }, "Cup")).toBe(
-      strings.errors.gone,
+    expect(
+      generalNotSavedSentence(strings, words, dish, { kind: "out-of-date" }),
+    ).toBe(
+      `The changes to ${dish} were not saved. ${editing.problems.outOfDate}`,
+    );
+    expect(
+      generalNotSavedSentence(strings, words, dish, {
+        kind: "invalid",
+        rule: "descriptionLength",
+      }),
+    ).toBe(
+      `The changes to ${dish} were not saved. Keep the description to 500 characters.`,
     );
   });
+});
 
+describe("what a Save found wrong with a field (D-237)", () => {
+  it("says the dish's own fields plainly", () => {
+    expect(
+      generalProblemText(strings, {
+        id: GENERAL_IDS.price,
+        rule: "priceFormat",
+      }),
+    ).toBe("Type a price like 12, 12.50, or $12.");
+    expect(
+      generalProblemText(strings, {
+        id: GENERAL_IDS.note,
+        rule: "noteLength",
+      }),
+    ).toBe("Keep the note to 120 characters.");
+  });
+
+  it("names the size a problem is in, by its name or its place", () => {
+    const named = { position: 1, name: "Cup" };
+    const unnamed = { position: 2, name: "" };
+    expect(
+      generalProblemText(strings, {
+        id: sizeFieldId("a", "name"),
+        rule: "sizeNameRequired",
+        size: unnamed,
+      }),
+    ).toBe("Name size 2, like Cup or Bowl, or remove it.");
+    expect(
+      generalProblemText(strings, {
+        id: sizeFieldId("a", "price"),
+        rule: "sizePriceRequired",
+        size: named,
+      }),
+    ).toBe("Type a price for Cup, like 5 or 5.50.");
+    expect(
+      generalProblemText(strings, {
+        id: sizeFieldId("a", "price"),
+        rule: "sizePriceFormat",
+        size: unnamed,
+      }),
+    ).toBe("Type the price for size 2 like 12, 12.50, or $12.");
+    expect(
+      generalProblemText(strings, {
+        id: sizeFieldId("a", "price"),
+        rule: "sizePriceRange",
+        size: named,
+      }),
+    ).toBe("Keep the price for Cup under $100,000.");
+    expect(
+      generalProblemText(strings, {
+        id: sizeFieldId("a", "calories"),
+        rule: "sizeCaloriesFormat",
+        size: named,
+      }),
+    ).toBe(
+      "Type the calories for Cup as a whole number, like 760, or a range, like 760 to 860.",
+    );
+    expect(
+      generalProblemText(strings, {
+        id: sizeFieldId("a", "calories"),
+        rule: "sizeCaloriesRange",
+        size: named,
+      }),
+    ).toBe("Keep the calories for Cup under 100,000.");
+    expect(
+      generalProblemText(strings, {
+        id: sizeFieldId("a", "calories"),
+        rule: "sizeCaloriesOrder",
+        size: unnamed,
+      }),
+    ).toBe("For size 2, put the lower number first, like 760 to 860.");
+    expect(
+      generalProblemText(strings, {
+        id: sizeFieldId("a", "name"),
+        rule: "sizeNameLength",
+        size: named,
+      }),
+    ).toBe(strings.errors.sizeNameLength);
+  });
+
+  it("names the other size when two share a name", () => {
+    expect(
+      generalProblemText(strings, {
+        id: sizeFieldId("b", "name"),
+        rule: "nameTaken",
+        size: { position: 2, name: "cup" },
+        other: "Cup",
+      }),
+    ).toBe("Another size of this dish is called Cup.");
+  });
+});
+
+describe("the words a size's controls are named in", () => {
   it("names a size by its name, or by its place while it has none", () => {
-    expect(
-      sizeLabel(
-        strings,
-        { id: "z", name: "Cup", price: "5.00", calories: "" },
-        1,
-      ),
-    ).toBe("Cup");
-    expect(
-      sizeLabel(strings, { id: "z", name: "", price: "", calories: "" }, 2),
-    ).toBe("size 2");
+    expect(sizeLabel(strings, "Cup", 1)).toBe("Cup");
+    expect(sizeLabel(strings, "", 2)).toBe("size 2");
+    expect(sizeLegend(strings, "Cup", 1)).toBe("Cup");
+    expect(sizeLegend(strings, "", 2)).toBe("Size 2");
+    expect(sizeSuffix(strings, "Cup")).toBe("for Cup");
     expect(sizeAction(strings, strings.price.removeSize, "Cup")).toBe(
       "Remove, Cup",
     );
@@ -124,27 +200,8 @@ describe("the words a size's texts are said in", () => {
   it("counts sizes as they are added, and says a removal", () => {
     expect(sizeAddedSentence(strings, 1)).toBe("Size added. 1 size.");
     expect(sizeAddedSentence(strings, 2)).toBe("Size added. 2 sizes.");
-    expect(sizeRemovedSentence(strings, "Cup")).toBe("Cup removed.");
-  });
-
-  it("says what did not happen, then why", () => {
-    expect(notAddedSentence(strings, words, { kind: "failed" })).toBe(
-      `A size was not added. ${editing.problems.failed}`,
-    );
-    expect(
-      notRemovedSentence(strings, sizes, "Cup", { kind: "out-of-date" }),
-    ).toBe(`Cup was not removed. ${editing.problems.outOfDate}`);
-    expect(
-      kindNotSavedSentence(strings, words, dish, { kind: "unreachable" }),
-    ).toBe(
-      `The price choice for ${dish} was not saved. ${editing.problems.unreachable}`,
-    );
-  });
-
-  it("gives each price choice its visible words", () => {
-    expect(kindLabel(strings, "one")).toBe("One price");
-    expect(kindLabel(strings, "sizes")).toBe("Prices by size");
-    expect(kindLabel(strings, "market")).toBe("Market price");
+    expect(sizeRemovedSentence(strings, "Cup", 1)).toBe("Cup removed.");
+    expect(sizeRemovedSentence(strings, "", 2)).toBe("Size 2 removed.");
   });
 });
 

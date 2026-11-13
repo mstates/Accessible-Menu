@@ -36,9 +36,13 @@ export const DASHBOARD_NOTICES = [
   "checkout-missing",
 ] as const;
 export const SIGN_IN_NOTICES = ["sign-in-link", "sign-in-google"] as const;
-// A dish's three pages that save by one press (D-223, D-229), each loaded
-// again by the form once its save lands, with its own result.
+// A dish's four pages that save by one press (D-223, D-229, and General
+// since D-237), each loaded again by the form once its save lands, with
+// its own result. General's Path is the dish's own, which the other
+// three's begin with, so its cookie reaches them too until its banner
+// clears it; each page reads only its own key.
 export const DISH_NOTICES = [
+  "general-saved",
   "allergens-saved",
   "tags-saved",
   "availability-saved",

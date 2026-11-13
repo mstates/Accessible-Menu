@@ -136,14 +136,15 @@ async function renameFirst(page: Page, to: string): Promise<void> {
   await expect.poll(() => said(page, saved)).toBe(before + 1);
 }
 
-// The price of the dish at one price, typed and saved with Enter.
+// The price of the dish at one price, typed and saved with Save general
+// (D-237).
 async function setPrice(page: Page, dishId: string, to: string) {
-  await openEditing(page, restaurantDishPath(code, dishId));
+  await page.goto(restaurantDishPath(code, dishId));
+  await page.waitForLoadState("networkidle");
   await page
     .getByRole("textbox", { name: dish.price.amountLabel, exact: true })
     .fill(to);
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await saveAndLand(page, dish.general.submit, dish.general.saved);
 }
 
 // A row moved one step, heard once the move has landed.

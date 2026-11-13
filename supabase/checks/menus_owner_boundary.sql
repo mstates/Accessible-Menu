@@ -298,6 +298,15 @@ declare
   n integer;
   word text;
 begin
+  -- What diners see of the restaurant before this script publishes
+  -- anything. The target is a real restaurant on the live database and may
+  -- hold published menus of its own, so the diner block below counts from
+  -- here and never from zero.
+  perform set_config('boundary.published_before', coalesce((
+    select string_agg(pm.id::text, ',' order by pm.id)
+    from public.published_menus pm
+    where pm.restaurant_id = target), ''), true);
+
   insert into public.menus (restaurant_id, name, sort)
   values (target, 'Boundary check publish', 9010) returning id into pub;
   perform set_config('boundary.publish_menu', pub::text, true);
@@ -625,6 +634,7 @@ begin
 
   insert into public.menus (restaurant_id, name, sort)
   values (target, 'Boundary check publish two', 9012) returning id into two;
+  perform set_config('boundary.publish_two', two::text, true);
   insert into public.sections (menu_id, name, sort)
   values (two, 'Boundary two section', 1) returning id into two_section;
   insert into public.items (section_id, name, sort)
@@ -735,6 +745,9 @@ do $$
 declare
   target uuid := current_setting('boundary.restaurant')::uuid;
   pub uuid := current_setting('boundary.publish_menu')::uuid;
+  two uuid := current_setting('boundary.publish_two')::uuid;
+  held_before uuid[] := coalesce(string_to_array(
+    current_setting('boundary.published_before'), ',')::uuid[], '{}');
   shown integer;
   snap jsonb;
 begin
@@ -778,10 +791,29 @@ begin
   end if;
   raise notice 'ok: published_sections and published_items are gone';
 
+  -- Besides the menu published above, a diner sees exactly what the
+  -- restaurant showed before this script published anything, and the
+  -- second menu published here: no menu the script did not publish, and
+  -- none missing.
   select count(*) into shown from public.published_menus pm
-  where pm.restaurant_id = target and pm.id <> pub;
-  if shown <> 1 then
-    raise exception 'FAIL: published_menus shows % other menus of the restaurant, expected the one published above', shown;
+  where pm.restaurant_id = target
+    and pm.id <> pub and pm.id <> two
+    and not (pm.id = any (held_before));
+  if shown <> 0 then
+    raise exception 'FAIL: published_menus shows % menus of the restaurant that it did not show before this script and that the script did not publish', shown;
+  end if;
+  if not exists (
+    select 1 from public.published_menus pm
+    where pm.id = two and pm.restaurant_id = target
+  ) then
+    raise exception 'FAIL: published_menus does not show the second menu published above';
+  end if;
+  select count(*) into shown from unnest(held_before) as h (id)
+  where not exists (
+    select 1 from public.published_menus pm
+    where pm.id = h.id and pm.restaurant_id = target);
+  if shown <> 0 then
+    raise exception 'FAIL: published_menus no longer shows % menus the restaurant showed before this script', shown;
   end if;
   select pm.published_snapshot into snap from public.published_menus pm
   where pm.id = pub;

@@ -2,7 +2,7 @@
 
 import type { Copy } from "@/copy";
 import { Button } from "@/ui/Button";
-import type { Status } from "./status";
+import type { FailureButtons, Status } from "./status";
 import type { Editing } from "./useEditing";
 
 type Props = {
@@ -10,9 +10,10 @@ type Props = {
   status: Status;
   // The last failure's sentence, shown while the status is failed.
   notice: string | null;
-  // A field holds a value that was not saved, so there is something to retry.
-  canRetry: boolean;
-  outOfDate: boolean;
+  // Which buttons the page's failures get, by the one rule (status.ts,
+  // D-237): Try again while a field holds a value a retry could land,
+  // Reload while a failure can only be fixed by one.
+  buttons: FailureButtons;
   onRetry: () => void;
 };
 
@@ -21,14 +22,14 @@ type Props = {
 // are never spoken, so Saving and its return are not read field after
 // field. What must be heard, a field that saved, a failure, and the return
 // to saved after one, goes through the page's log (D-118). Try again and
-// Reload sit beside it, outside the status, and show only when there is
-// something to retry or the page is out of date.
+// Reload sit beside it, outside the status, and show only when a failure
+// calls for one: a failure a retry cannot fix, a row or its parent gone or
+// a page from before a deploy, offers Reload and never Try again (D-237).
 export function SavedStatus({
   strings,
   status,
   notice,
-  canRetry,
-  outOfDate,
+  buttons,
   onRetry,
 }: Props) {
   const text = {
@@ -43,8 +44,10 @@ export function SavedStatus({
       <p role="status" aria-live="off" className="min-w-0 font-semibold">
         {text}
       </p>
-      {canRetry ? <Button onPress={onRetry}>{strings.tryAgain}</Button> : null}
-      {outOfDate ? (
+      {buttons.tryAgain ? (
+        <Button onPress={onRetry}>{strings.tryAgain}</Button>
+      ) : null}
+      {buttons.reload ? (
         <Button onPress={() => window.location.reload()}>
           {strings.reload}
         </Button>
@@ -53,9 +56,9 @@ export function SavedStatus({
   );
 }
 
-// The one status of a page that draws no list (D-111): a dish's five pages
-// (D-222). Canvas for the status and its buttons, placed where the page's
-// content ends.
+// The one status of a page that draws no list of its own (D-111): a
+// dish's Choice lists page (D-222). Canvas for the status and its buttons,
+// placed where the page's content ends.
 export function PageSavedStatus({
   strings,
   editing,
@@ -71,8 +74,7 @@ export function PageSavedStatus({
         strings={strings}
         status={editing.status}
         notice={editing.notice}
-        canRetry={Object.keys(editing.failures).length > 0}
-        outOfDate={editing.outOfDate}
+        buttons={editing.buttons}
         onRetry={onRetry}
       />
     </div>

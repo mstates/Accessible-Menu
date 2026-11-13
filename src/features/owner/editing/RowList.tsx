@@ -111,8 +111,7 @@ export function RowList<
             strings={editingWords}
             status={editing.status}
             notice={editing.notice}
-            canRetry={Object.keys(editing.failures).length > 0}
-            outOfDate={editing.outOfDate}
+            buttons={editing.buttons}
             onRetry={list.tryAgain}
           />
         </div>

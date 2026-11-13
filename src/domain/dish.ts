@@ -30,9 +30,10 @@ export type PriceKind = (typeof PRICE_KINDS)[number];
 export type { AllergenCheck };
 export type OwnerDishAllergens = OwnerAllergens;
 
-// A dish on its own page. price is the one price as its field shows it, two
-// decimals or blank for none, and calories as their field shows them, a
-// number or a range (D-167); the sizes are read beside them. The mark is
+// A dish as its pages' frame reads it. price is the one price as its field
+// shows it, two decimals or blank for none, and calories as their field
+// shows them, a number or a range (D-167). The General page reads its own
+// fields, with the sizes, as one document instead (DishGeneral). The mark is
 // the row's as stored: what it means now is decided by
 // domain/availability.ts and nowhere else (D-160).
 export type OwnerDishDetail = OwnerDish &
@@ -48,6 +49,30 @@ export type OwnerDishDetail = OwnerDish &
     soldOutAt: string | null;
     schedule: Schedule | null;
   };
+
+// What a dish's General page shows and writes (D-237), as one document: the
+// dish's description, note, price choice, one price, and calories, and its
+// sizes that are not deleted, in price order, a size with no price last,
+// then the order added. The database's reader returns it and its writer
+// takes it back in the same shape (migration 16), so the keys are the
+// columns' own. A size the page added and nothing holds yet has a null id.
+export type DishGeneralSize = {
+  id: string | null;
+  name: string | null;
+  price_cents: number | null;
+  calories_low: number | null;
+  calories_high: number | null;
+};
+
+export type DishGeneral = {
+  description: string | null;
+  note: string | null;
+  price_kind: PriceKind;
+  price_cents: number | null;
+  calories_low: number | null;
+  calories_high: number | null;
+  sizes: DishGeneralSize[];
+};
 
 // The texts of a dish an owner writes on its page, in the page's order.
 export const DISH_TEXTS = ["description", "price", "calories", "note"] as const;
@@ -121,17 +146,11 @@ export function dishTextProblem(
   }
 }
 
-// A size of a dish (D-139): a name and a price, each blank while the owner
-// has not typed one, and its calories (D-167), blank for none. The table
-// holds null for each; a draft may hold a blank name or price, and Publish
-// refuses one (D-82).
-export type OwnerSize = {
-  id: string;
-  name: string;
-  price: string;
-  calories: string;
-};
-
+// The texts of a size of a dish (D-139): a name and a price, and its
+// calories (D-167), each blank for none. The table holds null for each. A
+// Save of the General page needs a name and a price for every size
+// (D-237); an older draft may still hold a size without one, and Publish
+// refuses it (D-82).
 export const SIZE_TEXTS = ["name", "price", "calories"] as const;
 export type SizeText = (typeof SIZE_TEXTS)[number];
 
@@ -168,22 +187,4 @@ export function nextDish(
 ): OwnerDish | null {
   const index = dishes.findIndex((dish) => dish.id === id);
   return index === -1 ? null : (dishes[index + 1] ?? null);
-}
-
-// The order the dish page shows its sizes in (Michael, October 7, 2026):
-// price order on arrival, kept while the page is open, so a row never moves
-// while the owner is inside it. held is the order the page shows and fresh
-// what the server holds now, in price order: sizes the page shows keep
-// their places, ones that are gone leave, and new ones go last.
-export function holdSizeOrder(
-  held: readonly string[],
-  fresh: readonly { id: string }[],
-): string[] {
-  const now = new Set(fresh.map((size) => size.id));
-  const kept = held.filter((id) => now.has(id));
-  const known = new Set(kept);
-  return [
-    ...kept,
-    ...fresh.map((size) => size.id).filter((id) => !known.has(id)),
-  ];
 }

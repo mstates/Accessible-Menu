@@ -8,7 +8,6 @@ import {
   DISH_TEXTS,
   dishNameProblem,
   dishTextProblem,
-  holdSizeOrder,
   nextDish,
   SIZE_LIMITS,
   SIZE_TEXTS,
@@ -199,28 +198,5 @@ describe("dishes in a list", () => {
     expect(nextDish(dishes, "b")).toEqual(dishes[2]);
     expect(nextDish(dishes, "c")).toBeNull();
     expect(nextDish(dishes, "x")).toBeNull();
-  });
-});
-
-// Price order on arrival, held while the page is open (Michael, October 7,
-// 2026).
-describe("the order a dish's sizes keep on the page", () => {
-  const ids = (list: string[]) => list.map((id) => ({ id }));
-
-  it("starts from what the server holds, in its order", () => {
-    expect(holdSizeOrder([], ids(["cup", "bowl"]))).toEqual(["cup", "bowl"]);
-  });
-
-  it("keeps the places the page shows when the server's order changes", () => {
-    expect(holdSizeOrder(["cup", "bowl"], ids(["bowl", "cup"]))).toEqual([
-      "cup",
-      "bowl",
-    ]);
-  });
-
-  it("drops a size that is gone and puts a new one last", () => {
-    expect(
-      holdSizeOrder(["cup", "bowl", "pint"], ids(["pint", "cup", "half"])),
-    ).toEqual(["cup", "pint", "half"]);
   });
 });

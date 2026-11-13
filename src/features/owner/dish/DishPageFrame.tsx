@@ -51,11 +51,11 @@ type Props = {
 // no current entry, since a breadcrumb only goes up and the page nav marks
 // the page. General's h1 is the dish's name; a sub page's is the page's
 // name, carrying the id its first group labels itself by, so the group
-// sits directly under the h1 with no heading of its own. A sub page that
-// saves by a press loads again when the save lands, with the success flash
-// first in main, before the breadcrumb and the h1 (D-215, D-219, D-229):
-// jumping to main lands on it, and its dismiss button hands focus to the
-// h1, which takes it.
+// sits directly under the h1 with no heading of its own. A page that
+// saves by a press, General among them since D-237, loads again when the
+// save lands, with the success flash first in main, before the breadcrumb
+// and the h1 (D-215, D-219, D-229): jumping to main lands on it, and its
+// dismiss button hands focus to the h1, which takes it.
 //
 // Once main has 36rem of room inside its padding (Tailwind's xl container
 // step; its full width is 40rem), the nav takes a narrow left column and
@@ -129,7 +129,7 @@ export function DishPageFrame({
         />
       }
     >
-      {notice && headingId ? (
+      {notice ? (
         <NoticeBanner
           copy={copy}
           notice={notice}

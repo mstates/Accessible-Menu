@@ -13,6 +13,7 @@ import {
   dishPageState,
   dishPageStateLine,
   dishPageTitle,
+  GENERAL_HEADING_ID,
   type DishPageState,
 } from "../../src/features/owner/dish/dish-pages";
 import {
@@ -82,8 +83,11 @@ describe("the dish's pages (D-222)", () => {
     }
   });
 
-  it("gives a sub page's h1 the id its first group labels itself by, and General's none (D-225)", () => {
-    expect(dishPageHeadingId("general")).toBeUndefined();
+  // General's h1 has an id of its own since D-237: the flash a landed save
+  // brings hands focus to it.
+  it("gives a sub page's h1 the id its first group labels itself by, and General's its own (D-225, D-237)", () => {
+    expect(dishPageHeadingId("general")).toBe(GENERAL_HEADING_ID);
+    expect(GENERAL_HEADING_ID).toBe("dish-general-heading");
     expect(dishPageHeadingId("allergens")).toBe(groupIds("dish").heading);
     expect(dishPageHeadingId("tags")).toBe(TAGS_HEADING_ID);
     expect(dishPageHeadingId("availability")).toBe(AVAILABILITY_HEADING_ID);
@@ -91,17 +95,18 @@ describe("the dish's pages (D-222)", () => {
   });
 });
 
-describe("how each page saves (D-223, D-229)", () => {
-  it("saves Allergens, Dietary tags, and Availability by a press, and General and Choice lists as the owner goes", () => {
+describe("how each page saves (D-223, D-229, D-237)", () => {
+  it("saves General, Allergens, Dietary tags, and Availability by a press, and Choice lists as the owner goes", () => {
     expect(DISH_PAGE_SAVING).toEqual({
-      general: "as-you-go",
+      general: "press",
       allergens: "press",
       tags: "press",
       availability: "press",
       choices: "as-you-go",
     });
     expect(dishPageSaving("allergens")).toBe("press");
-    expect(dishPageSaving("general")).toBe("as-you-go");
+    expect(dishPageSaving("general")).toBe("press");
+    expect(dishPageSaving("choices")).toBe("as-you-go");
   });
 });
 

@@ -43,6 +43,7 @@ import {
   type ListRow,
   type TextHome,
 } from "./texts";
+import { remedyOf } from "./status";
 import { useEditing, type Editing } from "./useEditing";
 import { useFocusNext } from "./useFocusNext";
 
@@ -299,6 +300,7 @@ function useRows<
               notDone(words, "notMoved", row.name),
               describe(result.problem, row.name),
             ),
+            result.problem.kind,
           );
           return;
         }
@@ -335,6 +337,7 @@ function useRows<
               notDone(words, "notDeleted", row.name),
               describe(result.problem, row.name),
             ),
+            result.problem.kind,
           );
           return;
         }
@@ -405,6 +408,7 @@ function useRows<
           notDone(words, "notDeleted", asking.name),
           words.strings.errors.gone,
         ),
+        "gone",
       );
       return;
     }
@@ -430,6 +434,7 @@ function useRows<
       }
       editing.failField(ADD_KEY, {
         fieldId: addFieldId,
+        kind: problem.kind,
         problem: text,
         sentence: failureSentence(notDone(words, "notAdded", value), text),
         value,
@@ -465,6 +470,7 @@ function useRows<
           setAdds((current) => addFailed(current, key));
           editing.failField(failureKeyOf(key), {
             fieldId: addFieldId,
+            kind: result.problem.kind,
             problem: text,
             sentence: failureSentence(notDone(words, "notAdded", value), text),
             value,
@@ -528,13 +534,15 @@ function useRows<
   }
 
   // Focus goes to the first failed field, so it never rests on a control
-  // that is about to leave the page, and every failed field is sent again:
-  // the page's other failures first, when the page asked to be asked, then
-  // the list's own.
+  // that is about to leave the page, and every failed field a retry could
+  // land is sent again: the page's other failures first, when the page
+  // asked to be asked, then the list's own. A failure only a reload can
+  // fix, a row or its parent gone, is never sent again (D-237).
   function tryAgain() {
     editing.focusFirstFailed();
     const { failures } = editing.peek();
     for (const key of Object.keys(failures)) {
+      if (remedyOf(failures[key]?.kind ?? "") === "reload") continue;
       const value = failures[key]?.value ?? "";
       if (config.tryAgain?.(key, value)) continue;
       tryAgainKey(key, value);

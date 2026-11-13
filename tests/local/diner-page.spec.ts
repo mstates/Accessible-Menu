@@ -17,7 +17,7 @@ import {
 } from "../../src/features/owner/paths";
 import { expectNoMissingIds } from "../a11y/checks";
 import { ownerEnv, ownerFixture } from "../a11y/owner-env";
-import { hearLog, heard } from "../a11y/owner-lists";
+import { hearLog } from "../a11y/owner-lists";
 import { flashBanner } from "../a11y/saved-banner";
 import { saveAndLand } from "./save";
 
@@ -43,7 +43,6 @@ const standin = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const zone = "America/New_York";
 const dish = en.owner.dish;
 const publishing = en.owner.publishing;
-const saved = en.owner.editing.fieldSaved;
 const restaurants = en.owner.restaurants;
 
 type Served = {
@@ -78,10 +77,6 @@ async function knob(path: string, params: Record<string, string> = {}) {
   const response = await fetch(`${standin}/__test/${path}?${query}`);
   if (!response.ok) throw new Error(`${path} failed: ${response.status}`);
   return response;
-}
-
-async function said(page: Page, sentence: string): Promise<number> {
-  return (await heard(page)).filter((each) => each === sentence).length;
 }
 
 async function openOwner(page: Page, path: string): Promise<void> {
@@ -165,10 +160,8 @@ test("a price change is live on the diner page within a minute of Publish", asyn
   expect((await served(page, bare)).html).toContain("$9, 320 calories");
 
   await openOwner(page, restaurantDishPath(code, dishes.one.id));
-  const price = field(page, dish.price.amountLabel);
-  await price.fill("10");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await field(page, dish.price.amountLabel).fill("10");
+  await saveAndLand(page, dish.general.submit, dish.general.saved);
   expect(
     (await served(page, bare)).html,
     "a draft reaches no diner before Publish",
@@ -182,8 +175,7 @@ test("a price change is live on the diner page within a minute of Publish", asyn
   // As it was.
   await openOwner(page, restaurantDishPath(code, dishes.one.id));
   await field(page, dish.price.amountLabel).fill("9");
-  await page.keyboard.press("Enter");
-  await expect.poll(() => said(page, saved)).toBe(1);
+  await saveAndLand(page, dish.general.submit, dish.general.saved);
   await press(page, withSections, "publish");
   await expect
     .poll(async () => (await served(page, bare)).html)

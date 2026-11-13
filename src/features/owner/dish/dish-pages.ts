@@ -24,9 +24,9 @@ import type { ShowingNow } from "./schedule-words";
 // as one entry here. General is the dish's own address and is named for
 // the dish; each other page is named by the heading its first group had on
 // the one long page, so a nav item, an h1, and a title's first part are the
-// same words. How a page saves (D-223, D-229) is one field per entry: a
-// page of boxes and radios saves by one named press, and a page of typed
-// fields and lists saves as the owner goes (D-111). Pure: no React, no
+// same words. How a page saves (D-223, D-229, D-237) is one field per
+// entry: a page of fields, boxes, and radios saves by one named press, and
+// the page of lists saves as the owner goes (D-111). Pure: no React, no
 // network.
 
 export const DISH_PAGE_KEYS = [
@@ -40,14 +40,15 @@ export type DishPageKey = (typeof DISH_PAGE_KEYS)[number];
 export type DishSubPageKey = DishPageSlug;
 
 // How each page saves (D-223): by a press on the page's one Save, or as
-// the owner goes. The three press pages render one form each with Save at
-// its foot; the two as-you-go pages render the saved status. A page moves
+// the owner goes. The four press pages render one form each with Save at
+// its foot, General among them since D-237; Choice lists, the one page
+// that saves as the owner goes, renders the saved status. A page moves
 // from one to the other as a change here and in its own hook, nothing
 // else.
 export type DishPageSaving = "press" | "as-you-go";
 
 export const DISH_PAGE_SAVING: Readonly<Record<DishPageKey, DishPageSaving>> = {
-  general: "as-you-go",
+  general: "press",
   allergens: "press",
   tags: "press",
   availability: "press",
@@ -58,19 +59,25 @@ export function dishPageSaving(key: DishPageKey): DishPageSaving {
   return DISH_PAGE_SAVING[key];
 }
 
-// The id a sub page's h1 carries (D-225): the first group on each page
+// The id each page's h1 carries. On a sub page (D-225) the first group
 // labels itself by its heading, and on its own page that heading is the
 // h1, so the groups' aria-labelledby and every selector on these ids keep
-// working. General's h1 is the dish's name and carries none.
-export const DISH_PAGE_HEADING_IDS: Readonly<Record<DishSubPageKey, string>> = {
+// working. General's h1 is the dish's name and labels no group; it carries
+// an id since D-237 because a page that saves by a press sends focus to
+// its h1: from the flash's dismiss button, and from the leave dialog's
+// Keep editing when the link that asked is gone.
+export const GENERAL_HEADING_ID = "dish-general-heading";
+
+export const DISH_PAGE_HEADING_IDS: Readonly<Record<DishPageKey, string>> = {
+  general: GENERAL_HEADING_ID,
   allergens: groupIds("dish").heading,
   tags: "dish-tags-heading",
   availability: "dish-availability-heading",
   choices: CHOICE_LISTS_HEADING_ID,
 };
 
-export function dishPageHeadingId(key: DishPageKey): string | undefined {
-  return key === "general" ? undefined : DISH_PAGE_HEADING_IDS[key];
+export function dishPageHeadingId(key: DishPageKey): string {
+  return DISH_PAGE_HEADING_IDS[key];
 }
 
 export function dishPagePath(

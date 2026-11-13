@@ -1,22 +1,24 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { en } from "@/copy";
 import { pageTitle } from "@/copy/title";
-import { listOwnerDishes } from "@/core/supabase/dishes";
+import { readNotice } from "@/core/notice";
+import { listOwnerDishes, readOwnerDishGeneral } from "@/core/supabase/dishes";
 import { listOwnerMenuNames } from "@/core/supabase/menus";
 import { listOwnerSectionNames } from "@/core/supabase/sections";
-import { listOwnerSizeNames, listOwnerSizes } from "@/core/supabase/sizes";
+import { listOwnerSizeNames } from "@/core/supabase/sizes";
 import { nextDish } from "@/domain/dish";
 import { dishPageTitle } from "@/features/owner/dish/dish-pages";
-import { DishGeneral } from "@/features/owner/dish/DishGeneral";
+import { DishGeneralForm } from "@/features/owner/dish/DishGeneralForm";
 import { DishPageFrame } from "@/features/owner/dish/DishPageFrame";
+import { saveDishGeneral } from "@/features/owner/dish/form-actions";
 import { loadDish } from "@/features/owner/dish/load-dish";
 import { signInPath } from "@/features/owner/paths";
 import type { SelectGroup } from "@/ui/Select";
 
 type Props = { params: Promise<{ code: string; dish: string }> };
 
-const strings = en.owner.dish;
 const PAGE = "general";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -36,27 +38,40 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 // A dish's General page, at the dish's own address (D-128, D-222): its
-// description, its price (D-139) with calories (D-167), its note, its
+// description and note, its price (D-139) with calories (D-167) and its
 // sizes, the link to the next dish, and its move to another section
 // (D-129). The page is named for the dish, in the title and in the h1, and
 // the title names its section and its menu right after it. The dish's
-// other pages sit under the page nav (D-222). The sizes, the section's
-// dishes, the restaurant's menus and sections, and the size names in use
-// are read on every render, and every save ends with a refresh, so what
-// the page shows is what the server holds.
+// other pages sit under the page nav (D-222).
+//
+// The page is one form saved by one press (D-237). What it shows and
+// writes is read whole, in one statement, through item_general()
+// (migration 16), and handed to the form with the document as it arrived:
+// the Save hands that document back, and the database refuses the save
+// when the dish no longer holds it. A save that lands loads the page
+// again, with its result in the request's cookie, so what the page shows
+// is what the server holds. The section's dishes, the restaurant's menus
+// and sections, and the size names in use are read beside it.
 export default async function RestaurantDishPage({ params }: Props) {
   const { code, dish: dishId } = await params;
   const { supabase, email, restaurant, found } = await loadDish(code, dishId);
   if (!email) redirect(signInPath);
   if (!restaurant || !found) notFound();
   const { dish, section, menu, lists, showing } = found;
-  const [sizes, dishes, menus, sections, sizeNames] = await Promise.all([
-    listOwnerSizes(supabase, dish.id),
+  const [general, dishes, menus, sections, sizeNames] = await Promise.all([
+    readOwnerDishGeneral(supabase, dish.id),
     listOwnerDishes(supabase, section.id),
     listOwnerMenuNames(supabase, restaurant.id),
     listOwnerSectionNames(supabase, restaurant.id),
     listOwnerSizeNames(supabase, restaurant.id),
   ]);
+  // The dish went between the frame's read and this one: the page is gone.
+  // A read that failed is thrown to the owner error page, never shown as a
+  // missing dish.
+  if (general === "not-found") notFound();
+  if (general === "failed") {
+    throw new Error("the dish's General fields could not be read");
+  }
   // Every other live section of a live menu, under its menu (D-129).
   const targets: SelectGroup[] = menus
     .map((other) => ({
@@ -67,6 +82,8 @@ export default async function RestaurantDishPage({ params }: Props) {
         .map((entry) => ({ id: entry.id, label: entry.name })),
     }))
     .filter((group) => group.items.length > 0);
+  const action = saveDishGeneral.bind(null, restaurant.code, dish.id);
+  const notice = readNotice((await headers()).get("cookie"), ["general-saved"]);
 
   return (
     <DishPageFrame
@@ -78,19 +95,20 @@ export default async function RestaurantDishPage({ params }: Props) {
       lists={lists}
       showing={showing}
       page={PAGE}
+      notice={notice}
     >
-      {/* Said before the first field it governs (WCAG 3.3.2). */}
-      <p className="mt-6 text-foreground-muted">{strings.lead}</p>
-      <DishGeneral
-        strings={strings}
+      <DishGeneralForm
+        strings={en.owner.dish}
         editing={en.owner.editing}
+        pendingLabel={en.ui.pending}
         code={restaurant.code}
-        dish={dish}
+        dish={{ id: dish.id, name: dish.name }}
         section={{ id: section.id, name: section.name }}
-        sizes={sizes}
+        general={general}
         sizeNames={sizeNames}
         next={nextDish(dishes, dish.id)}
         targets={targets}
+        action={action}
       />
     </DishPageFrame>
   );

@@ -41,6 +41,8 @@ function result(
       return { kind: "critical", words: copy.owner.signIn.failures.link };
     case "sign-in-google":
       return { kind: "critical", words: copy.owner.signIn.failures.google };
+    case "general-saved":
+      return { kind: "success", words: copy.owner.dish.general.saved };
     case "allergens-saved":
       return { kind: "success", words: copy.owner.dish.allergens.saved };
     case "tags-saved":

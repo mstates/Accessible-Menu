@@ -16,7 +16,7 @@ import { useReportPending } from "@/ui/NavigationStatus";
 import { afterHold, leaveOf } from "./leave";
 import { saveQueue } from "./queue";
 import { saysSaved, saysSavedAgain, type Landing } from "./spoken";
-import { statusOf } from "./status";
+import { buttonsOf, statusOf } from "./status";
 
 // The state every editing screen keeps (D-111): what is on its way, what
 // failed, what the owner typed and has not saved, and the rules that follow
@@ -38,9 +38,11 @@ const SLOW_MS = 10_000;
 // the owner changes it or asks to try again. Fields that commit together
 // can be refused on more than one at once (D-164): fieldId and problem are
 // the first on the page, where focus goes, and others are the rest, each
-// shown under its own field.
+// shown under its own field. kind is the problem's, which decides whether
+// Try again or Reload is the button it gets (status.ts, D-237).
 export type FieldFailure = {
   fieldId: string;
+  kind: string;
   problem: string;
   others?: readonly { fieldId: string; problem: string }[];
   sentence: string;
@@ -92,6 +94,9 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [failures, setFailures] = useState<Record<string, FieldFailure>>({});
   const [notice, setNotice] = useState<string | null>(null);
+  // The kind of the last change that failed, a move or a delete, for as
+  // long as its sentence is the one shown.
+  const [changeKind, setChangeKind] = useState<string | null>(null);
   const [outOfDate, setOutOfDate] = useState(false);
   const [holding, setHolding] = useState(false);
 
@@ -176,7 +181,10 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
     if (!(key in live.current.failures)) return;
     live.current.failures = without(live.current.failures, key);
     setFailures(live.current.failures);
-    if (Object.keys(live.current.failures).length === 0) setNotice(null);
+    if (Object.keys(live.current.failures).length === 0) {
+      setNotice(null);
+      setChangeKind(null);
+    }
   }, []);
 
   // Typed back to the saved value: nothing to save, nothing failed.
@@ -204,7 +212,10 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
     (kind: Landing["kind"]) => {
       const { failures: failed, owed, inFlight: pending } = live.current;
       const failedFields = Object.keys(failed).length;
-      if (failedFields === 0) setNotice(null);
+      if (failedFields === 0) {
+        setNotice(null);
+        setChangeKind(null);
+      }
       if (saysSaved({ kind, owed, failedFields, waiting: pending - 1 })) {
         announce(strings.fieldSaved);
       }
@@ -252,17 +263,20 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
       live.current.owed = true;
       setFailures(live.current.failures);
       setNotice(failure.sentence);
+      setChangeKind(null);
       announce(failure.sentence);
     },
     [announce],
   );
 
-  // A change with no field of its own failed: a move, a delete.
+  // A change with no field of its own failed: a move, a delete. Its kind
+  // decides whether Reload is offered beside its sentence.
   const failChange = useCallback(
-    (sentence: string) => {
+    (sentence: string, kind: string) => {
       live.current.failed += 1;
       live.current.owed = true;
       setNotice(sentence);
+      setChangeKind(kind);
       announce(sentence);
     },
     [announce],
@@ -349,10 +363,17 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
     return () => window.removeEventListener("beforeunload", warn);
   }, []);
 
+  // Which button a failure on the page gets, by the one rule (D-237).
+  const buttons = buttonsOf({
+    fields: Object.values(failures).map((failure) => failure.kind),
+    change: notice === null ? null : changeKind,
+    outOfDate,
+  });
+
   return {
     status,
     notice,
-    outOfDate,
+    buttons,
     drafts,
     failures,
     run,

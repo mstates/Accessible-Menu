@@ -103,8 +103,16 @@ export function ComboBox({
         onChange(item?.text ?? String(key));
         onCommit();
       }}
+      // The name is held from the moment focus arrives until it leaves.
+      // React Aria sends the input a focus event of its own when a
+      // suggestion is chosen, with focus never having left, so a focus
+      // event while a name is held keeps that name: the choice may have
+      // changed the suffix by then, and taking it would rename the field
+      // under the cursor (D-140, D-237).
       onFocusChange={(focused) =>
-        setHeld(focused && labelSuffix ? `${label} ${labelSuffix}` : null)
+        setHeld((was) =>
+          focused && labelSuffix ? (was ?? `${label} ${labelSuffix}`) : null,
+        )
       }
       onBlur={() => onCommit()}
       validationBehavior="aria"

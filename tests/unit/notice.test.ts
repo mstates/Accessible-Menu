@@ -14,6 +14,7 @@ import {
   dashboardPath,
   restaurantDetailsPath,
   restaurantDishPagePath,
+  restaurantDishPath,
   restaurantMenuPagePath,
   signInPath,
 } from "../../src/features/owner/paths";
@@ -64,6 +65,12 @@ describe("the notice cookie (D-211, D-219)", () => {
     ).toBe(
       `notice=allergens-saved; Path=/app/restaurants/12345678/dishes/${dish}/allergens; Max-Age=60; SameSite=Lax`,
     );
+    // General's is the dish's own address (D-237).
+    expect(
+      noticeCookie("general-saved", restaurantDishPath("12345678", dish)),
+    ).toBe(
+      `notice=general-saved; Path=/app/restaurants/12345678/dishes/${dish}; Max-Age=60; SameSite=Lax`,
+    );
     // A menu's Publishing page (D-231): the path of the page a landed
     // press loads again, so the notice reaches no other page.
     const menu = "9d7e6c5b-aaaa-4bbb-8ccc-ddddeeeeffff";
@@ -108,6 +115,7 @@ describe("the notice cookie (D-211, D-219)", () => {
     ]);
     expect(SIGN_IN_NOTICES).toEqual(["sign-in-link", "sign-in-google"]);
     expect(DISH_NOTICES).toEqual([
+      "general-saved",
       "allergens-saved",
       "tags-saved",
       "availability-saved",
@@ -115,7 +123,7 @@ describe("the notice cookie (D-211, D-219)", () => {
     expect(MENU_NOTICES).toEqual(["menu-published", "menu-unpublished"]);
   });
 
-  it("holds eleven results in all, each key one page's alone", () => {
+  it("holds twelve results in all, each key one page's alone", () => {
     const every = [
       ...DETAILS_NOTICES,
       ...DASHBOARD_NOTICES,
@@ -123,7 +131,7 @@ describe("the notice cookie (D-211, D-219)", () => {
       ...DISH_NOTICES,
       ...MENU_NOTICES,
     ];
-    expect(every).toHaveLength(11);
+    expect(every).toHaveLength(12);
     expect(new Set(every).size).toBe(every.length);
   });
 });
@@ -175,6 +183,23 @@ describe("the notice's read, of a Cookie header or document.cookie", () => {
       "menu-unpublished",
     );
     expect(readNotice("notice=menu-published", DISH_NOTICES)).toBe(null);
+  });
+
+  // General's cookie has the dish's own path, which its other pages' paths
+  // begin with, so it is sent to them too until its banner clears it
+  // (D-237). Each page asks for its own key alone.
+  it("reads General's result on General and on none of the dish's other pages", () => {
+    const sent = "sb-auth=abc; notice=allergens-saved; notice=general-saved";
+    expect(readNotice("notice=general-saved", ["general-saved"])).toBe(
+      "general-saved",
+    );
+    expect(readNotice("notice=general-saved", ["allergens-saved"])).toBe(null);
+    expect(readNotice("notice=general-saved", ["tags-saved"])).toBe(null);
+    expect(readNotice("notice=general-saved", ["availability-saved"])).toBe(
+      null,
+    );
+    expect(readNotice(sent, ["allergens-saved"])).toBe("allergens-saved");
+    expect(readNotice(sent, ["general-saved"])).toBe("general-saved");
   });
 
   it("finds the page's own among two notices, whichever comes first", () => {

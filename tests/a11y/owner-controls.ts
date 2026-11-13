@@ -306,12 +306,13 @@ async function dishFrameControls(
   ];
 }
 
-// A dish's General page (D-128, D-139, D-222): each size's two buttons when
-// the dish is priced by size, named by the size as the page shows it, Add
-// a size, the link to the next dish when there is one, and the move's
-// button; the move's Select is named by its label and its value, so the
-// sweep checks it. The next dish's link is the one in a paragraph: the
-// page nav's links lead to the dish's pages too.
+// A dish's General page (D-128, D-139, D-222, D-237), in the page's order:
+// the link to the next dish when there is one, each size's two buttons
+// when the dish is priced by size, named by the size as the page shows it,
+// Add a size, the page's one Save, and the move's button; the move's
+// Select is named by its label and its value, so the sweep checks it. The
+// next dish's link is the one in a paragraph: the page nav's links lead to
+// the dish's pages too.
 export async function dishGeneralControls(
   page: Page,
   menu: string,
@@ -328,11 +329,7 @@ export async function dishGeneralControls(
       ),
     );
   const sizes = sizeNames.flatMap((name, index) => {
-    const label = sizeLabel(
-      words,
-      { id: "", name, price: "", calories: "" },
-      index + 1,
-    );
+    const label = sizeLabel(words, name, index + 1);
     return [
       button(sizeAction(words, words.price.showNames, label)),
       button(sizeAction(words, words.price.removeSize, label)),
@@ -346,10 +343,24 @@ export async function dishGeneralControls(
     .evaluateAll((links) => links.map((link) => link.textContent ?? ""));
   return [
     ...(await dishFrameControls(page, [menu, section])),
+    ...nextName.map((text) => link(text)),
     ...sizes,
     ...(bySize ? [button(words.price.addSize)] : []),
-    ...nextName.map((text) => link(text)),
+    button(words.general.submit),
     button(words.move.submit),
+  ];
+}
+
+// General after its save (D-237): the same, and the success banner's
+// dismiss button (D-219).
+export async function savedDishGeneralControls(
+  page: Page,
+  menu: string,
+  section: string,
+): Promise<Control[]> {
+  return [
+    ...(await dishGeneralControls(page, menu, section)),
+    button(en.ui.banner.dismiss),
   ];
 }
 

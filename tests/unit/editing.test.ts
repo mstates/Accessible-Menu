@@ -7,7 +7,11 @@ import {
   saysSaved,
   saysSavedAgain,
 } from "../../src/features/owner/editing/spoken";
-import { statusOf } from "../../src/features/owner/editing/status";
+import {
+  buttonsOf,
+  remedyOf,
+  statusOf,
+} from "../../src/features/owner/editing/status";
 import {
   addedSentence,
   countText,
@@ -141,6 +145,101 @@ describe("the saved status", () => {
 
   it("shows saving over an older failure while a retry is on its way", () => {
     expect(statusOf({ ...rest, inFlight: 1, failedFields: 1 })).toBe("saving");
+  });
+});
+
+// D-237, rule 3: a failure a retry cannot fix offers Reload and never Try
+// again. One pure rule decides which button a failure gets, by its kind.
+describe("which button a failure gets (D-237)", () => {
+  const none = { fields: [], change: null, outOfDate: false };
+
+  it.each([
+    "gone",
+    "parent-gone",
+    "menu-gone",
+    "section-gone",
+    "target-gone",
+    "out-of-date",
+  ])("offers Reload for %s, which a retry cannot fix", (kind) => {
+    expect(remedyOf(kind)).toBe("reload");
+  });
+
+  it.each([
+    "unreachable",
+    "failed",
+    "signed-out",
+    "invalid",
+    "name-taken",
+    "mismatch",
+    "grew",
+    "lists-changed",
+  ])("leaves %s to Try again", (kind) => {
+    expect(remedyOf(kind)).toBe("retry");
+  });
+
+  it("shows no button at rest", () => {
+    expect(buttonsOf(none)).toEqual({ tryAgain: false, reload: false });
+  });
+
+  it("shows Try again alone for a field a dropped connection or a server error failed", () => {
+    expect(buttonsOf({ ...none, fields: ["unreachable"] })).toEqual({
+      tryAgain: true,
+      reload: false,
+    });
+    expect(buttonsOf({ ...none, fields: ["failed"] })).toEqual({
+      tryAgain: true,
+      reload: false,
+    });
+  });
+
+  it("shows Reload and never Try again for a field whose row or parent is gone", () => {
+    expect(buttonsOf({ ...none, fields: ["gone"] })).toEqual({
+      tryAgain: false,
+      reload: true,
+    });
+    expect(buttonsOf({ ...none, fields: ["parent-gone"] })).toEqual({
+      tryAgain: false,
+      reload: true,
+    });
+  });
+
+  it("shows Reload alone for a field saved from a page that is out of date", () => {
+    expect(
+      buttonsOf({ ...none, fields: ["out-of-date"], outOfDate: true }),
+    ).toEqual({ tryAgain: false, reload: true });
+  });
+
+  it("shows both when one field can be tried again and another is gone", () => {
+    expect(buttonsOf({ ...none, fields: ["gone", "unreachable"] })).toEqual({
+      tryAgain: true,
+      reload: true,
+    });
+  });
+
+  it("shows Reload for a move or a delete whose row or target is gone, and nothing for one a retry could fix, whose own button is still there", () => {
+    expect(buttonsOf({ ...none, change: "gone" })).toEqual({
+      tryAgain: false,
+      reload: true,
+    });
+    expect(buttonsOf({ ...none, change: "menu-gone" })).toEqual({
+      tryAgain: false,
+      reload: true,
+    });
+    expect(buttonsOf({ ...none, change: "failed" })).toEqual({
+      tryAgain: false,
+      reload: false,
+    });
+    expect(buttonsOf({ ...none, change: "mismatch" })).toEqual({
+      tryAgain: false,
+      reload: false,
+    });
+  });
+
+  it("keeps Reload while the page is known to be out of date, whatever else failed", () => {
+    expect(buttonsOf({ ...none, outOfDate: true })).toEqual({
+      tryAgain: false,
+      reload: true,
+    });
   });
 });
 

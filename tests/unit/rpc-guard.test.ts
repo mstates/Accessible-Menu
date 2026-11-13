@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 // only if it is declared stable: a GET runs in a read-only transaction.
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const reads = [
+  "item_general",
   "menu_publish_states",
   "menu_snapshot",
   "publish_problems",
