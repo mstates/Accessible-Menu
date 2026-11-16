@@ -1,6 +1,12 @@
 "use client";
 
-import { startTransition, useOptimistic, useRef, useState } from "react";
+import {
+  startTransition,
+  useLayoutEffect,
+  useOptimistic,
+  useRef,
+  useState,
+} from "react";
 import { flushSync } from "react-dom";
 import { useAnnounce } from "@/core/a11y/announcer";
 import {
@@ -43,6 +49,7 @@ import {
   type ListRow,
   type TextHome,
 } from "./texts";
+import type { ShownValue } from "./shown";
 import { remedyOf } from "./status";
 import { useEditing, type Editing } from "./useEditing";
 import { useFocusNext } from "./useFocusNext";
@@ -76,10 +83,13 @@ export type { ListResult, ListRow } from "./texts";
 export type ListActions<Field extends string> = {
   // The added row, and how many rows the list has now that it is in.
   add: (name: string) => Promise<ListResult<{ row: ListRow; total: number }>>;
+  // shown is what the page showed for this text: the write lands only if
+  // the server still holds it (D-237).
   setText: (
     id: string,
     field: Field,
     value: string,
+    shown: ShownValue,
   ) => Promise<ListResult<Record<Field, string>>>;
   // told is what the owner was told goes with the row (D-119).
   remove: (id: string, told: Held) => Promise<ListResult>;
@@ -102,9 +112,11 @@ export type OwnTexts<OwnField extends string> = {
   // The record that already has this value, when one of these texts must
   // be unique among its kind: a choice list's lead on its home (D-166).
   taken?: (field: OwnField, value: string) => ListRow | null;
+  // shown is what the page showed for this text (D-237).
   setText: (
     field: OwnField,
     value: string,
+    shown: ShownValue,
   ) => Promise<ListResult<Record<OwnField, string>>>;
   // A save of one of these texts landed, with the server's answer.
   landed?: (field: OwnField, value: Record<OwnField, string>) => void;
@@ -124,6 +136,12 @@ export type RowListConfig<
   // The texts of a row, the name first.
   fields: readonly Field[];
   valueOf: (row: Row, field: Field) => string;
+  // What the server holds for a row's text, to hand back with a save
+  // (D-237), where that is not the text the field shows: an option's added
+  // price as its cents, its calories as the two stored numbers. Absent, the
+  // text itself. shownIn reads the same from a landed save's answer.
+  shownOf?: (row: Row, field: Field) => ShownValue;
+  shownIn?: (field: Field, value: Record<Field, string>) => ShownValue;
   clean: (field: Field, value: string) => string;
   rule: (field: Field, value: string) => string | null;
   actions: ListActions<Field>;
@@ -218,6 +236,17 @@ function useRows<
   }
   const lastAdd = useRef(0);
 
+  // New rows from the server: a text with nothing typed in it now shows the
+  // server's value, so what it would hand back with a save is that value
+  // again (shown.ts, rule 4). A text with typed text keeps what it held:
+  // the newer value under it was never shown. The rows change identity only
+  // when the server sends the page again, never on a render of the page's
+  // own.
+  const { settle } = editing;
+  useLayoutEffect(() => {
+    settle();
+  }, [rows, settle]);
+
   const addFieldId = `${idPrefix}-new-name`;
   const fieldKey = (field: Field, id: string) => `${idPrefix}:${field}:${id}`;
   const fieldId = (field: Field, id: string) => `${idPrefix}-${id}-${field}`;
@@ -237,17 +266,20 @@ function useRows<
   // A row's texts live in the row, and save through the list's own action.
   function rowHome(row: Row): TextHome<Field> {
     const rowLanded = config.rowLanded;
+    const shownOf = config.shownOf;
     return {
       row,
       words,
       key: (field) => fieldKey(field, row.id),
       id: (field) => fieldId(field, row.id),
       saved: (field) => config.valueOf(row, field),
+      shown: shownOf ? (field) => shownOf(row, field) : undefined,
       clean: config.clean,
       rule: config.rule,
       taken: (field, value) =>
         field === NAME ? nameTaken(shown, row.id, value) : null,
-      send: (field, value) => actions.setText(row.id, field, value),
+      send: (field, value, held) => actions.setText(row.id, field, value, held),
+      shownIn: config.shownIn,
       landed: rowLanded
         ? (field, value) => {
             rowLanded(row, field, value);
@@ -268,7 +300,7 @@ function useRows<
       clean: texts.clean,
       rule: texts.rule,
       taken: (field, value) => texts.taken?.(field, value) ?? null,
-      send: (field, value) => texts.setText(field, value),
+      send: (field, value, held) => texts.setText(field, value, held),
       landed: texts.landed,
     };
   }

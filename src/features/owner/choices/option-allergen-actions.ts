@@ -7,6 +7,7 @@ import {
   writeOwnerOptionAllergens,
   type ChoiceWriteError,
 } from "@/core/supabase/choices";
+import { shownTextSchema } from "@/core/supabase/compare";
 import {
   cleanOtherAllergen,
   hasOtherAllergenComma,
@@ -16,7 +17,7 @@ import {
   US_MAJOR_ALLERGENS,
   type AllergenLists,
 } from "@/domain/allergens";
-import { CHOICE_LIMITS, type OwnerOption } from "@/domain/choices";
+import type { OwnerOption } from "@/domain/choices";
 import { ALLERGEN_IDS } from "@/domain/types";
 import { majorRuleOf } from "../allergens/allergen-words";
 import { applyListsTo, inFixedOrder } from "../allergens/apply-server";
@@ -52,8 +53,12 @@ const listsSchema = z.object({
   allergens: z.array(z.enum(ALLERGEN_IDS)).max(ALLERGEN_IDS.length),
   others: z.array(z.string().max(200)).max(OTHER_ALLERGEN_LIMITS.count),
 });
+// The name the page showed is handed back for the compare, so it is
+// checked for its type and the one generous bound every shown text has,
+// never by the name field's own rule: a field's rule says what may be
+// typed, and a row can hold what no field would take (D-237).
 const shownSchema = z.object({
-  words: z.string().max(CHOICE_LIMITS.name),
+  words: shownTextSchema,
   lists: listsSchema,
 });
 const majorsSchema = z

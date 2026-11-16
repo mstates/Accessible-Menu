@@ -528,6 +528,98 @@ begin
 end;
 $$;
 
+-- A section's name and its note each name what the page showed, in the
+-- write's own statement, and land only if the section still holds it
+-- (D-237, rule 2). The statement the app sends: the section by id, in its
+-- menu, not deleted, and the value as it was read. A note that is none is
+-- named as is null, the only blank the table holds; a compare with an
+-- empty text finds no row. A stale compare lands on no row and rewrites
+-- nothing; the one that names what the section holds lands on one. The
+-- section is marked deleted at the end, so the menu's list is as it was.
+do $$
+declare
+  a_menu uuid := current_setting('boundary.a_menu')::uuid;
+  one uuid;
+  place tid;
+  touched integer;
+  note_shown text := E'\n Ask us.\nWe will check. \n';
+begin
+  insert into public.sections (menu_id, name, sort)
+  values (a_menu, 'Boundary compare one', 9101) returning id into one;
+  select s.ctid into place from public.sections s where s.id = one;
+
+  update public.sections set name = 'Boundary compare two'
+  where id = one and menu_id = a_menu and deleted_at is null
+    and name = 'Boundary compare stale';
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a rename naming a name the section does not hold landed on % rows', touched;
+  end if;
+  update public.sections set note = 'A note'
+  where id = one and menu_id = a_menu and deleted_at is null
+    and note = '';
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a note named as an empty text landed on a section with none';
+  end if;
+  if (select s.ctid from public.sections s where s.id = one)
+       is distinct from place then
+    raise exception 'FAIL: a refused write rewrote the section';
+  end if;
+  raise notice 'ok: a rename that names a name the section does not hold, and a note named as an empty text where there is none, each land on no row and rewrite nothing';
+
+  update public.sections set name = 'Boundary compare two'
+  where id = one and menu_id = a_menu and deleted_at is null
+    and name = 'Boundary compare one';
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: a rename naming the name the section holds landed on % rows', touched;
+  end if;
+  -- A note with a line break and outer spaces, as SQL or an import could
+  -- leave it, written against none.
+  update public.sections set note = note_shown
+  where id = one and menu_id = a_menu and deleted_at is null
+    and note is null;
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: a note written against none landed on % rows', touched;
+  end if;
+  raise notice 'ok: the same rename naming the name the section holds, and a note written against none, each land on one row';
+
+  select s.ctid into place from public.sections s where s.id = one;
+  update public.sections set note = 'Another'
+  where id = one and menu_id = a_menu and deleted_at is null
+    and note is null;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a note written against none landed on a section that holds one';
+  end if;
+  update public.sections set note = 'Another'
+  where id = one and menu_id = a_menu and deleted_at is null
+    and note = btrim(note_shown, E' \n');
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a note named without its outer spaces and line breaks landed';
+  end if;
+  if (select s.ctid from public.sections s where s.id = one)
+       is distinct from place then
+    raise exception 'FAIL: a refused note rewrote the section';
+  end if;
+  raise notice 'ok: a note written against none, or against the note without its outer spaces, lands on no row once the section holds a note';
+
+  update public.sections set note = null
+  where id = one and menu_id = a_menu and deleted_at is null
+    and note = note_shown;
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: a note cleared against the note the section holds landed on % rows', touched;
+  end if;
+  raise notice 'ok: a note cleared against the note as stored, line break and outer spaces and all, lands on one row';
+
+  update public.sections set deleted_at = now() where id = one;
+end;
+$$;
+
 -- A stranger reads, writes, adds, orders, and moves nothing, even with the
 -- menu's own list in hand.
 select set_config('request.jwt.claims',

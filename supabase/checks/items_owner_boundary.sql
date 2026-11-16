@@ -1273,6 +1273,191 @@ begin
 end;
 $$;
 
+-- A dish's writes each name what the page showed, in the write's own
+-- statement, and land only if the dish still holds it (D-237, rule 2): its
+-- name; its tags with Cooked to order; its schedule with the availability
+-- flag and the sold-out mark; and the check the same-named Apply sends,
+-- which names the dish's name beside its lists. The statements the app
+-- sends: the dish by id, in its section, not deleted, then the values as
+-- they were read, a value that is none as is null, a list as a literal,
+-- the schedule by value, and the mark as the text the Data API prints. A
+-- stale compare lands on no row and rewrites nothing; the one that names
+-- what the dish holds lands on one. The dish is marked deleted at the end,
+-- so the section's list is as it was.
+do $$
+declare
+  a_section uuid := current_setting('boundary.a_section')::uuid;
+  one uuid;
+  place tid;
+  touched integer;
+  mark timestamptz := '2026-11-15 17:03:21.123456+00';
+  mark_text text;
+begin
+  insert into public.items (section_id, name, sort)
+  values (a_section, 'Boundary compare one', 9101) returning id into one;
+  select i.ctid into place from public.items i where i.id = one;
+
+  update public.items set name = 'Boundary compare two'
+  where id = one and section_id = a_section and deleted_at is null
+    and name = 'Boundary compare stale';
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a rename naming a name the dish does not hold landed on % rows', touched;
+  end if;
+  if (select i.ctid from public.items i where i.id = one)
+       is distinct from place then
+    raise exception 'FAIL: a refused rename rewrote the dish';
+  end if;
+  update public.items set name = 'Boundary compare two'
+  where id = one and section_id = a_section and deleted_at is null
+    and name = 'Boundary compare one';
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: a rename naming the name the dish holds landed on % rows', touched;
+  end if;
+  raise notice 'ok: a rename that names a name the dish does not hold lands on no row and rewrites nothing, and the one that names the name it holds lands on one';
+
+  -- Tags stored out of the enum's order, as SQL or an import could leave
+  -- them: a list compares element by element, in order.
+  update public.items
+  set dietary_tags = '{made-without-gluten,vegan}', cooked_to_order = true
+  where id = one;
+  select i.ctid into place from public.items i where i.id = one;
+  update public.items set dietary_tags = '{vegan}', cooked_to_order = true
+  where id = one and section_id = a_section and deleted_at is null
+    and dietary_tags = '{vegan,made-without-gluten}'
+    and cooked_to_order = true;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a tags save naming the tags in the enum''s order landed on a dish that holds another order';
+  end if;
+  update public.items set dietary_tags = '{vegan}', cooked_to_order = true
+  where id = one and section_id = a_section and deleted_at is null
+    and dietary_tags = '{made-without-gluten,vegan}'
+    and cooked_to_order = false;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a tags save naming Cooked to order as not set landed on a dish that holds it set';
+  end if;
+  if (select i.ctid from public.items i where i.id = one)
+       is distinct from place then
+    raise exception 'FAIL: a refused tags save rewrote the dish';
+  end if;
+  update public.items set dietary_tags = '{vegan}', cooked_to_order = false
+  where id = one and section_id = a_section and deleted_at is null
+    and dietary_tags = '{made-without-gluten,vegan}'
+    and cooked_to_order = true;
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: a tags save naming the tags as stored and the mark landed on % rows', touched;
+  end if;
+  raise notice 'ok: a tags save that names the tags in another order, or Cooked to order as it is not, lands on no row and rewrites nothing, and the one that names both as stored lands on one';
+
+  -- The schedule, the flag, and a mark with microseconds, as the database
+  -- stamps one. The mark is read the way the Data API prints it.
+  update public.items
+  set special_schedule = '{"days": ["tue"], "months": ["jan"]}',
+    available = true, sold_out_at = mark
+  where id = one;
+  select to_json(i.sold_out_at) #>> '{}', i.ctid into mark_text, place
+  from public.items i where i.id = one;
+  if mark_text not like '%.123456%' then
+    raise exception 'FAIL: the mark did not read back to the microsecond: %', mark_text;
+  end if;
+  update public.items set special_schedule = null
+  where id = one and section_id = a_section and deleted_at is null
+    and special_schedule is null
+    and available = true and sold_out_at = mark_text::timestamptz;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: an availability save naming no schedule landed on a dish that holds one';
+  end if;
+  update public.items set special_schedule = null
+  where id = one and section_id = a_section and deleted_at is null
+    and special_schedule = '{"months":["jan"],"days":["tue"]}'
+    and available = false and sold_out_at = mark_text::timestamptz;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: an availability save naming the dish as off the menu landed on a dish that is on it';
+  end if;
+  update public.items set special_schedule = null
+  where id = one and section_id = a_section and deleted_at is null
+    and special_schedule = '{"months":["jan"],"days":["tue"]}'
+    and available = true and sold_out_at is null;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: an availability save naming no mark landed on a dish that holds one';
+  end if;
+  -- The mark cut to the millisecond, as a browser's Date would keep it.
+  update public.items set special_schedule = null
+  where id = one and section_id = a_section and deleted_at is null
+    and special_schedule = '{"months":["jan"],"days":["tue"]}'
+    and available = true
+    and sold_out_at = date_trunc('milliseconds', mark);
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: an availability save naming the mark cut to the millisecond landed';
+  end if;
+  if (select i.ctid from public.items i where i.id = one)
+       is distinct from place then
+    raise exception 'FAIL: a refused availability save rewrote the dish';
+  end if;
+  update public.items set special_schedule = '{"days": ["wed"]}'
+  where id = one and section_id = a_section and deleted_at is null
+    and special_schedule = '{"months":["jan"],"days":["tue"]}'
+    and available = true and sold_out_at = mark_text::timestamptz;
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: an availability save naming the schedule, the flag, and the mark as read landed on % rows', touched;
+  end if;
+  if (select i.sold_out_at from public.items i where i.id = one)
+       is distinct from mark then
+    raise exception 'FAIL: a schedule save moved the mark';
+  end if;
+  raise notice 'ok: an availability save that names another schedule, flag, or mark, the mark cut to the millisecond among them, lands on no row and rewrites nothing, and the one that names the three as read, the schedule whatever its keys'' order and the mark by its own text, lands on one and keeps the mark';
+
+  -- The same-named Apply's check: the dish's name as it was read a moment
+  -- before, and both lists.
+  update public.items
+  set allergens = '{milk}', custom_allergens = '{celery}'
+  where id = one;
+  select i.ctid into place from public.items i where i.id = one;
+  update public.items set allergens_reviewed = true
+  where id = one and section_id = a_section and deleted_at is null
+    and name = 'Boundary compare one'
+    and allergens = '{milk}' and custom_allergens = '{celery}';
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a check naming a name the dish no longer holds landed';
+  end if;
+  update public.items set allergens_reviewed = true
+  where id = one and section_id = a_section and deleted_at is null
+    and name = 'Boundary compare two'
+    and allergens = '{milk,wheat}' and custom_allergens = '{celery}';
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a check naming a list the dish does not hold landed';
+  end if;
+  if (select i.ctid from public.items i where i.id = one)
+       is distinct from place
+     or (select i.allergens_reviewed from public.items i where i.id = one) then
+    raise exception 'FAIL: a refused check rewrote the dish';
+  end if;
+  update public.items set allergens_reviewed = true
+  where id = one and section_id = a_section and deleted_at is null
+    and name = 'Boundary compare two'
+    and allergens = '{milk}' and custom_allergens = '{celery}';
+  get diagnostics touched = row_count;
+  if touched <> 1
+     or not (select i.allergens_reviewed from public.items i where i.id = one) then
+    raise exception 'FAIL: a check naming the name and the lists the dish holds did not land';
+  end if;
+  raise notice 'ok: a check that names a name the dish no longer holds, or a list it does not hold, lands on no row and checks nothing, and the one that names the name and both lists as read lands on one';
+
+  update public.items set deleted_at = now() where id = one;
+end;
+$$;
+
 -- A stranger reads, writes, adds, orders, counts, and deletes nothing, even
 -- with the section's own list in hand.
 select set_config('request.jwt.claims',

@@ -2,6 +2,7 @@
 
 import { refresh } from "next/cache";
 import { z } from "zod";
+import { shownTextSchema } from "@/core/supabase/compare";
 import {
   addOwnerSection,
   deleteOwnerSection,
@@ -58,6 +59,8 @@ function fromWrite(error: SectionWriteError): ServerProblem {
       return { kind: "name-taken" };
     case "not-found":
       return { kind: "gone" };
+    case "moved":
+      return { kind: "moved" };
     case "mismatch":
       return { kind: "mismatch" };
     case "grew":
@@ -90,13 +93,16 @@ export async function addSection(
   };
 }
 
-// Writes a section's name. A section's note is written from the section's
-// own page (D-135).
+// Writes a section's name against the name the page showed (D-237): the
+// write lands only if the section still holds it. A call that carries no
+// shown name is refused, never written without its compare. A section's
+// note is written from the section's own page (D-135).
 export async function renameSection(
   rawCode: string,
   rawMenu: string,
   rawId: string,
   rawName: string,
+  rawShown: unknown,
 ): Promise<SectionActionResult<OwnerSection>> {
   const scope = await menuScope(rawCode, rawMenu);
   if (!scope.ok) return scope;
@@ -108,12 +114,15 @@ export async function renameSection(
   );
   const rule = sectionTextProblem("name", name);
   if (rule) return refuse({ kind: "invalid", rule });
+  const shown = shownTextSchema.safeParse(rawShown);
+  if (!shown.success) return refuse({ kind: "failed" });
   const result = await setOwnerSectionText(
     scope.client,
     scope.menuId,
     id.data,
     "name",
     name,
+    shown.data,
   );
   refresh();
   if (!result.ok) return refuse(fromWrite(result.error));

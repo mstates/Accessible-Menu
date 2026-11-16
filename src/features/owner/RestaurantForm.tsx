@@ -16,6 +16,7 @@ import { fill } from "@/copy/fill";
 import { Announcer } from "@/core/a11y/announcer";
 import { noticeCookie } from "@/core/notice";
 import type { AddressParts } from "@/core/places";
+import type { RestaurantShown } from "@/core/supabase/restaurants";
 import {
   DAY_KEYS,
   isOpenAllDay,
@@ -42,6 +43,7 @@ import {
   errorsShown,
   hoursFieldName,
   RANGE_INDEXES,
+  SHOWN_FIELD,
   timeFieldLabel,
 } from "./form-data";
 import { fieldId, restaurantDetailsPath } from "./paths";
@@ -55,6 +57,10 @@ type Props = {
   copy: Copy;
   action: Action;
   defaultValues?: RestaurantDetails;
+  // On Details: the twelve columns the save writes, as the server returned
+  // them for this load, which the form posts back with the save (D-237).
+  // The create form has none.
+  shown?: RestaurantShown;
   mode: "create" | "details";
   submitLabel: string;
   // Whether the address finder shows above the address fields (D-83):
@@ -85,12 +91,19 @@ export function RestaurantForm({
   copy,
   action,
   defaultValues,
+  shown: loaded,
   mode,
   submitLabel,
   addressFinder,
 }: Props) {
   const [state, formAction, pending] = useActionState(action, initial);
   const strings = copy.owner.restaurants;
+  // What the page showed is fixed when the form mounts, as its fields are
+  // (D-237, D-238): a later render of the page, which a renewed session or
+  // a landed save can bring, must not put newer values under fields the
+  // owner is still looking at, or a Save would name a version the form
+  // never showed and write over whatever moved.
+  const [held] = useState(() => loaded ?? null);
   const errors = state.status === "invalid" ? state.errors : {};
   const failure = state.status === "error" ? state.message : null;
 
@@ -158,13 +171,16 @@ export function RestaurantForm({
     readServerZone,
   );
   const [chosenTimezone, setChosenTimezone] = useState<string | null>(null);
+  // The stored zone as the form mounted with it, held like the other
+  // fields' values, so a later render never changes the zone under the
+  // owner. Only the stored zone is held: the browser's match arrives after
+  // the first render, and holding the whole choice would keep the create
+  // form on the fallback.
+  const [storedTimezone] = useState(() => defaultValues?.timezone ?? null);
   const browserMatch =
     mode === "create" && browserZone ? matchTimezone(browserZone) : null;
   const timezone =
-    chosenTimezone ??
-    defaultValues?.timezone ??
-    browserMatch ??
-    DEFAULT_TIMEZONE;
+    chosenTimezone ?? storedTimezone ?? browserMatch ?? DEFAULT_TIMEZONE;
 
   const states = US_STATE_CODES.map((code) => ({
     id: code,
@@ -186,6 +202,7 @@ export function RestaurantForm({
         onSubmit={(event) => {
           event.preventDefault();
           const data = new FormData(event.currentTarget);
+          if (held) data.set(SHOWN_FIELD, JSON.stringify(held));
           startTransition(() => formAction(data));
         }}
         validationBehavior="aria"

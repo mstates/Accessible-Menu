@@ -24,6 +24,12 @@ function text(formData: FormData, name: string): string {
 
 export const RANGE_INDEXES = [0, 1] as const;
 
+// The one field of the Details form that is not typed: what the page
+// showed, as JSON, which the save hands back to the database (D-237). JSON
+// escapes a line break, so the browser's form encoding, which rewrites a
+// bare one, cannot change a value on the way.
+export const SHOWN_FIELD = "shown";
+
 export function hoursFieldName(
   day: DayKey,
   index: number,

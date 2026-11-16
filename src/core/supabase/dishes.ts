@@ -5,6 +5,8 @@ import { caloriesInputText } from "@/domain/calories";
 import {
   PRICE_KINDS,
   type DishGeneral,
+  type DishShowingShown,
+  type DishTagsShown,
   type OwnerDish,
   type OwnerDishDetail,
 } from "@/domain/dish";
@@ -17,6 +19,7 @@ import {
   type AllergenId,
   type DietaryTagId,
 } from "@/domain/types";
+import { holding, missed } from "./compare";
 import { shaped } from "./log";
 
 // Owner-side reads and writes on dishes, through the owner's own client so
@@ -268,32 +271,55 @@ export async function addOwnerDish(
     : failed;
 }
 
-// Under row level security a dish the caller does not own matches zero rows
-// without an error, so each write asks for the row back and reads an empty
-// answer as not found.
+// Writes a dish's name, and lands only if the dish still holds the name the
+// page showed (D-237). Under row level security a dish the caller does not
+// own matches zero rows without an error, so the write asks for the row
+// back; an empty answer is then read once more without the compare, which
+// tells a dish that is gone from one whose name moved, and finds a retry
+// whose first try had landed.
 export async function renameOwnerDish(
   client: SupabaseClient,
   sectionId: string,
   id: string,
   name: string,
+  shown: string,
 ): Promise<DishWriteResult<OwnerDish>> {
-  const { data, error } = await client
+  const update = client
     .from("items")
     .update({ name })
     .eq("id", id)
     .eq("section_id", sectionId)
-    .is("deleted_at", null)
+    .is("deleted_at", null);
+  const { data, error } = await holding(update, "name", shown)
     .select(columns)
     .maybeSingle();
   if (error) return refused(error.code);
-  if (!data) return notFound;
+  if (!data) {
+    const now = await missed(
+      client
+        .from("items")
+        .select(columns)
+        .eq("id", id)
+        .eq("section_id", sectionId)
+        .is("deleted_at", null)
+        .maybeSingle(),
+      (found) => shaped(rowSchema, found, "items"),
+      (row) => row.name === name,
+    );
+    if (now.kind === "landed") return { ok: true, value: toDish(now.row) };
+    if (now.kind === "moved") return { ok: false, error: { kind: "moved" } };
+    return now.kind === "not-found" ? notFound : failed;
+  }
   const row = shaped(rowSchema, data, "items");
   return row ? { ok: true, value: toDish(row) } : failed;
 }
 
 // Marks a dish deleted. The row stays, with deleted_at set. A dish holds
 // nothing a delete counts, so this counts nothing; the page asks first all
-// the same (D-221).
+// the same (D-221). The statement names the one value it writes, that the
+// dish is not deleted yet; the name its question showed is not compared
+// (Michael, November 15, 2026): a delete removes the row whose button was
+// pressed.
 export async function deleteOwnerDish(
   client: SupabaseClient,
   sectionId: string,
@@ -393,16 +419,6 @@ export async function saveOwnerDishGeneral(
   }
 }
 
-// A Postgres array literal, for comparing an array column against the value
-// the page showed: {"milk","wheat"}. Every element is quoted, with its
-// quotes and backslashes escaped, so any name travels whole.
-function arrayLiteral(values: readonly string[]): string {
-  const quoted = values.map(
-    (value) => `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`,
-  );
-  return `{${quoted.join(",")}}`;
-}
-
 // What a write on a dish's allergens may set: one or both lists, or the
 // check (D-148). Who and when are never written here: the database stamps
 // them.
@@ -414,12 +430,16 @@ export type AllergenPatch = {
 
 // What the dish must still hold for the write to land: the lists the page
 // showed, for every write that changes or checks a list; the flag, for an
-// uncheck. A miss comes back as not found, which the caller reads as the
-// lists having moved.
-export type AllergenExpected = {
-  lists?: AllergenLists;
-  allergens_reviewed?: boolean;
-};
+// uncheck; and, for the same-named Apply, the name the action read it by a
+// moment before (D-129, D-237), so the name is compared in the statement
+// and not by a read ahead of it. A miss comes back as not found, which the
+// caller reads as the dish having moved. Every write names the lists or the
+// flag: the type has no room for a call that names neither, which would be
+// a write with no compare.
+export type AllergenExpected = { name?: string } & (
+  | { lists: AllergenLists; allergens_reviewed?: boolean }
+  | { lists?: AllergenLists; allergens_reviewed: boolean }
+);
 
 // Writes a dish's allergen lists or its check, scoped to the section the
 // page read the dish in, and lands only if the dish still holds what the
@@ -449,13 +469,15 @@ export async function writeOwnerDishAllergens(
     .eq("id", id)
     .eq("section_id", sectionId)
     .is("deleted_at", null);
+  if (expected.name !== undefined) {
+    update = holding(update, "name", expected.name);
+  }
   if (expected.lists) {
-    update = update
-      .eq("allergens", arrayLiteral(expected.lists.allergens))
-      .eq("custom_allergens", arrayLiteral(expected.lists.others));
+    update = holding(update, "allergens", expected.lists.allergens);
+    update = holding(update, "custom_allergens", expected.lists.others);
   }
   if (expected.allergens_reviewed !== undefined) {
-    update = update.eq("allergens_reviewed", expected.allergens_reviewed);
+    update = holding(update, "allergens_reviewed", expected.allergens_reviewed);
   }
   const { data, error } = await update.select(detailColumns).maybeSingle();
   if (error) return refused(error.code, error.message);
@@ -473,19 +495,21 @@ export type TagsPagePatch = {
 
 // Writes a dish's dietary tags and its Cooked to order mark together,
 // scoped to the section the page read the dish in, and lands only if the
-// dish still holds the tags the page showed (D-149's rule, widened to tags
-// at task 5's plan): a stale tab's save would otherwise put back a tag
-// another tab removed. The tags are in the enum's order, the way every
-// write leaves them.
+// dish still holds both as the page showed them (D-149's rule, widened to
+// tags at task 5's plan and to the mark by D-237): a stale tab's save would
+// otherwise put back a tag another tab removed. The tags to write are in
+// the enum's order; the tags shown are compared as they were read, in
+// their stored order, since arrays compare element by element and a list
+// reordered here would never match a row that holds another order.
 export async function writeOwnerDishTagsPage(
   client: SupabaseClient,
   sectionId: string,
   id: string,
   viewer: string | null,
   patch: TagsPagePatch,
-  shown: readonly DietaryTagId[],
+  shown: DishTagsShown,
 ): Promise<DishWriteResult<OwnerDishDetail>> {
-  const { data, error } = await client
+  let update = client
     .from("items")
     .update({
       dietary_tags: [...patch.dietary_tags],
@@ -493,10 +517,10 @@ export async function writeOwnerDishTagsPage(
     })
     .eq("id", id)
     .eq("section_id", sectionId)
-    .is("deleted_at", null)
-    .eq("dietary_tags", arrayLiteral(shown))
-    .select(detailColumns)
-    .maybeSingle();
+    .is("deleted_at", null);
+  update = holding(update, "dietary_tags", shown.tags);
+  update = holding(update, "cooked_to_order", shown.cookedToOrder);
+  const { data, error } = await update.select(detailColumns).maybeSingle();
   if (error) return refused(error.code, error.message);
   if (!data) return notFound;
   const row = shaped(detailSchema, data, "items");
@@ -516,16 +540,19 @@ export type ShowingPatch = {
 
 // Writes a dish's schedule and, when it changed, its availability, scoped
 // to the section the page read the dish in, and lands only if the dish
-// still holds the schedule the page showed (D-149's rule, widened to the
-// schedule at task 5's plan). jsonb compares by value, so the text's key
-// order never matters.
+// still holds the schedule, the flag, and the mark the page showed (D-149's
+// rule, widened to the schedule at task 5's plan and to the availability
+// by D-237). jsonb compares by value, so the text's key order never
+// matters. The mark is compared as the text the server returned it as,
+// never through a Date: Postgres reads its own text back to the same
+// instant, down to the microsecond a Date would drop.
 export async function writeOwnerDishShowing(
   client: SupabaseClient,
   sectionId: string,
   id: string,
   viewer: string | null,
   patch: ShowingPatch,
-  shownSchedule: Schedule | null,
+  shown: DishShowingShown,
 ): Promise<DishWriteResult<OwnerDishDetail>> {
   const values: Record<string, unknown> = {
     special_schedule: patch.special_schedule,
@@ -540,10 +567,13 @@ export async function writeOwnerDishShowing(
     .eq("id", id)
     .eq("section_id", sectionId)
     .is("deleted_at", null);
-  update =
-    shownSchedule === null
-      ? update.is("special_schedule", null)
-      : update.eq("special_schedule", scheduleJson(shownSchedule));
+  update = holding(
+    update,
+    "special_schedule",
+    shown.schedule === null ? null : scheduleJson(shown.schedule),
+  );
+  update = holding(update, "available", shown.available);
+  update = holding(update, "sold_out_at", shown.soldOutAt);
   const { data, error } = await update.select(detailColumns).maybeSingle();
   if (error) return refused(error.code, error.message);
   if (!data) return notFound;

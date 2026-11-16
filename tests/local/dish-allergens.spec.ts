@@ -24,9 +24,11 @@ import { saveAndFail, saveAndLand, summary } from "./save";
 // other-allergen rows' refusals, unsent, under their fields; a rename and a
 // remove kept by Save; the apply to a same-named dish; a page whose lists
 // moved under it, from another tab, refused with one sentence in the
-// summary and nothing written; and a save the server refuses, kept, landed
-// by the next press. The gate cannot land a save, so this runs here. Each
-// check leaves the stand-in as it found it, so the checks run in any order.
+// summary and nothing written; a save the server refuses, kept, landed by
+// the next press; and a refused Apply's refresh putting nothing newer
+// under the form (D-237). The gate cannot land a save, so this runs here.
+// Each check leaves the stand-in as it found it, so the checks run in any
+// order.
 
 const { code } = ownerEnv();
 const strings = en.owner.dish;
@@ -648,4 +650,75 @@ test("a save the server refuses is kept with the failure in the summary, focused
   await press(page, allergens.names.milk);
   await save(page);
   expect((await row(dishes.market.id)).allergens).toEqual([]);
+});
+
+// What the page showed is held from the moment the form mounts (D-237).
+// Apply ends with a refresh of the page whatever its outcome, so a refused
+// Apply brings a newer render under boxes that still show the lists the
+// form mounted with. The Save after it must name those lists, the ones the
+// owner is looking at, and be refused: named from the newer render, it
+// would pass its compare and drop the allergen the other tab added.
+test("a refused Apply's refresh puts nothing newer under the form: the boxes stay as they loaded, and a Save then is refused as moved, with the allergen added elsewhere kept", async ({
+  page,
+}) => {
+  const { dishes } = ownerFixture();
+  const state = strings.pages.state;
+  const navLink = (words: string) =>
+    page.getByRole("link", {
+      name: `${allergens.heading} ${words}`,
+      exact: true,
+    });
+  await openDish(page, "sizes");
+  await expect(checkBox(page)).toBeChecked();
+  await expect(navLink(state.allergensConfirmed)).toHaveCount(1);
+  try {
+    // Sesame added elsewhere, which leaves the dish unchecked.
+    await setElsewhere(dishes.sizes.id, {
+      allergens: ["milk", "wheat", "sesame"],
+      others: ["celery"],
+    });
+    await applyButton(page, dishes.sizes.name).click();
+    await expect
+      .poll(() => said(page, allergens.sameNamed.errors.sourceUnchecked))
+      .toBe(1);
+    await expect(
+      navLink(state.allergensNotConfirmed),
+      "the refresh arrived: the page nav says the dish as it is now",
+    ).toHaveCount(1);
+    await expect(
+      box(page, allergens.names.sesame),
+      "the form still shows the lists it mounted with",
+    ).not.toBeChecked();
+    await expect(checkBox(page)).toBeChecked();
+
+    const sent = await writesSoFar();
+    await press(page, allergens.names.fish);
+    await saveAndFail(page, allergens.submit, allergens.listsMoved);
+    await expect(
+      box(page, allergens.names.fish),
+      "the tick is kept",
+    ).toBeChecked();
+    expect(await writesSoFar(), "one statement, which matched no row").toBe(
+      sent + 1,
+    );
+    expect(
+      (await row(dishes.sizes.id)).allergens,
+      "sesame stays, and fish was not written",
+    ).toEqual(["milk", "wheat", "sesame"]);
+  } finally {
+    // As it was, in two steps, since a change and a check in one statement
+    // end unchecked: the lists, then the check.
+    await setElsewhere(dishes.sizes.id, {
+      allergens: ["milk", "wheat"],
+      others: ["celery"],
+    });
+    await setElsewhere(dishes.sizes.id, {
+      allergens: ["milk", "wheat"],
+      others: ["celery"],
+      checked: true,
+    });
+  }
+  await reload(page);
+  await expect(checkBox(page)).toBeChecked();
+  await expect(applyButton(page, dishes.sizes.name)).toHaveCount(1);
 });

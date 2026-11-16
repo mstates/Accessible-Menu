@@ -65,7 +65,8 @@ function SectionRows({
     rule: sectionList.rule,
     actions: {
       add: (name) => addSection(code, menuId, name),
-      setText: (id, _field, value) => renameSection(code, menuId, id, value),
+      setText: (id, _field, value, shown) =>
+        renameSection(code, menuId, id, value, shown),
       remove: (id, told) => deleteSection(code, menuId, id, told),
       order: (ids) => orderSections(code, menuId, ids),
     },

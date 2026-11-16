@@ -2,6 +2,7 @@
 
 import { refresh } from "next/cache";
 import { z } from "zod";
+import { shownTextSchema } from "@/core/supabase/compare";
 import {
   addOwnerDish,
   deleteOwnerDish,
@@ -77,6 +78,8 @@ function fromWrite(error: DishWriteError): ServerProblem {
       return { kind: "name-taken" };
     case "not-found":
       return { kind: "gone" };
+    case "moved":
+      return { kind: "moved" };
     case "mismatch":
       return { kind: "mismatch" };
     default:
@@ -103,15 +106,19 @@ export async function addDish(
   };
 }
 
-// Writes the section's note, from the top of its own page (D-120, D-135).
-// The section is read through sectionScope like every save here, so the
-// write follows it to whatever menu it is in now, and a section that is
-// gone says so in this page's words.
+// Writes the section's note, from the top of its own page (D-120, D-135),
+// against the note the page showed (D-237): the write lands only if the
+// section still holds it, and a call that carries no shown note is refused,
+// never written without its compare. The section is read through
+// sectionScope like every save here, so the write follows it to whatever
+// menu it is in now, and a section that is gone says so in this page's
+// words.
 export async function setOwnSectionText(
   rawCode: string,
   rawSection: string,
   rawField: string,
   rawValue: string,
+  rawShown: unknown,
 ): Promise<DishActionResult<OwnerSection>> {
   const scope = await sectionScope(rawCode, rawSection);
   if (!scope.ok) return scope;
@@ -123,15 +130,19 @@ export async function setOwnSectionText(
   const value = cleanSectionText(field.data, rawValue);
   const rule = sectionTextProblem(field.data, value);
   if (rule) return refuse({ kind: "invalid", rule });
+  const shown = shownTextSchema.safeParse(rawShown);
+  if (!shown.success) return refuse({ kind: "failed" });
   const result = await setOwnerSectionText(
     scope.client,
     scope.menuId,
     scope.sectionId,
     field.data,
     value,
+    shown.data,
   );
   refresh();
   if (!result.ok) {
+    if (result.error.kind === "moved") return refuse({ kind: "moved" });
     // The note has no name to collide with: a section that is not there is
     // the page's own parent gone.
     if (result.error.kind !== "not-found") return refuse({ kind: "failed" });
@@ -140,11 +151,15 @@ export async function setOwnSectionText(
   return { ok: true, value: result.value };
 }
 
+// Writes a dish's name against the name the page showed (D-237): the write
+// lands only if the dish still holds it. A call that carries no shown name
+// is refused, never written without its compare.
 export async function renameDish(
   rawCode: string,
   rawSection: string,
   rawId: string,
   rawName: string,
+  rawShown: unknown,
 ): Promise<DishActionResult<OwnerDish>> {
   const scope = await sectionScope(rawCode, rawSection);
   if (!scope.ok) return scope;
@@ -152,11 +167,14 @@ export async function renameDish(
   if (!id.success) return gone;
   const name = readName(rawName);
   if ("kind" in name) return refuse(name);
+  const shown = shownTextSchema.safeParse(rawShown);
+  if (!shown.success) return refuse({ kind: "failed" });
   const result = await renameOwnerDish(
     scope.client,
     scope.sectionId,
     id.data,
     name.name,
+    shown.data,
   );
   refresh();
   if (!result.ok) return refuse(fromWrite(result.error));

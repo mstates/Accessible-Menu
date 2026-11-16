@@ -1057,6 +1057,16 @@ function canonical(value) {
   return JSON.stringify(value);
 }
 
+// An instant to the microsecond, as Postgres keeps a timestamptz. Date
+// reads three digits of a second's fraction, so the next three are read
+// here from the text.
+function micros(text) {
+  const fraction = /\.(\d+)/.exec(text)?.[1] ?? "";
+  return (
+    Date.parse(text) * 1000 + Number(fraction.slice(3, 6).padEnd(3, "0") || 0)
+  );
+}
+
 function matches(row, params) {
   for (const [key, raw] of params) {
     if (
@@ -1072,6 +1082,19 @@ function matches(row, params) {
       if (value === null) return false;
     } else if (raw.startsWith("eq.")) {
       const wanted = raw.slice(3);
+      // Nothing never equals a value, the word "null" among them: in
+      // PostgREST eq.null compares with a text of that word, and only
+      // is.null finds a null. A writer that sent eq.null for a null would
+      // pass a kinder stand-in and refuse every save on the real one.
+      if (value === null || value === undefined) return false;
+      if (key === "sold_out_at") {
+        // A timestamp compares as the instant it names, whatever text it
+        // is written in, as Postgres compares it, and to the microsecond
+        // Postgres keeps: a mark run through a Date on its way back loses
+        // its last three digits and matches no mark the database stamped.
+        if (micros(wanted) !== micros(value)) return false;
+        continue;
+      }
       if (Array.isArray(value)) {
         const literal = parseArrayLiteral(wanted);
         if (literal === null) throw new Error(`bad array literal: ${wanted}`);
@@ -1127,12 +1150,53 @@ function ordered(rows, params) {
   return limit ? out.slice(offset, offset + Number(limit)) : out.slice(offset);
 }
 
+// One item of a select as PostgREST reads it: a column, or alias:column,
+// either with a ::cast. A cast to text gives a jsonb value as its text,
+// which the Details page hands back for its compare of hours (D-237).
+function picked(row, item) {
+  const [, alias, column, cast] =
+    /^(?:([^:]+):)?([^:]+)(?:::(\w+))?$/.exec(item) ?? [];
+  if (column === undefined) return [item, row[item]];
+  const value = row[column];
+  const text =
+    cast === "text" && value !== null && typeof value === "object"
+      ? JSON.stringify(value)
+      : value;
+  return [alias ?? column, text];
+}
+
 function pick(row, params) {
   const select = params.get("select");
   if (!select || select === "*") return row;
-  return Object.fromEntries(
-    select.split(",").map((column) => [column, row[column]]),
-  );
+  return Object.fromEntries(select.split(",").map((item) => picked(row, item)));
+}
+
+// PostgREST refuses a filter on a column its table does not have. A row
+// here holds every column of its table, so a filter that names none of
+// them is a mistake in the app, and it must answer as one: left to match
+// no row, it would read as a write whose row had moved (D-237). Returns
+// true when it has answered.
+function unknownColumn(res, table, rows, params) {
+  const [sample] = rows;
+  if (!sample) return false;
+  for (const key of params.keys()) {
+    if (
+      ["select", "order", "limit", "offset", "columns", "on_conflict"].includes(
+        key,
+      )
+    )
+      continue;
+    if (!(key in sample)) {
+      send(res, 400, {
+        code: "42703",
+        message: `column ${table}.${key} does not exist`,
+        details: null,
+        hint: null,
+      });
+      return true;
+    }
+  }
+  return false;
 }
 
 function respondRows(
@@ -1775,6 +1839,7 @@ const server = http.createServer(async (req, res) => {
         (key) => !allowed.includes(key),
       );
       if (extra.length) return denied(res, `column ${extra[0]}`);
+      if (unknownColumn(res, "restaurants", restaurants(), params)) return;
       const found = restaurants().filter((row) => matches(row, params));
       for (const row of found) Object.assign(row, payload);
       return respondRows(req, res, found, params);
@@ -1833,6 +1898,7 @@ const server = http.createServer(async (req, res) => {
           (key) => !allowed.includes(key),
         );
         if (extra.length) return denied(res, `column ${extra[0]}`);
+        if (unknownColumn(res, "menus", menus, params)) return;
         const targets = menus.filter((row) => matches(row, params));
         for (const row of targets) {
           const next = { ...row, ...payload };
@@ -1994,6 +2060,7 @@ const server = http.createServer(async (req, res) => {
           (key) => !allowed.includes(key),
         );
         if (extra.length) return denied(res, `column ${extra[0]}`);
+        if (unknownColumn(res, "sections", sections, params)) return;
         const targets = sections.filter((row) => matches(row, params));
         for (const row of targets) {
           const problem = sectionProblem({ ...row, ...payload });
@@ -2115,6 +2182,7 @@ const server = http.createServer(async (req, res) => {
           (key) => !allowed.includes(key),
         );
         if (extra.length) return denied(res, `column ${extra[0]}`);
+        if (unknownColumn(res, "items", items, params)) return;
         const targets = items.filter((row) => matches(row, params));
         const nexts = new Map();
         for (const row of targets) {
@@ -2183,6 +2251,7 @@ const server = http.createServer(async (req, res) => {
           (key) => !allowed.includes(key),
         );
         if (extra.length) return denied(res, `column ${extra[0]}`);
+        if (unknownColumn(res, "item_sizes", sizes, params)) return;
         const targets = sizes.filter((row) => matches(row, params));
         for (const row of targets) {
           const problem = sizeProblem({ ...row, ...payload });
@@ -2418,6 +2487,7 @@ const server = http.createServer(async (req, res) => {
           (key) => !allowed.includes(key),
         );
         if (extra.length) return denied(res, `column ${extra[0]}`);
+        if (unknownColumn(res, "choice_lists", lists, params)) return;
         const targets = lists.filter((row) => matches(row, params));
         for (const row of targets) {
           const problem = listProblem({ ...row, ...payload });
@@ -2475,6 +2545,7 @@ const server = http.createServer(async (req, res) => {
           (key) => !allowed.includes(key),
         );
         if (extra.length) return denied(res, `column ${extra[0]}`);
+        if (unknownColumn(res, "choice_options", options, params)) return;
         const targets = options.filter((row) => matches(row, params));
         const nexts = new Map();
         for (const row of targets) {

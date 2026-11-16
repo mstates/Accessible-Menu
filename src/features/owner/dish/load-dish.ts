@@ -6,7 +6,7 @@ import { findOwnerMenu } from "@/core/supabase/menus";
 import { findOwnerSection } from "@/core/supabase/sections";
 import { availabilityAt } from "@/domain/availability";
 import type { OwnerChoiceList } from "@/domain/choices";
-import type { OwnerDishDetail } from "@/domain/dish";
+import type { DishShowingShown, OwnerDishDetail } from "@/domain/dish";
 import { loadRestaurant } from "../load-restaurant";
 import type { ShowingNow } from "./schedule-words";
 
@@ -37,6 +37,11 @@ export type LoadedDish = {
   lists: OwnerChoiceList[];
   showing: ShowingNow;
   now: string;
+  // What the Availability page hands back with its save (D-237): the
+  // schedule, and the row's flag and mark as stored. Built here, since
+  // this is the owner file that may name the mark; the page and its form
+  // carry it whole.
+  availabilityShown: DishShowingShown;
 };
 
 export const loadDish = cache(async (rawCode: string, rawDish: string) => {
@@ -76,6 +81,11 @@ export const loadDish = cache(async (rawCode: string, rawDish: string) => {
       until: decided.state === "sold-out" ? decided.until.toISOString() : null,
     },
     now: now.toISOString(),
+    availabilityShown: {
+      schedule: dish.schedule,
+      available: dish.available,
+      soldOutAt: dish.soldOutAt,
+    },
   };
   return { supabase, email, userId, restaurant, found };
 });

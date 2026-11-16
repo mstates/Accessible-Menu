@@ -109,6 +109,9 @@ export type ListProblem =
   | { kind: "gone" }
   // What the list sits in was deleted, or is no longer this owner's.
   | { kind: "parent-gone" }
+  // The row holds another value than the page showed, so nothing was
+  // written (D-237, rule 2).
+  | { kind: "moved" }
   | { kind: "mismatch" }
   // A delete would have taken more than the owner was told about.
   | { kind: "grew" }
@@ -230,6 +233,12 @@ export function problemText(
       return strings.errors.gone;
     case "parent-gone":
       return strings.errors.parentGone ?? strings.errors.gone;
+    // A value that moved under the page is said in the words of a page
+    // that is out of date (Michael, November 15, 2026): it is one, and
+    // Reload is the fix for both. It stays a kind of its own, so the
+    // Reload rule and the tests tell the two apart.
+    case "moved":
+      return editing.problems.outOfDate;
     case "mismatch":
       return strings.errors.listChanged;
     case "grew":

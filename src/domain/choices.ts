@@ -39,12 +39,19 @@ export type ChoiceHome = { kind: "dish" | "section"; id: string };
 export type OwnerChoiceList = { id: string; lead: string; options: number };
 
 // An option as its list's page reads and writes it: price and calories as
-// their fields show them, blank for none.
+// their fields show them, blank for none, and beside them the three
+// columns those texts are read from, as stored. A save of the price or the
+// calories hands the stored numbers back, never the text (D-237): a stored
+// pair of 250 and 250 reads "250" in its field, which reads back as 250
+// and none, so a compare made from the text would never match that row.
 export type OwnerOption = OwnerAllergens & {
   id: string;
   name: string;
   price: string;
   calories: string;
+  priceCents: number | null;
+  caloriesLow: number | null;
+  caloriesHigh: number | null;
 };
 
 // The texts of an option an owner writes in its row, in the row's order.

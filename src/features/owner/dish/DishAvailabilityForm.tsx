@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Announcer, useAnnounce } from "@/core/a11y/announcer";
-import type { OwnerDishDetail } from "@/domain/dish";
+import type { DishShowingShown, OwnerDishDetail } from "@/domain/dish";
 import type { ScheduleCopy } from "@/domain/schedule";
 import type { TimeCopy } from "@/domain/time";
 import type { FormError } from "@/ui/Form";
@@ -26,6 +26,8 @@ type Props = {
   pendingLabel: string;
   code: string;
   dish: OwnerDishDetail;
+  // What the server held for this page's fields at this load (D-237).
+  shown: DishShowingShown;
   showing: ShowingNow;
   timeZone: string;
   lang: string;
@@ -55,6 +57,7 @@ function AvailabilityForm({
   pendingLabel,
   code,
   dish,
+  shown,
   showing,
   timeZone,
   lang,
@@ -73,6 +76,7 @@ function AvailabilityForm({
     strings,
     words,
     dish,
+    shown,
     showing,
     timeZone,
     lang,

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { fill } from "@/copy/fill";
 import type { Availability } from "@/domain/availability";
 import { formatDate, formatDayAndDate, todayIn } from "@/domain/date";
-import type { OwnerDishDetail } from "@/domain/dish";
+import type { DishShowingShown, OwnerDishDetail } from "@/domain/dish";
 import { DAY_KEYS, type DayKey } from "@/domain/hours";
 import {
   MONTH_KEYS,
@@ -48,7 +48,9 @@ import type { Prepared } from "./useDishForm";
 // decided the dish is now, while the chosen radio is the saved one; the
 // Diners read line follows the saved schedule, with today in the
 // restaurant's zone from the server's clock, never the browser's. Today
-// only fills the two date fields and says so; Save keeps them.
+// only fills the two date fields and says so; Save keeps them. All of it
+// is as the page loaded: what the page showed is held from the moment the
+// form mounts, and Save hands it back (D-237).
 
 type TextPart = "open" | "close" | "from" | "until";
 
@@ -57,6 +59,10 @@ type Props = {
   // The dish's words, for problems said with the dish's name.
   words: TextWords;
   dish: OwnerDishDetail;
+  // What the server held for this page's fields when it loaded, which the
+  // Save hands back (D-237). Held whole: this file never reads its parts
+  // but the schedule.
+  shown: DishShowingShown;
   showing: ShowingNow;
   timeZone: string;
   lang: string;
@@ -106,10 +112,11 @@ export function useAvailabilityForm({
   strings,
   words,
   dish,
-  showing,
+  shown: loaded,
+  showing: decided,
   timeZone,
   lang,
-  now,
+  now: clock,
   scheduleCopy,
   timeCopy,
   announce,
@@ -117,12 +124,25 @@ export function useAvailabilityForm({
 }: Props) {
   const copy = strings.schedule;
   const ids = SCHEDULE_IDS;
+  // What the page showed is fixed when the form mounts, as General's is
+  // (D-237, D-238): the schedule, the flag, and the mark the server held,
+  // what the dish's availability was decided to be, and the clock that
+  // decision was made on. A later render of the page must not put newer
+  // values under the fields the owner is still looking at, or a Save
+  // would name a version the form never showed and write over whatever
+  // moved. The Save hands shown back untouched.
+  const [first] = useState(() => ({
+    shown: loaded,
+    showing: decided,
+    now: clock,
+  }));
+  const { shown, showing, now } = first;
   const at = new Date(now);
   const today = todayIn(timeZone, at);
-  const saved = fieldsOf(dish.schedule, lang, timeCopy);
+  const saved = fieldsOf(shown.schedule, lang, timeCopy);
   const [choice, setChoice] = useState<Availability>(showing.state);
   const [fields, setFields] = useState<AvailabilityFields>(() =>
-    fieldsOf(dish.schedule, lang, timeCopy),
+    fieldsOf(shown.schedule, lang, timeCopy),
   );
   const dirty = choice !== showing.state || !sameFields(fields, saved);
 
@@ -232,13 +252,13 @@ export function useAvailabilityForm({
     from: text(ids.from, "from"),
     until: text(ids.until, "until"),
     today: { id: ids.today, set: setToday },
-    sentence: dish.schedule
-      ? scheduleSentence(dish.schedule, today, lang, scheduleCopy, timeCopy)
+    sentence: shown.schedule
+      ? scheduleSentence(shown.schedule, today, lang, scheduleCopy, timeCopy)
       : null,
-    showing: dish.schedule
+    showing: shown.schedule
       ? showingSentence(
-          showingAt(dish.schedule, at, timeZone),
-          dish.schedule,
+          showingAt(shown.schedule, at, timeZone),
+          shown.schedule,
           at,
           timeZone,
           lang,
@@ -273,7 +293,7 @@ export function useAvailabilityForm({
           until: fields.until,
         },
         today,
-        shownSchedule: dish.schedule,
+        shown,
       },
     };
   }

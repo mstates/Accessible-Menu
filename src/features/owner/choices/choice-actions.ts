@@ -2,6 +2,7 @@
 
 import { refresh } from "next/cache";
 import { z } from "zod";
+import { shownTextSchema } from "@/core/supabase/compare";
 import {
   addOwnerChoiceList,
   addOwnerOption,
@@ -65,6 +66,14 @@ const toldSchema = z.object({
   options: z.number().int().min(0),
 });
 const optionTextSchema = z.enum(OPTION_TEXTS);
+// What the page showed for an option's added price and for its calories:
+// the stored numbers, checked for being whole numbers and no more. The
+// table's own rules bound what a row can hold.
+const shownNumberSchema = z.number().int().nullable();
+const shownCaloriesSchema = z.strictObject({
+  low: shownNumberSchema,
+  high: shownNumberSchema,
+});
 
 function refuse(problem: ServerProblem): { ok: false; problem: ServerProblem } {
   return { ok: false, problem };
@@ -83,6 +92,8 @@ function fromWrite(
       return { kind: "name-taken" };
     case "not-found":
       return { kind: missing };
+    case "moved":
+      return { kind: "moved" };
     case "mismatch":
       return { kind: "mismatch" };
     case "grew":
@@ -193,21 +204,28 @@ export async function renameChoiceListRow(): Promise<
   return failed;
 }
 
-// The list's lead, from the top of its own page (D-135).
+// The list's lead, from the top of its own page (D-135), against the lead
+// the page showed (D-237): the write lands only if the list still holds
+// it. A call that carries no shown lead is refused, never written without
+// its compare.
 export async function setChoiceListLead(
   rawCode: string,
   rawList: string,
   rawLead: string,
+  rawShown: unknown,
 ): Promise<ChoiceActionResult<{ lead: string }>> {
   const scope = await listScope(rawCode, rawList);
   if (!scope.ok) return scope;
   const lead = readLead(rawLead);
   if ("kind" in lead) return refuse(lead);
+  const shown = shownTextSchema.safeParse(rawShown);
+  if (!shown.success) return failed;
   const result = await setOwnerChoiceListLead(
     scope.client,
     scope.home,
     scope.listId,
     lead.lead,
+    shown.data,
   );
   refresh();
   if (!result.ok) return refuse(fromWrite(result.error, "parent-gone"));
@@ -242,16 +260,23 @@ export async function addChoiceOption(
   };
 }
 
-// Writes an option's name, added price, or calories. A rename answers with
-// the whole option, so the page learns the check the database cleared with
-// it (D-153, Michael, October 10, 2026). A price or calories travel as the
-// field's text and are read here, on both sides.
+// Writes an option's name, added price, or calories, against what the page
+// showed for it (D-237): the write lands only if the option still holds
+// it, and a call that carries no shown value is refused, never written
+// without its compare. A rename answers with the whole option, so the page
+// learns the check the database cleared with it (D-153, Michael, October
+// 10, 2026). A typed price or typed calories travel as the field's text
+// and are read here. What the page showed travels as the columns
+// themselves, as stored: the name, the cents, or the pair of numbers,
+// never the text a field shows, which does not always read back to what
+// the row holds.
 export async function setOptionText(
   rawCode: string,
   rawList: string,
   rawOption: string,
   rawField: string,
   rawValue: string,
+  rawShown: unknown,
 ): Promise<
   ChoiceActionResult<Record<OptionText, string> & { option: OwnerOption }>
 > {
@@ -267,29 +292,36 @@ export async function setOptionText(
   let result;
   if (field.data === "price") {
     const price = parsePrice(value);
-    if (!price.ok) return failed;
+    const shown = shownNumberSchema.safeParse(rawShown);
+    if (!price.ok || !shown.success) return failed;
     result = await setOwnerOptionPrice(
       scope.client,
       scope.listId,
       id.data,
       price.cents,
+      shown.data,
     );
   } else if (field.data === "calories") {
     const calories = parseCalories(value);
-    if (!calories.ok) return failed;
+    const shown = shownCaloriesSchema.safeParse(rawShown);
+    if (!calories.ok || !shown.success) return failed;
     result = await setOwnerOptionCalories(
       scope.client,
       scope.listId,
       id.data,
       calories.calories,
+      shown.data,
     );
   } else {
+    const shown = shownTextSchema.safeParse(rawShown);
+    if (!shown.success) return failed;
     result = await renameOwnerOption(
       scope.client,
       scope.listId,
       id.data,
       scope.userId,
       value,
+      shown.data,
     );
   }
   refresh();

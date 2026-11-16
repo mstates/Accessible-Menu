@@ -4,6 +4,13 @@ import { cleanMenuName, HOLDS_NOTHING } from "../../src/domain/menu";
 import { commitOf } from "../../src/features/owner/editing/commit";
 import { afterHold, leaveOf } from "../../src/features/owner/editing/leave";
 import {
+  heldAfterLanding,
+  heldAtFirstKey,
+  released,
+  settled,
+  type Hold,
+} from "../../src/features/owner/editing/shown";
+import {
   saysSaved,
   saysSavedAgain,
 } from "../../src/features/owner/editing/spoken";
@@ -122,6 +129,81 @@ describe("when a field saves (D-111)", () => {
       ),
     ).toEqual({ kind: "send", value: "Drinks menu" });
   });
+
+  // D-237: a newer value can arrive under typed text. Typed back to the
+  // text the field showed, the owner changed nothing, so nothing is sent
+  // and the field shows what is saved now; it is not a refusal.
+  it("writes nothing when the typed value is the text the field showed before a newer value arrived under it", () => {
+    const moved = { ...untouched, saved: "Chowder", shown: "Soup" };
+    expect(commitOf({ ...moved, draft: "Soup" }, cleanMenuName)).toEqual({
+      kind: "reset",
+    });
+    expect(commitOf({ ...moved, draft: " Soup " }, cleanMenuName)).toEqual({
+      kind: "reset",
+    });
+    expect(commitOf({ ...moved, draft: "Chowder" }, cleanMenuName)).toEqual({
+      kind: "reset",
+    });
+    expect(commitOf({ ...moved, draft: "Soup two" }, cleanMenuName)).toEqual({
+      kind: "send",
+      value: "Soup two",
+    });
+  });
+
+  it("holds no text for a field with no hold, so an emptied field is still sent", () => {
+    expect(
+      commitOf({ ...untouched, draft: "", shown: null }, cleanMenuName),
+    ).toEqual({ kind: "send", value: "" });
+  });
+});
+
+// D-237, rule 2, on a page that saves as it goes: what a text hands back
+// with its save is held from when typing began (shown.ts).
+describe("what a text hands back with its save (D-237)", () => {
+  const key = "menu:name:1";
+  const soup: Hold = { shown: "Soup", text: "Soup" };
+  const chowder: Hold = { shown: "Chowder", text: "Chowder" };
+
+  it("records at the first keystroke, and no later keystroke replaces it", () => {
+    const first = heldAtFirstKey({}, key, soup);
+    expect(first).toEqual({ [key]: soup });
+    expect(heldAtFirstKey(first, key, chowder)).toBe(first);
+  });
+
+  it("becomes the answer's value when the field's own save lands, so a second save of the field hands that back", () => {
+    const first = heldAtFirstKey({}, key, soup);
+    expect(heldAfterLanding(first, key, chowder)).toEqual({ [key]: chowder });
+    expect(heldAfterLanding({}, key, chowder)).toEqual({ [key]: chowder });
+  });
+
+  it("goes when the field is typed back to its saved value or its row leaves", () => {
+    const first = heldAtFirstKey({}, key, soup);
+    expect(released(first, key)).toEqual({});
+    expect(released({}, key)).toEqual({});
+  });
+
+  it("when new rows arrive, a field with typed text keeps its hold and every other hold goes", () => {
+    const other = "menu:name:2";
+    const holds = { [key]: soup, [other]: chowder };
+    expect(settled(holds, { [key]: "Soup of the day" })).toEqual({
+      [key]: soup,
+    });
+    expect(settled(holds, {})).toEqual({});
+    // Nothing to drop is the same object, so nothing re-renders for it.
+    expect(settled(holds, { [key]: "a", [other]: "b" })).toBe(holds);
+  });
+
+  it("holds a stored number, a pair of numbers, and nothing, as they are", () => {
+    const price: Hold = { shown: 0, text: "0.00" };
+    const none: Hold = { shown: null, text: "" };
+    const pair: Hold = { shown: { low: 250, high: 250 }, text: "250" };
+    const holds = heldAtFirstKey(
+      heldAtFirstKey(heldAtFirstKey({}, "p", price), "n", none),
+      "c",
+      pair,
+    );
+    expect(holds).toEqual({ p: price, n: none, c: pair });
+  });
 });
 
 describe("the saved status", () => {
@@ -160,21 +242,84 @@ describe("which button a failure gets (D-237)", () => {
     "section-gone",
     "target-gone",
     "out-of-date",
+    // What the page showed has moved (D-237, rule 2): a value another tab
+    // changed, a move already where it would go, a reorder of a list that
+    // no longer holds the rows the page showed.
+    "moved",
+    "changed",
+    "mismatch",
   ])("offers Reload for %s, which a retry cannot fix", (kind) => {
     expect(remedyOf(kind)).toBe("reload");
   });
 
+  // The allergen group's own refusals stay with a second press: their
+  // sentences say to look at the page as it is now, and the action's
+  // refresh has already put it so.
   it.each([
     "unreachable",
     "failed",
     "signed-out",
     "invalid",
     "name-taken",
-    "mismatch",
     "grew",
     "lists-changed",
+    "source-changed",
+    "target-changed",
   ])("leaves %s to Try again", (kind) => {
     expect(remedyOf(kind)).toBe("retry");
+  });
+
+  it("shows Reload and never Try again for a field whose value moved under the page", () => {
+    expect(buttonsOf({ ...none, fields: ["moved"] })).toEqual({
+      tryAgain: false,
+      reload: true,
+    });
+    expect(buttonsOf({ ...none, fields: ["moved", "unreachable"] })).toEqual({
+      tryAgain: true,
+      reload: true,
+    });
+  });
+
+  it("gives a refusal whose sentence says to reload the button it asks for: a move already where it would go, a reorder of a list that changed", () => {
+    expect(buttonsOf({ ...none, change: "changed" })).toEqual({
+      tryAgain: false,
+      reload: true,
+    });
+    expect(buttonsOf({ ...none, change: "mismatch" })).toEqual({
+      tryAgain: false,
+      reload: true,
+    });
+    expect(en.owner.editing.problems.outOfDate).toContain("Reload");
+    for (const words of [
+      strings.errors.listChanged,
+      sections.errors.listChanged,
+      dishes.errors.listChanged,
+      choices.lists.errors.listChanged,
+      choices.options.errors.listChanged,
+    ]) {
+      expect(words, words).toContain("Reload the page");
+    }
+  });
+
+  it("offers no button for the allergen group's own refusals, whose sentences ask for no reload", () => {
+    for (const change of [
+      "lists-changed",
+      "source-changed",
+      "target-changed",
+    ]) {
+      expect(buttonsOf({ ...none, change })).toEqual({
+        tryAgain: false,
+        reload: false,
+      });
+    }
+    for (const words of [
+      choices.allergens.listsMoved,
+      choices.allergens.listsChanged,
+      en.owner.dish.allergens.sameNamed.errors.sourceChanged,
+      en.owner.dish.allergens.sameNamed.errors.targetChanged,
+    ]) {
+      expect(words, words).not.toContain("Reload");
+    }
   });
 
   it("shows no button at rest", () => {
@@ -229,7 +374,7 @@ describe("which button a failure gets (D-237)", () => {
       tryAgain: false,
       reload: false,
     });
-    expect(buttonsOf({ ...none, change: "mismatch" })).toEqual({
+    expect(buttonsOf({ ...none, change: "grew" })).toEqual({
       tryAgain: false,
       reload: false,
     });
@@ -383,6 +528,9 @@ describe("what the menus list says", () => {
     [{ kind: "signed-out" }, editing.problems.signedOut],
     [{ kind: "invalid", rule: "nameLength" }, strings.errors.nameLength],
     [{ kind: "gone" }, strings.errors.gone],
+    // A value that moved under the page is said in the words of a page
+    // that is out of date (Michael, November 15, 2026).
+    [{ kind: "moved" }, editing.problems.outOfDate],
     [{ kind: "mismatch" }, strings.errors.listChanged],
     [{ kind: "grew" }, strings.errors.grew],
     [{ kind: "failed" }, editing.problems.failed],
@@ -574,6 +722,7 @@ describe("what the sections list says", () => {
     [{ kind: "invalid", rule: "nameLength" }, sections.errors.nameLength],
     [{ kind: "gone" }, sections.errors.gone],
     [{ kind: "parent-gone" }, sections.errors.parentGone],
+    [{ kind: "moved" }, editing.problems.outOfDate],
     [{ kind: "mismatch" }, sections.errors.listChanged],
     [{ kind: "grew" }, sections.errors.grew],
     [{ kind: "failed" }, editing.problems.failed],

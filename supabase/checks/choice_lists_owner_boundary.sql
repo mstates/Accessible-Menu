@@ -545,6 +545,51 @@ begin
 end;
 $$;
 
+-- A lead names the lead its page showed, in the write's own statement, and
+-- lands only if the list still holds it (D-237, rule 2). The statement the
+-- app sends: the list by id, under its home, not deleted, and the lead as
+-- it was read. A stale compare lands on no row and rewrites nothing; the
+-- one that names the lead the list holds lands on one. The list is marked
+-- deleted at the end, so the dish's lists are as they were.
+do $$
+declare
+  a_dish uuid := current_setting('boundary.a_dish')::uuid;
+  one uuid;
+  place tid;
+  touched integer;
+begin
+  insert into public.choice_lists (item_id, lead, sort)
+  values (a_dish, 'Boundary compare one', 9101) returning id into one;
+  select l.ctid into place from public.choice_lists l where l.id = one;
+
+  update public.choice_lists set lead = 'Boundary compare two'
+  where id = one and item_id = a_dish and deleted_at is null
+    and lead = 'Boundary compare stale';
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a lead written against a lead the list does not hold landed on % rows', touched;
+  end if;
+  if (select l.ctid from public.choice_lists l where l.id = one)
+       is distinct from place
+     or (select l.lead from public.choice_lists l where l.id = one)
+       <> 'Boundary compare one' then
+    raise exception 'FAIL: a refused lead rewrote the list';
+  end if;
+  raise notice 'ok: a lead written against a lead the list does not hold lands on no row and rewrites nothing';
+
+  update public.choice_lists set lead = 'Boundary compare two'
+  where id = one and item_id = a_dish and deleted_at is null
+    and lead = 'Boundary compare one';
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: a lead written against the lead the list holds landed on % rows', touched;
+  end if;
+  raise notice 'ok: the same lead written against the lead the list holds lands on one row';
+
+  update public.choice_lists set deleted_at = now() where id = one;
+end;
+$$;
+
 -- A stranger reads, writes, adds, orders, and deletes nothing, even with
 -- the home's own list in hand.
 select set_config('request.jwt.claims',

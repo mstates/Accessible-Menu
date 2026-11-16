@@ -11,19 +11,25 @@ import { isMenuCode, normalizeMenuCode } from "@/domain/menu-url";
 // not this owner's, so a wrong owner and an unknown code look the same
 // (D-89). Details, Menus, and a menu's own page all load this way; it left
 // the first two for this file when the third arrived (module rule 12).
+// The same read gives shown: the twelve columns a Details save writes, as
+// the server returned them, which the Details page hands its form to post
+// back with the save (D-237).
 export const loadRestaurant = cache(async (rawCode: string) => {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase.auth.getClaims();
   const email = data?.claims.email ?? null;
   // The signed-in person, for what a page says about who did a thing (D-148).
   const userId = data?.claims.sub ?? null;
-  if (!email) return { supabase, email, userId, restaurant: null };
+  const nothing = { supabase, email, userId, restaurant: null, shown: null };
+  if (!email) return nothing;
   const code = normalizeMenuCode(rawCode);
-  if (!isMenuCode(code)) return { supabase, email, userId, restaurant: null };
+  if (!isMenuCode(code)) return nothing;
+  const found = await getOwnerRestaurantByCode(supabase, code);
   return {
     supabase,
     email,
     userId,
-    restaurant: await getOwnerRestaurantByCode(supabase, code),
+    restaurant: found?.restaurant ?? null,
+    shown: found?.shown ?? null,
   };
 });

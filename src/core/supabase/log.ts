@@ -47,7 +47,9 @@ type ShapeLine = {
   issues: number;
 };
 
-function write(line: FailureLine | NoAnswerLine | ShapeLine): void {
+type ShedLine = { table: string; shed: string[] };
+
+function write(line: FailureLine | NoAnswerLine | ShapeLine | ShedLine): void {
   try {
     console.error(`postgrest ${JSON.stringify(line)}`);
   } catch {
@@ -180,6 +182,13 @@ export function loggedFetch(
     if (!response.ok) await logFailure(input, init, response);
     return response;
   };
+}
+
+// A write that left a compare out, since its request's address would have
+// passed the ceiling (compare.ts; D-237, rule 2's one named exception): the
+// table and the columns, never a value.
+export function compareShed(table: string, columns: readonly string[]): void {
+  write({ table, shed: [...columns] });
 }
 
 // A row read as the code expects it, or null, with one line naming where

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "@playwright/test";
 import { en } from "../../src/copy";
 import { fill } from "../../src/copy/fill";
 import {
@@ -9,6 +9,7 @@ import {
 } from "../../src/domain/date";
 import { shiftDay } from "../../src/domain/timezones";
 import { dayKeyOf } from "../../src/domain/hours";
+import { menuPath } from "../../src/domain/menu-url";
 import {
   scheduleSentence,
   showingAt,
@@ -21,7 +22,7 @@ import {
   type DishPageSlug,
 } from "../../src/features/owner/paths";
 import { expectNoMissingIds } from "../a11y/checks";
-import { ownerEnv, ownerFixture } from "../a11y/owner-env";
+import { ownerEnv, ownerFixture, ownerStatePath } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
 import { saveAndFail, saveAndLand, summary } from "./save";
 
@@ -37,9 +38,15 @@ import { saveAndFail, saveAndLand, summary } from "./save";
 // ended reading as available; a schedule-only save that keeps the mark; a
 // day, the hours pair saved as one and shown in one format, dates in their
 // forms, Today only filling the fields for Save, a week with no day refused
-// unsent, a month, and a schedule that moved under the page. The gate
-// cannot land a save, so this runs here. Each check leaves the stand-in as
-// it found it, so the checks run in any order.
+// unsent, a month, and a schedule that moved under the page. Then each
+// page with two tabs open (D-237): Cooked to order and the availability
+// choice changed in a second tab each refuse this tab's Save, with nothing
+// written and no diner page cleared; tags stored out of the enum's order
+// and a mark stamped to the microsecond are handed back as they were read,
+// so a Save still lands; and a newer render of either page that arrives
+// under its form changes nothing the Save hands back. The gate cannot land
+// a save, so this runs here. Each check leaves the stand-in as it found it,
+// so the checks run in any order.
 
 const { code } = ownerEnv();
 const strings = en.owner.dish;
@@ -762,4 +769,323 @@ test("a month tick saved reads, and a Save on a page whose schedule moved under 
 
   // As it was.
   await knob("set-schedule", { id: dishes.one.id, schedule: "null" });
+});
+
+// Two tabs (D-237, rule 2). Each page's Save hands back everything the
+// page writes, as the page showed it, and lands only if the dish still
+// holds all of it: the tags with Cooked to order, the schedule with the
+// availability choice.
+
+// A second tab, signed in as the same owner, opened now: after the first
+// tab loaded its page, and before the first tab's own change.
+async function inAnotherTab(
+  browser: Browser,
+  page: Page,
+  path: string,
+  work: (other: Page) => Promise<void>,
+): Promise<void> {
+  const origin = new URL(page.url()).origin;
+  const context = await browser.newContext({ storageState: ownerStatePath });
+  try {
+    const other = await context.newPage();
+    await other.goto(`${origin}${path}`);
+    await other.waitForLoadState("networkidle");
+    await work(other);
+  } finally {
+    await context.close();
+  }
+}
+
+// The server renders this tab's page again, under its form, as a renewed
+// session can: Next's own router, asked from the page.
+async function renderAgain(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const { next } = window as unknown as {
+      next: { router: { refresh: () => void } };
+    };
+    next.router.refresh();
+  });
+}
+
+// A page's link in the dish's page nav, by its name and the state line
+// after it, which follows what the server holds on every render.
+function navLink(page: Page, name: string, state: string) {
+  return page.getByRole("link", { name: `${name} ${state}`, exact: true });
+}
+
+// A diner's read of the menu page.
+async function served(page: Page): Promise<string> {
+  const response = await page.request.get(menuPath(code), {
+    headers: { accept: "text/html" },
+    maxRedirects: 0,
+  });
+  expect(response.status()).toBe(200);
+  return response.text();
+}
+
+test("Cooked to order changed in a second tab refuses this tab's Save of a tag with one sentence in the summary, keeps the tick, and writes nothing; a reload shows the box as it is now", async ({
+  page,
+  browser,
+}) => {
+  const { dishes } = ownerFixture();
+  const vegan = en.dietary.names.vegan;
+  await openDish(page, "market", "tags");
+  await expect(box(page, cookedToOrder.label)).toBeChecked();
+  try {
+    await inAnotherTab(
+      browser,
+      page,
+      dishPath("market", "tags"),
+      async (other) => {
+        await pressCooked(other);
+        await saveTags(other);
+      },
+    );
+    expect((await row(dishes.market.id)).cooked_to_order).toBe(false);
+
+    const sent = await writesSoFar();
+    await press(page, vegan);
+    await saveAndFail(page, tags.submit, tags.tagsMoved);
+    await expect(box(page, vegan), "the tick is kept").toBeChecked();
+    await expect(
+      box(page, cookedToOrder.label),
+      "the page still shows the box as it loaded it",
+    ).toBeChecked();
+    expect(await writesSoFar(), "one statement, which matched no row").toBe(
+      sent + 1,
+    );
+    const after = await row(dishes.market.id);
+    expect(after.dietary_tags, "nothing was written").toEqual([]);
+    expect(after.cooked_to_order, "the other tab's untick stands").toBe(false);
+
+    await reload(page);
+    await expect(box(page, cookedToOrder.label)).not.toBeChecked();
+    await expect(box(page, vegan)).not.toBeChecked();
+  } finally {
+    // As it was.
+    await knob("set-tags", { id: dishes.market.id, tags: "" });
+    if (!(await row(dishes.market.id)).cooked_to_order) {
+      await openDish(page, "market", "tags");
+      await pressCooked(page);
+      await saveTags(page);
+    }
+  }
+  expect((await row(dishes.market.id)).cooked_to_order).toBe(true);
+});
+
+test("tags stored out of the enum's order, as SQL or an import could leave them, are handed back in the order they were read, so a Save lands and stores them in order", async ({
+  page,
+}) => {
+  const { dishes } = ownerFixture();
+  await knob("set-tags", {
+    id: dishes.market.id,
+    tags: "made-without-gluten,vegan",
+  });
+  try {
+    await openDish(page, "market", "tags");
+    await expect(box(page, en.dietary.names.vegan)).toBeChecked();
+    await expect(
+      box(page, en.dietary.names["made-without-gluten"]),
+    ).toBeChecked();
+    await press(page, en.dietary.names.vegetarian);
+    await saveTags(page);
+    expect((await row(dishes.market.id)).dietary_tags).toEqual([
+      "vegan",
+      "vegetarian",
+      "made-without-gluten",
+    ]);
+  } finally {
+    // As it was.
+    await knob("set-tags", { id: dishes.market.id, tags: "" });
+  }
+});
+
+test("a newer render of the Dietary tags page that arrives under the form changes nothing the form shows and nothing its Save hands back: the Save is refused, and the other tab's tag stands", async ({
+  page,
+  browser,
+}) => {
+  const { dishes } = ownerFixture();
+  const vegan = en.dietary.names.vegan;
+  const vegetarian = en.dietary.names.vegetarian;
+  const state = strings.pages.state;
+  await openDish(page, "market", "tags");
+  await expect(navLink(page, tags.heading, state.none)).toHaveCount(1);
+  try {
+    await inAnotherTab(
+      browser,
+      page,
+      dishPath("market", "tags"),
+      async (other) => {
+        await press(other, vegetarian);
+        await saveTags(other);
+      },
+    );
+    await renderAgain(page);
+    await expect(
+      navLink(page, tags.heading, fill(state.tagCount.one, { count: 1 })),
+      "the newer render arrived: the page nav counts the other tab's tag",
+    ).toHaveCount(1);
+    await expect(
+      box(page, vegetarian),
+      "the form still shows what it mounted with",
+    ).not.toBeChecked();
+    await expect(tagsLine(page)).toHaveCount(0);
+
+    const sent = await writesSoFar();
+    await press(page, vegan);
+    await saveAndFail(page, tags.submit, tags.tagsMoved);
+    expect(await writesSoFar(), "one statement, which matched no row").toBe(
+      sent + 1,
+    );
+    expect(
+      (await row(dishes.market.id)).dietary_tags,
+      "the other tab's tag stands, and this tab's was not written",
+    ).toEqual(["vegetarian"]);
+  } finally {
+    // As it was.
+    await knob("set-tags", { id: dishes.market.id, tags: "" });
+  }
+});
+
+// The availability page with the dish put back as it was: Available, no
+// schedule, through the page itself, so the diner pages are cleared too.
+async function availableAgain(page: Page, id: string): Promise<void> {
+  await knob("set-availability", { id, available: "0", sold_out_at: "" });
+  await knob("set-schedule", { id, schedule: "null" });
+  await openDish(page, "one", "availability");
+  await press(page, availability.available);
+  await saveAvailability(page);
+  const back = await row(id);
+  expect(back.available).toBe(true);
+  expect(back.sold_out_at).toBeNull();
+  expect(back.special_schedule).toBeNull();
+}
+
+test("the availability choice changed in a second tab refuses this tab's Save of the schedule with one sentence in the summary, keeps the tick, writes nothing, and clears no diner page", async ({
+  page,
+  browser,
+}) => {
+  const { dishes } = ownerFixture();
+  const tuesday = en.owner.restaurants.days.tue;
+  await openDish(page, "one", "availability");
+  await expect(radio(page, availability.available)).toBeChecked();
+  try {
+    await inAnotherTab(
+      browser,
+      page,
+      dishPath("one", "availability"),
+      async (other) => {
+        await press(other, availability.soldOut);
+        await saveAvailability(other);
+      },
+    );
+    await expect
+      .poll(() => served(page), { message: "diners read the dish as sold out" })
+      .toContain(en.availability.soldOut);
+
+    // The dish taken off the menu with no diner page cleared: a diner's
+    // page keeps the sold-out dish until something clears it.
+    await knob("set-availability", {
+      id: dishes.one.id,
+      available: "0",
+      sold_out_at: "",
+    });
+    expect(await served(page), "nothing cleared the page").toContain(
+      en.availability.soldOut,
+    );
+
+    const before = await row(dishes.one.id);
+    const sent = await writesSoFar();
+    await press(page, tuesday);
+    await saveAndFail(page, availability.submit, schedule.scheduleMoved);
+    await expect(box(page, tuesday), "the tick is kept").toBeChecked();
+    await expect(radio(page, availability.available)).toBeChecked();
+    expect(await writesSoFar(), "one statement, which matched no row").toBe(
+      sent + 1,
+    );
+    expect(await row(dishes.one.id), "nothing was written").toEqual(before);
+    expect(
+      await served(page),
+      "the refused Save cleared no diner page",
+    ).toContain(en.availability.soldOut);
+  } finally {
+    await availableAgain(page, dishes.one.id);
+  }
+  await expect.poll(() => served(page)).not.toContain(en.availability.soldOut);
+});
+
+test("a sold-out mark stamped to the microsecond, as the database stamps it, is handed back as the text it was read as, so a Save of the schedule lands and keeps the mark", async ({
+  page,
+}) => {
+  const { dishes } = ownerFixture();
+  const tuesday = en.owner.restaurants.days.tue;
+  // A minute ago, with the three digits a Date would drop.
+  const mark = new Date(Date.now() - 60_000)
+    .toISOString()
+    .replace(/Z$/, "456+00:00");
+  expect(mark).toMatch(/\.\d{6}\+00:00$/);
+  await knob("set-availability", {
+    id: dishes.one.id,
+    available: "1",
+    sold_out_at: mark,
+  });
+  try {
+    await openDish(page, "one", "availability");
+    await expect(radio(page, availability.soldOut)).toBeChecked();
+    await press(page, tuesday);
+    await saveAvailability(page);
+    const after = await row(dishes.one.id);
+    expect(after.sold_out_at, "the mark is kept, to the microsecond").toBe(
+      mark,
+    );
+    expect(after.special_schedule).toEqual({ days: ["tue"] });
+  } finally {
+    await availableAgain(page, dishes.one.id);
+  }
+});
+
+test("a newer render of the Availability page that arrives under the form changes nothing the form shows and nothing its Save hands back: the Save is refused, and the other tab's choice stands", async ({
+  page,
+  browser,
+}) => {
+  const { dishes } = ownerFixture();
+  const state = strings.pages.state;
+  const line = (choice: string) =>
+    fill(state.availability, { choice, schedule: state.scheduleNone });
+  await openDish(page, "one", "availability");
+  await expect(
+    navLink(page, availability.heading, line(availability.available)),
+  ).toHaveCount(1);
+  try {
+    await inAnotherTab(
+      browser,
+      page,
+      dishPath("one", "availability"),
+      async (other) => {
+        await press(other, availability.soldOut);
+        await saveAvailability(other);
+      },
+    );
+    await renderAgain(page);
+    await expect(
+      navLink(page, availability.heading, line(availability.soldOut)),
+      "the newer render arrived: the page nav says the other tab's choice",
+    ).toHaveCount(1);
+    await expect(
+      radio(page, availability.available),
+      "the form still shows what it mounted with",
+    ).toBeChecked();
+
+    const sent = await writesSoFar();
+    await press(page, availability.off);
+    await saveAndFail(page, availability.submit, schedule.scheduleMoved);
+    expect(await writesSoFar(), "one statement, which matched no row").toBe(
+      sent + 1,
+    );
+    const after = await row(dishes.one.id);
+    expect(after.available, "the other tab's choice stands").toBe(true);
+    expect(after.sold_out_at).not.toBeNull();
+  } finally {
+    await availableAgain(page, dishes.one.id);
+  }
 });

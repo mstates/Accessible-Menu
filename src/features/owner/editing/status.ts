@@ -22,11 +22,19 @@ export function statusOf(state: SaveState): Status {
 // What a failure can still do about itself, by its kind (D-237, rule 3). A
 // failure a retry cannot fix offers Reload and never Try again: the row is
 // gone, what the page sits in is gone, the thing a move or an apply aimed
-// at is gone, or the page is from before a deploy. Everything else can be
-// tried again: a dropped connection, a server error, a session that ended,
-// a value the owner can still correct. This is the one place the rule
-// lives, so a kind that joins it later, what the page showed having moved,
-// joins it here.
+// at is gone, the page is from before a deploy, or what the page showed
+// has moved: a value another tab changed ("moved"), a move whose row is
+// already where it would go ("changed"), a reorder of a list that no
+// longer holds the rows the page showed ("mismatch"). Everything else can
+// be tried again: a dropped connection, a server error, a session that
+// ended, a value the owner can still correct. This is the one place the
+// rule lives.
+//
+// The button follows the sentence: every kind here says to reload or to go
+// back. The allergen group's own refusals ("lists-changed", and an Apply's
+// "source-changed" and "target-changed") stay out: their sentences say to
+// look at the page as it is now, the action's refresh has already put it
+// so, and the next press carries that.
 export type Remedy = "retry" | "reload";
 
 const RELOAD_KINDS: ReadonlySet<string> = new Set([
@@ -36,6 +44,9 @@ const RELOAD_KINDS: ReadonlySet<string> = new Set([
   "section-gone",
   "target-gone",
   "out-of-date",
+  "moved",
+  "changed",
+  "mismatch",
 ]);
 
 export function remedyOf(kind: string): Remedy {

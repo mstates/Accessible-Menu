@@ -31,9 +31,11 @@ import { saveAndLand } from "./save";
 // Enter carrying the new name; a stale tab refused with one sentence and
 // no Try again, after a list changed elsewhere and after a rename
 // elsewhere; Remove going on one press (D-221); the other-allergen
-// refusals; and Apply from a checked option to a same-named dish. The gate
-// cannot land a save, so this runs here. Each check leaves the stand-in as
-// it found it, so the checks run in any order.
+// refusals; Apply from a checked option to a same-named dish; and an
+// option's name, added price, and calories each refused after a second tab
+// changed them, with the stored numbers handed back, never the text a
+// field shows (D-237). The gate cannot land a save, so this runs here. Each
+// check leaves the stand-in as it found it, so the checks run in any order.
 
 const { code } = ownerEnv();
 const strings = en.owner.choices;
@@ -673,4 +675,204 @@ test("a tick the server refuses is said once with Try again, and Try again lands
   await vinGroup.checkWords.click();
   await expect.poll(() => said(page, saved)).toBe(2);
   expect((await row(vinaigrette.id)).allergens_reviewed).toBe(true);
+});
+
+// An option's three texts with two tabs open (D-237, rule 2): each save
+// hands back what the page showed for it and lands only if the option
+// still holds it. A name goes back as itself; an added price and calories
+// go back as the stored numbers, never as the text their fields show. The
+// list is made here, on the section with none, with three options, and
+// marked deleted at the end.
+type Numbers = {
+  name: string;
+  added_price_cents: number | null;
+  calories_low: number | null;
+  calories_high: number | null;
+};
+
+async function scratchList(lead: string, names: readonly string[]) {
+  const { emptySection } = ownerFixture();
+  const made = (await (
+    await fetch(
+      `${standin}/__test/add-list?${new URLSearchParams({ home: "section", id: emptySection.id, lead })}`,
+    )
+  ).json()) as { id: string };
+  const options: { id: string; name: string }[] = [];
+  for (const name of names) {
+    const added = await fetch(
+      `${standin}/__test/add-option?${new URLSearchParams({ list: made.id, name })}`,
+    );
+    options.push((await added.json()) as { id: string; name: string });
+  }
+  // As it was: the list marked deleted with its options, as its Delete
+  // marks it.
+  const clear = () =>
+    fetch(`${standin}/rest/v1/rpc/delete_with_contents`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        p_kind: "list",
+        p_parent: emptySection.id,
+        p_id: made.id,
+        p_sections: 0,
+        p_dishes: 0,
+        p_options: names.length,
+      }),
+    });
+  return { id: made.id, options, clear };
+}
+
+async function numbers(id: string): Promise<Numbers> {
+  return (await row(id)) as unknown as Numbers;
+}
+
+const textField = (
+  page: Page,
+  id: string,
+  field: "name" | "price" | "calories",
+) => page.locator(`#option-${id}-${field}`);
+
+const reloadButton = (page: Page) =>
+  page.getByRole("button", { name: editing.reload, exact: true });
+
+test("an option's name, added price, and calories, each changed in a second tab, each refuse this tab's change with nothing written, one sentence, and Reload, never Try again", async ({
+  page,
+  browser,
+}) => {
+  const list = await scratchList("Pick a side", ["Fries", "Slaw", "Rice"]);
+  const [fries, slaw, rice] = list.options;
+  if (!fries || !slaw || !rice) throw new Error("three options");
+  const path = restaurantChoiceListPath(code, list.id);
+  const outOfDate = editing.problems.outOfDate;
+  const context = await browser.newContext({ storageState: ownerStatePath });
+  try {
+    await page.goto(path);
+    await page.waitForLoadState("networkidle");
+    await hearLog(page);
+    const origin = new URL(page.url()).origin;
+    const other = await context.newPage();
+
+    // Each round: the other tab, loaded now, changes one text and it lands;
+    // this tab, still showing the text as it was, changes the same one.
+    const rounds = [
+      {
+        option: fries,
+        field: "name",
+        theirs: "Curly fries",
+        mine: "Waffle fries",
+        notSaved: strings.options.notSaved.name,
+        stands: { name: "Curly fries" },
+      },
+      {
+        option: slaw,
+        field: "price",
+        theirs: "1.50",
+        mine: "2",
+        notSaved: strings.options.notSaved.price,
+        stands: { added_price_cents: 150 },
+      },
+      {
+        option: rice,
+        field: "calories",
+        theirs: "300",
+        mine: "250 to 280",
+        notSaved: strings.options.notSaved.calories,
+        stands: { calories_low: 300, calories_high: null },
+      },
+    ] as const;
+    for (const round of rounds) {
+      await other.goto(`${origin}${path}`);
+      await other.waitForLoadState("networkidle");
+      await hearLog(other);
+      await textField(other, round.option.id, round.field).fill(round.theirs);
+      await other.keyboard.press("Enter");
+      await expect.poll(() => said(other, saved)).toBe(1);
+      expect(await numbers(round.option.id)).toMatchObject(round.stands);
+
+      const writes = await writesSoFar();
+      const field = textField(page, round.option.id, round.field);
+      await field.fill(round.mine);
+      await page.keyboard.press("Enter");
+      const failure = `${forOption(round.notSaved, round.option.name)} ${outOfDate}`;
+      await expect(status(page)).toHaveText(failure);
+      await expect.poll(() => said(page, failure)).toBe(1);
+      await expect(field, "what was typed is kept").toHaveValue(round.mine);
+      await expect(reloadButton(page), "Reload is the fix").toHaveCount(1);
+      await expect(tryAgainButton(page), "no Try again").toHaveCount(0);
+      expect(
+        await numbers(round.option.id),
+        "the other tab's value stands",
+      ).toMatchObject(round.stands);
+      expect(await writesSoFar(), "one statement, which matched no row").toBe(
+        writes + 1,
+      );
+
+      const loaded = page.waitForEvent("load", { timeout: 10_000 });
+      await reloadButton(page).click();
+      await loaded;
+      await page.waitForLoadState("networkidle");
+      await hearLog(page);
+      await expect(
+        textField(page, round.option.id, round.field),
+        "the page shows the value as it is",
+      ).toHaveValue(round.theirs);
+    }
+  } finally {
+    await context.close();
+    await list.clear();
+  }
+});
+
+test("calories stored as an equal pair, which the field shows as one number, and an added price of zero are handed back as the numbers they are, so each next save lands", async ({
+  page,
+}) => {
+  const list = await scratchList("Pick a drink", ["Tea", "Water"]);
+  const [tea, water] = list.options;
+  if (!tea || !water) throw new Error("two options");
+  try {
+    // A pair only SQL or an import could leave: the page itself stores an
+    // equal pair as one number. Set straight on the stand-in's row.
+    const set = await fetch(
+      `${standin}/rest/v1/choice_options?id=eq.${tea.id}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ calories_low: 250, calories_high: 250 }),
+      },
+    );
+    expect(set.ok).toBe(true);
+    await page.goto(restaurantChoiceListPath(code, list.id));
+    await page.waitForLoadState("networkidle");
+    await hearLog(page);
+
+    const calories = textField(page, tea.id, "calories");
+    await expect(calories, "the pair reads as one number").toHaveValue("250");
+    await calories.fill("260");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => said(page, saved)).toBe(1);
+    expect(await numbers(tea.id)).toMatchObject({
+      calories_low: 260,
+      calories_high: null,
+    });
+
+    // Zero is a price, not no price: it is handed back as zero.
+    const price = textField(page, water.id, "price");
+    await price.fill("0");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => said(page, saved)).toBe(2);
+    expect((await numbers(water.id)).added_price_cents).toBe(0);
+    await price.fill("1");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => said(page, saved)).toBe(3);
+    expect((await numbers(water.id)).added_price_cents).toBe(100);
+    // And back to none, from a price.
+    await price.fill("");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => said(page, saved)).toBe(4);
+    expect((await numbers(water.id)).added_price_cents).toBeNull();
+    await expect(status(page)).toHaveText(editing.saved);
+    await expect(reloadButton(page)).toHaveCount(0);
+  } finally {
+    await list.clear();
+  }
 });

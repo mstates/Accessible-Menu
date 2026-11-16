@@ -20,6 +20,10 @@ export type FieldValues = {
   inFlight: string | null;
   // The value the last save of this field failed with.
   failed: string | null;
+  // The text the field showed when the owner began to change it, while it
+  // holds one (shown.ts), or null. It differs from saved only when a newer
+  // value arrived under the typed text.
+  shown?: string | null;
 };
 
 export function commitOf(
@@ -31,6 +35,11 @@ export function commitOf(
   if (value === field.inFlight || value === field.failed) {
     return { kind: "nothing" };
   }
-  if (value === field.saved) return { kind: "reset" };
+  // Typed back to the saved value, or to the text the field showed before a
+  // newer value arrived under it (D-237): either way the owner changed
+  // nothing, so nothing is sent and the field shows what is saved.
+  if (value === field.saved || value === (field.shown ?? null)) {
+    return { kind: "reset" };
+  }
   return { kind: "send", value };
 }

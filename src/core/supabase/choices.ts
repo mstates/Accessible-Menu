@@ -10,6 +10,7 @@ import type {
 import { nameKey, type Held } from "@/domain/menu";
 import { priceInputText } from "@/domain/money";
 import { ALLERGEN_IDS, type AllergenId } from "@/domain/types";
+import { holding, missed } from "./compare";
 import { shaped } from "./log";
 
 // Owner-side reads and writes on choice lists and their options (D-166,
@@ -91,6 +92,9 @@ function toOption(
     name: row.name,
     price: priceInputText(row.added_price_cents),
     calories: caloriesInputText(row.calories_low, row.calories_high),
+    priceCents: row.added_price_cents,
+    caloriesLow: row.calories_low,
+    caloriesHigh: row.calories_high,
     allergens: row.allergens,
     otherAllergens: row.custom_allergens,
     check:
@@ -122,6 +126,9 @@ const NO_LIST = "An option needs an existing choice list.";
 export type ChoiceWriteError =
   | { kind: "name-taken" }
   | { kind: "not-found" }
+  // A write found the list or the option holding another value than the
+  // page showed (D-237).
+  | { kind: "moved" }
   | { kind: "mismatch" }
   // A delete would have taken more options than the owner was told about.
   | { kind: "grew" }
@@ -284,26 +291,51 @@ export async function addOwnerChoiceList(
     : failed;
 }
 
-// Writes a list's lead, scoped to the home the page read it under. Under
-// row level security a list the caller does not own matches zero rows
-// without an error, so the write asks for the row back and reads an empty
-// answer as not found.
+// Writes a list's lead, scoped to the home the page read it under, and
+// lands only if the list still holds the lead the page showed (D-237).
+// Under row level security a list the caller does not own matches zero
+// rows without an error, so the write asks for the row back; an empty
+// answer is then read once more without the compare, which tells a list
+// that is gone from one whose lead moved, and finds a retry whose first try
+// had landed.
 export async function setOwnerChoiceListLead(
   client: SupabaseClient,
   home: ChoiceHome,
   id: string,
   lead: string,
+  shown: string,
 ): Promise<ChoiceWriteResult<OwnerChoiceList>> {
-  const { data, error } = await client
+  const update = client
     .from("choice_lists")
     .update({ lead })
     .eq("id", id)
     .eq(homeColumn(home), home.id)
-    .is("deleted_at", null)
+    .is("deleted_at", null);
+  const { data, error } = await holding(update, "lead", shown)
     .select(listColumns)
     .maybeSingle();
   if (error) return refused(error.code, error.message);
-  if (!data) return notFound;
+  if (!data) {
+    const now = await missed(
+      client
+        .from("choice_lists")
+        .select(listColumns)
+        .eq("id", id)
+        .eq(homeColumn(home), home.id)
+        .is("deleted_at", null)
+        .maybeSingle(),
+      (found) => shaped(listSchema, found, "choice_lists"),
+      (row) => row.lead === lead,
+    );
+    if (now.kind === "landed") {
+      return {
+        ok: true,
+        value: { id: now.row.id, lead: now.row.lead, options: 0 },
+      };
+    }
+    if (now.kind === "moved") return { ok: false, error: { kind: "moved" } };
+    return now.kind === "not-found" ? notFound : failed;
+  }
   const row = shaped(listSchema, data, "choice_lists");
   return row
     ? { ok: true, value: { id: row.id, lead: row.lead, options: 0 } }
@@ -450,52 +482,91 @@ export async function addOwnerOption(
     : failed;
 }
 
-// Writes one column of an option, scoped to the list the page read it in.
-// Under row level security an option the caller does not own matches zero
-// rows without an error, so the write asks for the row back and reads an
-// empty answer as not found.
+// Writes one text of an option, its name, its added price, or its calories,
+// scoped to the list the page read it in, and lands only if the option
+// still holds, in the columns the write sets, the values the page showed
+// (D-237). Under row level security an option the caller does not own
+// matches zero rows without an error, so the write asks for the row back;
+// an empty answer is then read once more without the compare, which tells
+// an option that is gone from one whose value moved, and finds a retry
+// whose first try had landed.
 async function writeOption(
   client: SupabaseClient,
   listId: string,
   id: string,
   viewer: string | null,
-  values: Record<string, unknown>,
+  values: Readonly<Record<string, string | number | null>>,
+  shown: Readonly<Record<string, string | number | null>>,
 ): Promise<ChoiceWriteResult<OwnerOption>> {
-  const { data, error } = await client
+  let update = client
     .from("choice_options")
     .update(values)
     .eq("id", id)
     .eq("choice_list_id", listId)
-    .is("deleted_at", null)
-    .select(optionColumns)
-    .maybeSingle();
+    .is("deleted_at", null);
+  for (const column of Object.keys(values)) {
+    update = holding(update, column, shown[column] ?? null);
+  }
+  const { data, error } = await update.select(optionColumns).maybeSingle();
   if (error) return refused(error.code, error.message);
-  if (!data) return notFound;
+  if (!data) {
+    const now = await missed(
+      client
+        .from("choice_options")
+        .select(optionColumns)
+        .eq("id", id)
+        .eq("choice_list_id", listId)
+        .is("deleted_at", null)
+        .maybeSingle(),
+      (found) => shaped(optionSchema, found, "choice_options"),
+      (row) =>
+        Object.entries(values).every(
+          ([column, value]) =>
+            (row as Record<string, unknown>)[column] === value,
+        ),
+    );
+    if (now.kind === "landed") {
+      return { ok: true, value: toOption(now.row, viewer) };
+    }
+    if (now.kind === "moved") return { ok: false, error: { kind: "moved" } };
+    return now.kind === "not-found" ? notFound : failed;
+  }
   const row = shaped(optionSchema, data, "choice_options");
   return row ? { ok: true, value: toOption(row, viewer) } : failed;
 }
 
-// An option's name. The database clears the option's check on a rename
-// (migration 11), and the answer carries the option whole, so the page
-// learns the check as the server holds it now (D-153).
+// An option's name, against the name the page showed. The database clears
+// the option's check on a rename (migration 11), and the answer carries the
+// option whole, so the page learns the check as the server holds it now
+// (D-153).
 export function renameOwnerOption(
   client: SupabaseClient,
   listId: string,
   id: string,
   viewer: string | null,
   name: string,
+  shown: string,
 ): Promise<ChoiceWriteResult<OwnerOption>> {
-  return writeOption(client, listId, id, viewer, { name });
+  return writeOption(client, listId, id, viewer, { name }, { name: shown });
 }
 
-// An option's added price, in cents, or null for none.
+// An option's added price, in cents, or null for none, against the cents
+// the page was shown, as stored.
 export function setOwnerOptionPrice(
   client: SupabaseClient,
   listId: string,
   id: string,
   cents: number | null,
+  shown: number | null,
 ): Promise<ChoiceWriteResult<OwnerOption>> {
-  return writeOption(client, listId, id, null, { added_price_cents: cents });
+  return writeOption(
+    client,
+    listId,
+    id,
+    null,
+    { added_price_cents: cents },
+    { added_price_cents: shown },
+  );
 }
 
 // The two calorie columns a pair of calories lives in (D-167).
@@ -506,18 +577,26 @@ function calorieColumns(calories: Calories | null) {
   };
 }
 
-// An option's calories, both columns in one statement, or none.
+// An option's calories, both columns in one statement, or none, against
+// the two columns the page was shown, as stored: the pair itself, never
+// the text its field shows.
 export function setOwnerOptionCalories(
   client: SupabaseClient,
   listId: string,
   id: string,
   calories: Calories | null,
+  shown: { low: number | null; high: number | null },
 ): Promise<ChoiceWriteResult<OwnerOption>> {
-  return writeOption(client, listId, id, null, calorieColumns(calories));
+  return writeOption(client, listId, id, null, calorieColumns(calories), {
+    calories_low: shown.low,
+    calories_high: shown.high,
+  });
 }
 
 // Marks an option removed. The row stays, with deleted_at set and its
-// lists and its check as they were.
+// lists and its check as they were. The statement names the one value it
+// writes, that the option is not removed yet; the name its button showed
+// is not compared (Michael, November 15, 2026).
 export async function removeOwnerOption(
   client: SupabaseClient,
   listId: string,
@@ -554,18 +633,6 @@ export async function setOwnerOptionOrder(
   };
 }
 
-// A Postgres array literal, for comparing an array column against the value
-// the page showed: {"milk","wheat"}. Every element is quoted, with its
-// quotes and backslashes escaped, so any name travels whole. The same as
-// the one in dishes.ts, its second use; the third lifts it (module rule
-// 12).
-function arrayLiteral(values: readonly string[]): string {
-  const quoted = values.map(
-    (value) => `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`,
-  );
-  return `{${quoted.join(",")}}`;
-}
-
 // What a write on an option's allergens may set: one or both lists, or the
 // check (D-148). Who and when are never written here: the database stamps
 // them.
@@ -578,12 +645,13 @@ export type OptionAllergenPatch = {
 // What the option must still hold for the write to land (D-153): the name
 // and the lists the page showed, for every write in the option's group;
 // the flag, for an uncheck. A miss comes back as not found, which the
-// caller reads as the option having changed.
-export type OptionAllergenExpected = {
-  name?: string;
-  lists?: AllergenLists;
-  allergens_reviewed?: boolean;
-};
+// caller reads as the option having changed. Every write names the lists
+// or the flag: the type has no room for a call that names neither, which
+// would be a write with no compare (D-237).
+export type OptionAllergenExpected = { name?: string } & (
+  | { lists: AllergenLists; allergens_reviewed?: boolean }
+  | { lists?: AllergenLists; allergens_reviewed: boolean }
+);
 
 // Writes an option's allergen lists or its check, scoped to the list the
 // page read the option in, and lands only if the option still holds what
@@ -613,14 +681,15 @@ export async function writeOwnerOptionAllergens(
     .eq("id", id)
     .eq("choice_list_id", listId)
     .is("deleted_at", null);
-  if (expected.name !== undefined) update = update.eq("name", expected.name);
+  if (expected.name !== undefined) {
+    update = holding(update, "name", expected.name);
+  }
   if (expected.lists) {
-    update = update
-      .eq("allergens", arrayLiteral(expected.lists.allergens))
-      .eq("custom_allergens", arrayLiteral(expected.lists.others));
+    update = holding(update, "allergens", expected.lists.allergens);
+    update = holding(update, "custom_allergens", expected.lists.others);
   }
   if (expected.allergens_reviewed !== undefined) {
-    update = update.eq("allergens_reviewed", expected.allergens_reviewed);
+    update = holding(update, "allergens_reviewed", expected.allergens_reviewed);
   }
   const { data, error } = await update.select(optionColumns).maybeSingle();
   if (error) return refused(error.code, error.message);

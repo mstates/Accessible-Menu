@@ -244,7 +244,9 @@ const tagsSchema = z.array(z.enum(DIETARY_TAG_IDS)).max(DIETARY_TAG_IDS.length);
 const tagsPayload = z.object({
   tags: tagsSchema,
   cookedToOrder: z.boolean(),
-  shownTags: tagsSchema,
+  // What the page showed (D-237): the tags in the order the row holds
+  // them, and the Cooked to order mark.
+  shown: z.strictObject({ tags: tagsSchema, cookedToOrder: z.boolean() }),
 });
 
 export type TagsPayload = z.infer<typeof tagsPayload>;
@@ -255,7 +257,11 @@ function tagsInOrder(tags: readonly DietaryTagId[]): DietaryTagId[] {
 }
 
 // The Dietary tags page (D-66, D-167): the tags and the Cooked to order
-// mark in one statement.
+// mark in one statement, which lands only if the dish still holds both as
+// the page showed them (D-237). The tags to write are put in the enum's
+// order. The tags shown are handed on as they arrived, in their stored
+// order: an array compares element by element, so a shown list reordered
+// here would never match a dish that holds another order.
 export async function saveDishTags(
   rawCode: string,
   rawDish: string,
@@ -274,7 +280,7 @@ export async function saveDishTags(
       dietary_tags: tagsInOrder(payload.data.tags),
       cooked_to_order: payload.data.cookedToOrder,
     },
-    tagsInOrder(payload.data.shownTags),
+    payload.data.shown,
   );
   if (result.ok) return saved;
   return result.error.kind === "not-found" ? moved : failed();
@@ -297,14 +303,23 @@ const availabilityPayload = z.object({
   // The restaurant's day as the page computed it, for a date typed with
   // no year.
   today: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  shownSchedule: z.unknown(),
+  // What the page showed (D-237), as the loader read it: the schedule, the
+  // flag, and the mark as the text the server returned it as. The mark is
+  // a bounded text and nothing more: it goes back to the compare untouched,
+  // and a reading of it as a date here could drop what Postgres kept.
+  shown: z.strictObject({
+    schedule: z.unknown(),
+    available: z.boolean(),
+    soldOutAt: z.string().max(64).nullable(),
+  }),
 });
 
 export type AvailabilityPayload = z.infer<typeof availabilityPayload>;
 
 // The Availability page (D-159, D-160): the schedule and, when the choice
-// changed, the availability, in one statement. A sold-out mark is the
-// server's own clock, never a browser's.
+// changed, the availability, in one statement, which lands only if the
+// dish still holds the schedule, the flag, and the mark the page showed
+// (D-237). A sold-out mark is the server's own clock, never a browser's.
 export async function saveDishAvailability(
   rawCode: string,
   rawDish: string,
@@ -314,13 +329,8 @@ export async function saveDishAvailability(
   if (!scope.ok) return failed(scope.problem);
   const payload = availabilityPayload.safeParse(rawPayload);
   if (!payload.success) return failed();
-  const {
-    choice,
-    shownState,
-    fields,
-    today,
-    shownSchedule: rawShown,
-  } = payload.data;
+  const { choice, shownState, fields, today, shown } = payload.data;
+  const rawShown = shown.schedule ?? null;
   const shownSchedule = rawShown === null ? null : parseSchedule(rawShown);
   if (rawShown !== null && shownSchedule === null) return failed();
   const check = validateAvailabilityForm(fields, today);
@@ -344,7 +354,11 @@ export async function saveDishAvailability(
     scope.dishId,
     scope.userId,
     patch,
-    shownSchedule,
+    {
+      schedule: shownSchedule,
+      available: shown.available,
+      soldOutAt: shown.soldOutAt,
+    },
   );
   if (!result.ok) {
     return result.error.kind === "not-found" ? moved : failed();

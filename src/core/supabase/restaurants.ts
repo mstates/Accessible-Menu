@@ -4,15 +4,32 @@ import { RESTAURANT_STATUSES } from "@/domain/billing";
 import { parseHours } from "@/domain/hours";
 import type { RestaurantDetails, RestaurantInput } from "@/domain/restaurant";
 import { PREP_NOTE_IDS } from "@/domain/types";
-import { shaped } from "./log";
+import {
+  ADDRESS_BUDGET,
+  compareLength,
+  holding,
+  missed,
+  shownTextSchema,
+  type Shown,
+} from "./compare";
+import { compareShed, shaped } from "./log";
 
 // Owner-side reads and writes on restaurants, through the owner's own client
 // so row level security decides what is visible (D-75) and the table
 // constraints decide what is valid (D-95). The only place the row shape is
-// known; features see RestaurantDetails.
+// known; features see RestaurantDetails, and the Details page also takes
+// the twelve columns it writes as the server returned them, to hand back
+// with its save (D-237).
 
 const columns =
   "id, code, name, address, city, region, postal_code, phone, website, hours, timezone, allergen_note, prep_notes, show_icons, status, stripe_customer_id";
+
+// The Details page's read: the same row, with the hours once more as the
+// column's own text. A compare of hours is made from that text and never
+// from the parsed value: JavaScript's JSON reader rounds a number past
+// double precision, and jsonb compares numbers exactly, so an object handed
+// back through JSON.parse could fail to match itself.
+const detailColumns = `${columns}, hours_text:hours::text`;
 
 const rowSchema = z.object({
   id: z.string(),
@@ -62,6 +79,49 @@ function readRow(data: unknown): RestaurantDetails | null {
   return row ? toDetails(row) : null;
 }
 
+// What the Details page showed (D-237): the twelve columns its save writes,
+// each as the server returned it, the hours as the column's own text. The
+// page holds it from the moment its form mounts and posts it back
+// untouched. It is not RestaurantDetails: hours that are not the shape
+// read as none there (D-92), and a compare built from that would name
+// nothing against a stored object and refuse every save. A text is checked
+// for its type and one generous bound, never by its field's rule.
+export const restaurantShownSchema = z.strictObject({
+  name: shownTextSchema,
+  address: shownTextSchema.nullable(),
+  city: shownTextSchema.nullable(),
+  region: shownTextSchema.nullable(),
+  postal_code: shownTextSchema.nullable(),
+  phone: shownTextSchema.nullable(),
+  website: shownTextSchema.nullable(),
+  hours: shownTextSchema.nullable(),
+  timezone: shownTextSchema,
+  allergen_note: shownTextSchema.nullable(),
+  prep_notes: z.array(shownTextSchema).max(32),
+  show_icons: z.boolean(),
+});
+
+export type RestaurantShown = z.infer<typeof restaurantShownSchema>;
+
+const detailRowSchema = rowSchema.extend({ hours_text: z.string().nullable() });
+
+function toShown(row: z.infer<typeof detailRowSchema>): RestaurantShown {
+  return {
+    name: row.name,
+    address: row.address,
+    city: row.city,
+    region: row.region,
+    postal_code: row.postal_code,
+    phone: row.phone,
+    website: row.website,
+    hours: row.hours_text,
+    timezone: row.timezone,
+    allergen_note: row.allergen_note,
+    prep_notes: row.prep_notes,
+    show_icons: row.show_icons,
+  };
+}
+
 // Every optional field goes over as an explicit null. JSON.stringify drops
 // undefined, and a cleared field must reach the column.
 function toRow(input: RestaurantInput) {
@@ -83,8 +143,131 @@ function toRow(input: RestaurantInput) {
   };
 }
 
+type RestaurantValues = ReturnType<typeof toRow>;
+type DetailsColumn = keyof RestaurantValues & keyof RestaurantShown;
+
+// The twelve columns a Details save writes, in the row's order.
+const DETAILS_COLUMNS = [
+  "name",
+  "address",
+  "city",
+  "region",
+  "postal_code",
+  "phone",
+  "website",
+  "hours",
+  "timezone",
+  "allergen_note",
+  "prep_notes",
+  "show_icons",
+] as const satisfies readonly DetailsColumn[];
+
+// JSON text with its keys in one order at every level, so two values that
+// jsonb would call equal give the same text.
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value).sort(([a], [b]) =>
+      a < b ? -1 : a > b ? 1 : 0,
+    );
+    return `{${entries
+      .map(([key, each]) => `${JSON.stringify(key)}:${canonical(each)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+// Whether the value a save would write is the one the page showed, so the
+// column can be left out of a write that would otherwise not fit.
+function unchanged(
+  column: DetailsColumn,
+  values: RestaurantValues,
+  shown: RestaurantShown,
+): boolean {
+  if (column === "hours") {
+    if (values.hours === null || shown.hours === null) {
+      return values.hours === null && shown.hours === null;
+    }
+    try {
+      return canonical(JSON.parse(shown.hours)) === canonical(values.hours);
+    } catch {
+      return false;
+    }
+  }
+  if (column === "prep_notes") {
+    const next: readonly string[] = values.prep_notes;
+    return (
+      next.length === shown.prep_notes.length &&
+      next.every((note, index) => note === shown.prep_notes[index])
+    );
+  }
+  return values[column] === shown[column];
+}
+
+// What one Details save sends: the columns it sets, the compares it names,
+// and the columns whose compare it had to leave out.
+export type DetailsWrite = {
+  set: Partial<RestaurantValues>;
+  compares: [DetailsColumn, Shown][];
+  shed: DetailsColumn[];
+};
+
+// A Details save sets its twelve columns and names all twelve as the page
+// showed them (D-237). The compares travel in the request's address, which
+// has a ceiling; only a row of several long texts can reach it, an
+// allergen note near its cap in a script of three bytes a character among
+// them. Past the budget, and only then:
+// 1. a column whose value to write is the value shown is left out of both
+//    the write and the compare, longest first, until the request fits.
+//    Nothing is written to it, so nothing of it can be written over;
+// 2. still over, which takes long columns the owner changed in this very
+//    save, the compare on the longest of those is left out, and the caller
+//    logs its name. This is rule 2's one named exception.
+export function planDetailsWrite(
+  values: RestaurantValues,
+  shown: RestaurantShown,
+  budget: number = ADDRESS_BUDGET,
+): DetailsWrite {
+  const set: Partial<RestaurantValues> = { ...values };
+  let compares = DETAILS_COLUMNS.map((column): [DetailsColumn, Shown] => [
+    column,
+    shown[column],
+  ]);
+  const size = () =>
+    compares.reduce(
+      (sum, [column, value]) => sum + compareLength(column, value),
+      0,
+    );
+  const longestFirst = (columns: readonly DetailsColumn[]) =>
+    [...columns].sort(
+      (a, b) => compareLength(b, shown[b]) - compareLength(a, shown[a]),
+    );
+
+  const untouched = longestFirst(
+    DETAILS_COLUMNS.filter((column) => unchanged(column, values, shown)),
+  );
+  for (const column of untouched) {
+    if (size() <= budget || compares.length === 1) break;
+    delete set[column];
+    compares = compares.filter(([each]) => each !== column);
+  }
+
+  const shed: DetailsColumn[] = [];
+  for (const column of longestFirst(compares.map(([each]) => each))) {
+    if (size() <= budget) break;
+    compares = compares.filter(([each]) => each !== column);
+    shed.push(column);
+  }
+  return { set, compares, shed };
+}
+
 export type RestaurantWriteError =
-  { kind: "cap" } | { kind: "not-found" } | { kind: "failed" };
+  | { kind: "cap" }
+  | { kind: "not-found" }
+  // A Details save found the restaurant holding other values than the page
+  // showed (D-237).
+  | { kind: "moved" }
+  | { kind: "failed" };
 
 export type RestaurantWriteResult =
   | { ok: true; restaurant: RestaurantDetails }
@@ -104,17 +287,20 @@ export async function listOwnerRestaurants(
   });
 }
 
+// One restaurant by its code, as the pages under it read it, with what the
+// Details page hands back with its save: the twelve columns as returned.
 export async function getOwnerRestaurantByCode(
   client: SupabaseClient,
   code: string,
-): Promise<RestaurantDetails | null> {
+): Promise<{ restaurant: RestaurantDetails; shown: RestaurantShown } | null> {
   const { data, error } = await client
     .from("restaurants")
-    .select(columns)
+    .select(detailColumns)
     .eq("code", code)
     .maybeSingle();
   if (error || !data) return null;
-  return readRow(data);
+  const row = shaped(detailRowSchema, data, "restaurants");
+  return row ? { restaurant: toDetails(row), shown: toShown(row) } : null;
 }
 
 // The id behind a code, for writes on the restaurant's own rows. Unlike the
@@ -135,22 +321,35 @@ export async function findOwnerRestaurantId(
   return row ?? "not-found";
 }
 
-// Under row level security a code the caller does not own matches zero rows
-// without an error, so the update asks for the row back and reads an empty
-// answer as not found.
+// The Details page's one write (D-237): the twelve columns in one statement
+// that lands only if the restaurant still holds the twelve values the page
+// showed. Under row level security a code the caller does not own matches
+// zero rows without an error, so the update asks for the row back; an empty
+// answer is then read once more by code alone, to tell a restaurant that is
+// not there from one that moved under the page.
 export async function updateOwnerRestaurant(
   client: SupabaseClient,
   code: string,
   input: RestaurantInput,
+  shown: RestaurantShown,
 ): Promise<RestaurantWriteResult> {
-  const { data, error } = await client
-    .from("restaurants")
-    .update(toRow(input))
-    .eq("code", code)
-    .select(columns)
-    .maybeSingle();
+  const plan = planDetailsWrite(toRow(input), shown);
+  if (plan.shed.length > 0) compareShed("restaurants", plan.shed);
+  let update = client.from("restaurants").update(plan.set).eq("code", code);
+  for (const [column, value] of plan.compares) {
+    update = holding(update, column, value);
+  }
+  const { data, error } = await update.select(columns).maybeSingle();
   if (error) return { ok: false, error: { kind: "failed" } };
-  if (!data) return { ok: false, error: { kind: "not-found" } };
+  if (!data) {
+    const now = await missed(
+      client.from("restaurants").select("id").eq("code", code).maybeSingle(),
+      (found) => found,
+      () => false,
+    );
+    const kind = now.kind === "landed" ? "moved" : now.kind;
+    return { ok: false, error: { kind } };
+  }
   const restaurant = readRow(data);
   if (!restaurant) return { ok: false, error: { kind: "failed" } };
   return { ok: true, restaurant };

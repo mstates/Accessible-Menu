@@ -14,6 +14,7 @@ import type {
   SameNamedPlace,
 } from "../allergens/allergen-words";
 import type { EditingStrings } from "../editing/list-words";
+import type { ShownValue } from "../editing/shown";
 import { useRowList } from "../editing/useRowList";
 import {
   addChoiceOption,
@@ -57,6 +58,18 @@ type Props = {
   sameNamed: Record<string, SameNamedPlace[]>;
 };
 
+// The stored value behind each of an option's three texts.
+function shownOfOption(option: OwnerOption, field: OptionText): ShownValue {
+  switch (field) {
+    case "name":
+      return option.name;
+    case "price":
+      return option.priceCents;
+    case "calories":
+      return { low: option.caloriesLow, high: option.caloriesHigh };
+  }
+}
+
 export function useChoiceListPage({
   strings,
   dishAllergenStrings,
@@ -98,12 +111,20 @@ export function useChoiceListPage({
     rows: options,
     fields: OPTION_TEXTS,
     valueOf: (option, field) => option[field],
+    // What a save of an option's text hands back (D-237): its name, and
+    // for the added price and the calories the stored numbers, never the
+    // text the field shows.
+    shownOf: shownOfOption,
+    shownIn: (field, value) => {
+      const option = (value as { option?: OwnerOption }).option;
+      return option ? shownOfOption(option, field) : value[field];
+    },
     clean: optionTexts.clean,
     rule: optionTexts.rule,
     actions: {
       add: (name) => addChoiceOption(code, list.id, name),
-      setText: (id, field, value) =>
-        setOptionText(code, list.id, id, field, value),
+      setText: (id, field, value, shown) =>
+        setOptionText(code, list.id, id, field, value, shown),
       remove: (id) => removeChoiceOption(code, list.id, id),
       order: (ids) => orderChoiceOptions(code, list.id, ids),
     },
@@ -123,7 +144,8 @@ export function useChoiceListPage({
         const taken = siblings.find((lead) => nameKey(lead) === key);
         return taken === undefined ? null : { id: "", name: taken };
       },
-      setText: (_field, value) => setChoiceListLead(code, list.id, value),
+      setText: (_field, value, shown) =>
+        setChoiceListLead(code, list.id, value, shown),
     },
     // A rename that landed: the option's group learns the option as the
     // server holds it now, and the check it cleared is said after the

@@ -279,6 +279,12 @@ export const en = {
         capReached:
           "You can add up to three restaurants before starting a free trial. Start the trial on one of them to add another.",
         missing: "We could not find that restaurant.",
+        // The details are not the ones the page showed: a save landed
+        // after the page loaded, in another tab or by another person
+        // (D-237). It says to reload, since a form page does not refresh
+        // (D-230).
+        moved:
+          "The details changed since this page showed them, so nothing was saved. Reload the page to see them as they are now, then make your changes and save again.",
         failed: "We could not save that. Try again in a minute.",
       },
     },
@@ -837,7 +843,7 @@ export const en = {
         dinersRead: "Diners read: {sentence}",
         notSaved: "The dietary tags of {dish} were not saved.",
         tagsMoved:
-          "The dietary tags changed since this page showed them, so nothing was saved. Reload the page to see the tags as they are now, then make your changes and save again.",
+          "The dietary tags or Cooked to order changed since this page showed them, so nothing was saved. Reload the page to see them as they are now, then make your changes and save again.",
         // The page's one Save (D-223, D-229) and the flash its landing
         // brings (D-219).
         submit: "Save dietary tags",
@@ -909,7 +915,7 @@ export const en = {
         nextShows: "Next shows {date}.",
         never: "No day ahead fits this schedule, so diners do not see it.",
         scheduleMoved:
-          "The schedule changed since this page showed it, so nothing was saved. Reload the page to see the schedule as it is now, then make your changes and save again.",
+          "The availability or the schedule changed since this page showed them, so nothing was saved. Reload the page to see them as they are now, then make your changes and save again.",
         errors: {
           timeAmPmStarts:
             "Add am or pm to the time it starts, like 11 am or 5:30 pm.",

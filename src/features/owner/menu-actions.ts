@@ -3,6 +3,7 @@
 import { refresh } from "next/cache";
 import { z } from "zod";
 import { expireRestaurant } from "@/core/cache";
+import { shownTextSchema } from "@/core/supabase/compare";
 import {
   addOwnerMenu,
   deleteOwnerMenu,
@@ -64,6 +65,8 @@ function fromWrite(error: MenuWriteError): ServerProblem {
       return { kind: "name-taken" };
     case "not-found":
       return { kind: "gone" };
+    case "moved":
+      return { kind: "moved" };
     case "mismatch":
       return { kind: "mismatch" };
     case "grew":
@@ -95,10 +98,14 @@ export async function addMenu(
   };
 }
 
+// Writes a menu's name against the name the page showed (D-237): the write
+// lands only if the menu still holds it. A call that carries no shown name
+// is refused, never written without its compare.
 export async function renameMenu(
   rawCode: string,
   rawId: string,
   rawName: string,
+  rawShown: unknown,
 ): Promise<MenuActionResult<OwnerMenu>> {
   const scope = await ownerScope(rawCode);
   if (!scope.ok) return scope;
@@ -106,11 +113,14 @@ export async function renameMenu(
   if (!id.success) return gone;
   const name = readName(rawName);
   if ("kind" in name) return refuse(name);
+  const shown = shownTextSchema.safeParse(rawShown);
+  if (!shown.success) return refuse({ kind: "failed" });
   const result = await renameOwnerMenu(
     scope.client,
     scope.restaurantId,
     id.data,
     name.name,
+    shown.data,
   );
   refresh();
   if (!result.ok) return refuse(fromWrite(result.error));

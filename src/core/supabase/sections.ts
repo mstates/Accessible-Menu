@@ -6,6 +6,7 @@ import type {
   OwnerSection,
   SectionText,
 } from "@/domain/section";
+import { holding, missed } from "./compare";
 import { shaped } from "./log";
 
 // Owner-side reads and writes on a menu's sections, through the owner's own
@@ -51,6 +52,9 @@ const NO_MENU = "A section needs an existing menu.";
 export type SectionWriteError =
   | { kind: "name-taken" }
   | { kind: "not-found" }
+  // A write found the section holding another value than the page showed
+  // (D-237).
+  | { kind: "moved" }
   | { kind: "mismatch" }
   // A delete would have taken more dishes than the owner was told about.
   | { kind: "grew" }
@@ -275,28 +279,53 @@ export async function addOwnerSection(
     : failed;
 }
 
-// Writes one of a section's texts. Under row level security a section the
-// caller does not own matches zero rows without an error, so the write asks
-// for the row back and reads an empty answer as not found. A blank note is
-// stored as null.
+// Writes one of a section's texts, and lands only if the section still
+// holds the text the page showed (D-237). A blank note is stored as null,
+// and null is the only blank the table holds (sections_note_text), so a
+// note the page showed as blank is compared as null. Under row level
+// security a section the caller does not own matches zero rows without an
+// error, so the write asks for the row back; an empty answer is then read
+// once more without the compare, which tells a section that is gone from
+// one whose text moved, and finds a retry whose first try had landed.
 export async function setOwnerSectionText(
   client: SupabaseClient,
   menuId: string,
   id: string,
   field: SectionText,
   value: string,
+  shown: string,
 ): Promise<SectionWriteResult<OwnerSection>> {
   const column = columnOf[field];
-  const { data, error } = await client
+  const update = client
     .from("sections")
     .update({ [column]: value === "" ? null : value })
     .eq("id", id)
     .eq("menu_id", menuId)
-    .is("deleted_at", null)
+    .is("deleted_at", null);
+  const { data, error } = await holding(
+    update,
+    column,
+    field === "note" && shown === "" ? null : shown,
+  )
     .select(columns)
     .maybeSingle();
   if (error) return refused(error.code);
-  if (!data) return notFound;
+  if (!data) {
+    const now = await missed(
+      client
+        .from("sections")
+        .select(columns)
+        .eq("id", id)
+        .eq("menu_id", menuId)
+        .is("deleted_at", null)
+        .maybeSingle(),
+      (found) => shaped(rowSchema, found, "sections"),
+      (row) => (row[column] ?? "") === value,
+    );
+    if (now.kind === "landed") return { ok: true, value: toSection(now.row) };
+    if (now.kind === "moved") return { ok: false, error: { kind: "moved" } };
+    return now.kind === "not-found" ? notFound : failed;
+  }
   const row = shaped(rowSchema, data, "sections");
   return row ? { ok: true, value: toSection(row) } : failed;
 }

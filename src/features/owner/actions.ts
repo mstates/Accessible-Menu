@@ -6,13 +6,15 @@ import { en } from "@/copy";
 import { expireRestaurant } from "@/core/cache";
 import {
   createOwnerRestaurant,
+  restaurantShownSchema,
   updateOwnerRestaurant,
+  type RestaurantShown,
   type RestaurantWriteError,
 } from "@/core/supabase/restaurants";
 import { createSupabaseServerClient } from "@/core/supabase/server";
 import { isMenuCode, normalizeMenuCode } from "@/domain/menu-url";
 import { restaurantInputSchema } from "@/domain/restaurant";
-import { fieldErrors, readRestaurantForm } from "./form-data";
+import { fieldErrors, readRestaurantForm, SHOWN_FIELD } from "./form-data";
 import { restaurantDetailsPath, signInPath } from "./paths";
 
 // Sign-in outcomes. An address problem belongs to the email field; every
@@ -113,9 +115,27 @@ function writeErrorMessage(error: RestaurantWriteError): string {
       return restaurantCopy.errors.capReached;
     case "not-found":
       return restaurantCopy.errors.missing;
+    case "moved":
+      return restaurantCopy.errors.moved;
     default:
       return restaurantCopy.errors.failed;
   }
+}
+
+// What the Details page showed (D-237), posted with the form as one JSON
+// field: the twelve columns as the server returned them when the page
+// loaded. Anything that is not that reads as nothing.
+function readShown(formData: FormData): RestaurantShown | null {
+  const raw = formData.get(SHOWN_FIELD);
+  if (typeof raw !== "string") return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const parsed = restaurantShownSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
 
 async function ownerClient() {
@@ -147,7 +167,13 @@ export async function createRestaurant(
 }
 
 // The bound code is user input: it is checked here, and row level security
-// decides whether the row is this owner's.
+// decides whether the row is this owner's. The save carries what the page
+// showed and lands only if the restaurant still holds it (D-237); a form
+// that carries nothing it showed is refused, never written without its
+// compare. Details reach diners without Publish (D-84), so a refused save
+// must write nothing and clear no diner page: the write is one statement
+// that matched no row, and the pages are cleared only after a save that
+// landed.
 export async function updateRestaurant(
   rawCode: string,
   _previous: RestaurantFormState,
@@ -165,7 +191,16 @@ export async function updateRestaurant(
       errors: fieldErrors(parsed.error.issues, restaurantCopy),
     };
   }
-  const result = await updateOwnerRestaurant(supabase, code, parsed.data);
+  const shown = readShown(formData);
+  if (!shown) {
+    return { status: "error", message: restaurantCopy.errors.failed };
+  }
+  const result = await updateOwnerRestaurant(
+    supabase,
+    code,
+    parsed.data,
+    shown,
+  );
   if (!result.ok) {
     return { status: "error", message: writeErrorMessage(result.error) };
   }

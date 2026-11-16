@@ -67,7 +67,7 @@ function MenuRows({
     rule: menuList.rule,
     actions: {
       add: (name) => addMenu(code, name),
-      setText: (id, _field, value) => renameMenu(code, id, value),
+      setText: (id, _field, value, shown) => renameMenu(code, id, value, shown),
       remove: (id, told) => deleteMenu(code, id, told),
       order: (ids) => orderMenus(code, ids),
     },

@@ -331,6 +331,7 @@ describe("the words", () => {
       en.owner.dish.tags.tagsMoved,
       en.owner.dish.schedule.scheduleMoved,
       en.owner.dish.general.moved,
+      en.owner.restaurants.errors.moved,
     ]) {
       expect(words, words).toContain("Reload the page");
       expect(words, words).toContain("save again");

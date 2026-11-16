@@ -19,7 +19,12 @@ export type AllergenSaveStep = {
     custom_allergens?: readonly string[];
     allergens_reviewed?: boolean;
   };
-  expected: { lists?: AllergenLists; allergens_reviewed?: boolean };
+  // Every step names something the dish must still hold, the lists or the
+  // check: the type has no room for a step that names neither, which would
+  // be a write with no compare (D-237).
+  expected:
+    | { lists: AllergenLists; allergens_reviewed?: boolean }
+    | { lists?: AllergenLists; allergens_reviewed: boolean };
 };
 
 export function allergenSaveSteps(

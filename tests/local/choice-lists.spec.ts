@@ -9,7 +9,7 @@ import {
   restaurantSectionPath,
 } from "../../src/features/owner/paths";
 import { expectNoMissingIds } from "../a11y/checks";
-import { ownerEnv, ownerFixture } from "../a11y/owner-env";
+import { ownerEnv, ownerFixture, ownerStatePath } from "../a11y/owner-env";
 import { hearLog, heard } from "../a11y/owner-lists";
 import { restaurantName } from "../a11y/pages";
 
@@ -21,9 +21,10 @@ import { restaurantName } from "../a11y/pages";
 // typing and by a suggestion chosen, read back after a reload; Move up and
 // Move down landing and reading back in order; Delete asking first on
 // every list (D-221), by its name alone or with its options, Keep sending
-// nothing, Delete landing; a taken lead refused unsent. The gate cannot
-// land a save, so this runs here. Each check leaves the stand-in as it
-// found it, so the checks run in any order.
+// nothing, Delete landing; a taken lead refused unsent; and a lead changed
+// in a second tab refusing this tab's (D-237). The gate cannot land a save,
+// so this runs here. Each check leaves the stand-in as it found it, so the
+// checks run in any order.
 
 const { code } = ownerEnv();
 const strings = en.owner.choices;
@@ -496,4 +497,100 @@ test("Delete on a list with options asks, naming them, Keep sends nothing, and D
     "the option stays with its list, marked by the list alone",
   ).toBe(1);
   await expectNoMissingIds(page);
+});
+
+// The lead with two tabs open (D-237, rule 2): its save hands back the
+// lead the page showed and lands only if the list still holds it. The list
+// is made here, on the section with none, and marked deleted at the end.
+test("a lead changed in a second tab refuses this tab's lead with nothing written, says so once, keeps what was typed, and offers Reload, never Try again; Reload shows the other tab's lead, and a change then lands", async ({
+  page,
+  browser,
+}) => {
+  const { emptySection } = ownerFixture();
+  const lead = "Pick a sauce";
+  const query = new URLSearchParams({
+    home: "section",
+    id: emptySection.id,
+    lead,
+  });
+  await fetch(`${standin}/__test/add-list?${query}`);
+  const made = (await listRows()).find(
+    (list) =>
+      list.section_id === emptySection.id &&
+      list.lead === lead &&
+      list.deleted_at === null,
+  );
+  if (!made) throw new Error("the list was not made");
+  const stored = async () =>
+    (await listRows()).find((list) => list.id === made.id)?.lead;
+  const path = restaurantChoiceListPath(code, made.id);
+  const outOfDate = editing.problems.outOfDate;
+  const reloadButton = page.getByRole("button", {
+    name: editing.reload,
+    exact: true,
+  });
+  try {
+    await openPath(page, path);
+    await expect(leadField(page)).toHaveValue(lead);
+
+    // The other tab, opened now, changes the lead first.
+    const origin = new URL(page.url()).origin;
+    const context = await browser.newContext({ storageState: ownerStatePath });
+    try {
+      const other = await context.newPage();
+      await openPath(other, `${origin}${path}`);
+      await leadField(other).fill("Pick two sauces");
+      await other.keyboard.press("Enter");
+      await expect.poll(() => said(other, saved)).toBe(1);
+    } finally {
+      await context.close();
+    }
+    expect(await stored()).toBe("Pick two sauces");
+
+    const writes = await writesSoFar();
+    await leadField(page).fill("Pick three sauces");
+    await page.keyboard.press("Enter");
+    const failure = `${fill(strings.page.notSaved.lead, { list: lead })} ${outOfDate}`;
+    await expect(status(page)).toHaveText(failure);
+    await expect.poll(() => said(page, failure)).toBe(1);
+    await expect(leadField(page), "what was typed is kept").toHaveValue(
+      "Pick three sauces",
+    );
+    await expect(reloadButton, "Reload is the fix").toHaveCount(1);
+    await expect(
+      page.getByRole("button", { name: editing.tryAgain, exact: true }),
+      "the same page would send the same stale lead",
+    ).toHaveCount(0);
+    expect(await stored(), "the other tab's lead stands").toBe(
+      "Pick two sauces",
+    );
+    expect(await writesSoFar(), "one statement, which matched no row").toBe(
+      writes + 1,
+    );
+
+    const loaded = page.waitForEvent("load", { timeout: 10_000 });
+    await reloadButton.click();
+    await loaded;
+    await page.waitForLoadState("networkidle");
+    await hearLog(page);
+    await expect(leadField(page)).toHaveValue("Pick two sauces");
+    await leadField(page).fill("Pick any sauce");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => said(page, saved)).toBe(1);
+    expect(await stored()).toBe("Pick any sauce");
+  } finally {
+    // As it was: the list marked deleted, as its Delete marks it.
+    await fetch(`${standin}/rest/v1/rpc/delete_with_contents`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        p_kind: "list",
+        p_parent: emptySection.id,
+        p_id: made.id,
+        p_sections: 0,
+        p_dishes: 0,
+        p_options: 0,
+      }),
+    });
+  }
 });

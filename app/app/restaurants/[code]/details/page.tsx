@@ -55,9 +55,13 @@ export default async function RestaurantDetailsPage({
 }: Props) {
   const { code } = await params;
   const { created } = await searchParams;
-  const { email, restaurant } = await loadRestaurant(code);
+  const { email, restaurant, shown } = await loadRestaurant(code);
   if (!email) redirect(signInPath);
-  if (!restaurant) notFound();
+  if (!restaurant || !shown) notFound();
+  // Bound to the code alone. What the page showed is handed to the form,
+  // which holds it from the moment it mounts and posts it with the save
+  // (D-237): bound here, a later render would replace it under fields the
+  // owner is still looking at.
   const action = updateRestaurant.bind(null, restaurant.code);
   // A save that landed left its cookie for this load (D-211, D-219); the
   // banner clears it once it shows. Read from the header, not cookies(),
@@ -125,6 +129,7 @@ export default async function RestaurantDetailsPage({
           copy={en}
           action={action}
           defaultValues={restaurant}
+          shown={shown}
           mode="details"
           addressFinder={placesConfigured()}
           submitLabel={strings.details.submit}

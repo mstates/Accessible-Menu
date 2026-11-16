@@ -54,8 +54,12 @@ type Patch = {
   allergens_reviewed?: boolean;
 };
 
+// What the target must still hold for a write to land: its name as it was
+// read here a moment before, and its lists. Both are compared in the
+// write's own statement (D-237), so nothing rests on the read alone.
 type Expected = {
-  lists?: AllergenLists;
+  name: string;
+  lists: AllergenLists;
 };
 
 type Written =
@@ -173,8 +177,11 @@ async function openTarget(
 // changes a list and checks it ends unchecked (migrations 7 and 11), and a
 // failure between the two leaves the target with the new lists and
 // unchecked, a safe state. The target must still have the name, and hold
-// the lists its line showed. The lists are written whenever they differ as
-// stored, so the check that follows never refuses itself over their order.
+// the lists its line showed: each statement names both, the name as it was
+// just read and the lists, so a target renamed in the moment between the
+// read and the write is refused by the write itself (D-237). The lists are
+// written whenever they differ as stored, so the check that follows never
+// refuses itself over their order.
 export async function applyListsTo(
   rawCode: string,
   target: ApplyTarget,
@@ -198,7 +205,7 @@ export async function applyListsTo(
   if (!sameListsAsStored(lists, wanted)) {
     const written = await opened.write(
       { allergens: source.allergens, custom_allergens: source.others },
-      { lists },
+      { name: opened.name, lists },
     );
     if (!written.ok) {
       return refuseApply({
@@ -207,7 +214,10 @@ export async function applyListsTo(
     }
     lists = listsOf(written.value);
   }
-  const checked = await opened.write({ allergens_reviewed: true }, { lists });
+  const checked = await opened.write(
+    { allergens_reviewed: true },
+    { name: opened.name, lists },
+  );
   if (!checked.ok) {
     return refuseApply({
       kind: checked.notFound ? "target-changed" : "failed",

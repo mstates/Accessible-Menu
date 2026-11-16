@@ -15,6 +15,14 @@ import { useNavigationGuard, type NavigationGuard } from "@/ui/NavigationGuard";
 import { useReportPending } from "@/ui/NavigationStatus";
 import { afterHold, leaveOf } from "./leave";
 import { saveQueue } from "./queue";
+import {
+  heldAfterLanding,
+  heldAtFirstKey,
+  released,
+  settled,
+  type Holds,
+  type ShownValue,
+} from "./shown";
 import { saysSaved, saysSavedAgain, type Landing } from "./spoken";
 import { buttonsOf, statusOf } from "./status";
 
@@ -59,6 +67,9 @@ type Live = {
   inFlight: number;
   drafts: Record<string, string>;
   sent: Record<string, string>;
+  // What each text being changed hands back with its save: the value the
+  // page showed for it when typing began (shown.ts, D-237).
+  shown: Holds;
   failures: Record<string, FieldFailure>;
   // Counts every failure, so a link that waited can tell one happened.
   failed: number;
@@ -107,6 +118,7 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
     inFlight: 0,
     drafts: {},
     sent: {},
+    shown: {},
     failures: {},
     failed: 0,
     owed: false,
@@ -177,6 +189,33 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
     setDrafts(live.current.drafts);
   }, []);
 
+  // A text's first keystroke records what the page showed for it, the value
+  // and the text; a later keystroke changes nothing (shown.ts, rule 1).
+  const hold = useCallback((key: string, shown: ShownValue, text: string) => {
+    live.current.shown = heldAtFirstKey(live.current.shown, key, {
+      shown,
+      text,
+    });
+  }, []);
+
+  // A text's own save landed: the next save of it hands back what this one
+  // answered (rule 2).
+  const landedShown = useCallback(
+    (key: string, shown: ShownValue, text: string) => {
+      live.current.shown = heldAfterLanding(live.current.shown, key, {
+        shown,
+        text,
+      });
+    },
+    [],
+  );
+
+  // New rows arrived from the server: a text with nothing typed in it now
+  // shows the server's value, so its hold goes (rule 4).
+  const settle = useCallback(() => {
+    live.current.shown = settled(live.current.shown, live.current.drafts);
+  }, []);
+
   const clearFailure = useCallback((key: string) => {
     if (!(key in live.current.failures)) return;
     live.current.failures = without(live.current.failures, key);
@@ -191,6 +230,7 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
   const reset = useCallback(
     (key: string) => {
       live.current.drafts = without(live.current.drafts, key);
+      live.current.shown = released(live.current.shown, key);
       setDrafts(live.current.drafts);
       clearFailure(key);
     },
@@ -247,6 +287,7 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
         live.current.drafts = without(live.current.drafts, key);
         setDrafts(live.current.drafts);
       }
+      live.current.shown = released(live.current.shown, key);
       clearFailure(key);
     },
     [clearFailure],
@@ -379,6 +420,9 @@ export function useEditing(strings: Copy["owner"]["editing"]) {
     run,
     call,
     type,
+    hold,
+    landedShown,
+    settle,
     reset,
     sending,
     answered,

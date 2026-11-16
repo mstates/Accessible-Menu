@@ -133,7 +133,8 @@ function DishRows({
     },
     actions: {
       add: (name) => addDish(code, section.id, name),
-      setText: (id, _field, value) => renameDish(code, section.id, id, value),
+      setText: (id, _field, value, shown) =>
+        renameDish(code, section.id, id, value, shown),
       remove: (id) => deleteDish(code, section.id, id),
       order: (ids) => orderDishes(code, section.id, ids),
     },
@@ -145,8 +146,8 @@ function DishRows({
       valueOf: (field) => section[field],
       clean: sectionTexts.clean,
       rule: sectionTexts.rule,
-      setText: (field, value) =>
-        setOwnSectionText(code, section.id, field, value),
+      setText: (field, value, shown) =>
+        setOwnSectionText(code, section.id, field, value, shown),
     },
     tryAgain: (key, value) =>
       choiceRef.current?.tryAgainKey(key, value) ?? false,

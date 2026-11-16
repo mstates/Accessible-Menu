@@ -50,6 +50,21 @@ export type OwnerDishDetail = OwnerDish &
     schedule: Schedule | null;
   };
 
+// What a dish's Dietary tags page showed (D-237), handed back with its
+// save: the tags in the order the row holds them, and the Cooked to order
+// mark.
+export type DishTagsShown = { tags: DietaryTagId[]; cookedToOrder: boolean };
+
+// What a dish's Availability page showed (D-237), handed back with its
+// save: the schedule, and the row's flag and mark as stored, the mark as
+// the text the server returned it as. The page holds it whole and never
+// reads the mark's meaning, which domain/availability.ts decides (D-160).
+export type DishShowingShown = {
+  schedule: Schedule | null;
+  available: boolean;
+  soldOutAt: string | null;
+};
+
 // What a dish's General page shows and writes (D-237), as one document: the
 // dish's description, note, price choice, one price, and calories, and its
 // sizes that are not deleted, in price order, a size with no price last,

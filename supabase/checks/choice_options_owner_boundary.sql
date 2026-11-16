@@ -760,6 +760,112 @@ begin
 end;
 $$;
 
+-- An option's name, its added price, and its calories each name what the
+-- page showed, in the write's own statement, and land only if the option
+-- still holds it (D-237, rule 2). The statements the app sends: the option
+-- by id, in its list, not deleted, then the columns the write sets as they
+-- were read. A price that is none is named as is null and a free option's
+-- zero as zero, and neither finds the other. Calories are named as the two
+-- stored numbers: an equal pair, which a field shows as one number, is
+-- found by the pair and not by that number alone. A stale compare lands on
+-- no row and rewrites nothing; the one that names what the option holds
+-- lands on one. The option is marked deleted at the end, so the list is as
+-- it was.
+do $$
+declare
+  a_list uuid := current_setting('boundary.a_list')::uuid;
+  one uuid;
+  place tid;
+  touched integer;
+begin
+  insert into public.choice_options (choice_list_id, name, sort)
+  values (a_list, 'Boundary compare one', 9101) returning id into one;
+  select o.ctid into place from public.choice_options o where o.id = one;
+
+  update public.choice_options set name = 'Boundary compare two'
+  where id = one and choice_list_id = a_list and deleted_at is null
+    and name = 'Boundary compare stale';
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a rename naming a name the option does not hold landed on % rows', touched;
+  end if;
+  -- No price is not a price of zero.
+  update public.choice_options set added_price_cents = 150
+  where id = one and choice_list_id = a_list and deleted_at is null
+    and added_price_cents = 0;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a price written against zero landed on an option with no price';
+  end if;
+  if (select o.ctid from public.choice_options o where o.id = one)
+       is distinct from place then
+    raise exception 'FAIL: a refused write rewrote the option';
+  end if;
+  raise notice 'ok: a rename that names a name the option does not hold, and a price written against zero where there is none, each land on no row and rewrite nothing';
+
+  update public.choice_options set name = 'Boundary compare two'
+  where id = one and choice_list_id = a_list and deleted_at is null
+    and name = 'Boundary compare one';
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: a rename naming the name the option holds landed on % rows', touched;
+  end if;
+  update public.choice_options set added_price_cents = 0
+  where id = one and choice_list_id = a_list and deleted_at is null
+    and added_price_cents is null;
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: a price written against none landed on % rows', touched;
+  end if;
+  raise notice 'ok: the same rename naming the name the option holds, and a price written against none, each land on one row';
+
+  -- The option is free now: zero, not none.
+  select o.ctid into place from public.choice_options o where o.id = one;
+  update public.choice_options set added_price_cents = 150
+  where id = one and choice_list_id = a_list and deleted_at is null
+    and added_price_cents is null;
+  get diagnostics touched = row_count;
+  if touched <> 0
+     or (select o.ctid from public.choice_options o where o.id = one)
+       is distinct from place then
+    raise exception 'FAIL: a price written against none landed on a free option';
+  end if;
+  update public.choice_options set added_price_cents = 150
+  where id = one and choice_list_id = a_list and deleted_at is null
+    and added_price_cents = 0;
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: a price written against zero landed on % rows of a free option', touched;
+  end if;
+  raise notice 'ok: on a free option a price written against none lands on no row, and against zero on one';
+
+  -- An equal pair, as SQL or an import could leave it: the page stores an
+  -- equal pair as one number, and shows this one as 250.
+  update public.choice_options set calories_low = 250, calories_high = 250
+  where id = one;
+  select o.ctid into place from public.choice_options o where o.id = one;
+  update public.choice_options set calories_low = 300, calories_high = null
+  where id = one and choice_list_id = a_list and deleted_at is null
+    and calories_low = 250 and calories_high is null;
+  get diagnostics touched = row_count;
+  if touched <> 0
+     or (select o.ctid from public.choice_options o where o.id = one)
+       is distinct from place then
+    raise exception 'FAIL: calories written against one number landed on an option that holds a pair';
+  end if;
+  update public.choice_options set calories_low = 300, calories_high = null
+  where id = one and choice_list_id = a_list and deleted_at is null
+    and calories_low = 250 and calories_high = 250;
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: calories written against the pair the option holds landed on % rows', touched;
+  end if;
+  raise notice 'ok: calories written against one number land on no row of an option that holds an equal pair, and against the pair on one';
+
+  update public.choice_options set deleted_at = now() where id = one;
+end;
+$$;
+
 -- A stranger reads, writes, adds, and orders nothing, even with the list's
 -- own order in hand.
 select set_config('request.jwt.claims',

@@ -46,7 +46,7 @@ export default async function RestaurantDishAvailabilityPage({
   const { email, restaurant, found } = await loadDish(code, dishId);
   if (!email) redirect(signInPath);
   if (!restaurant || !found) notFound();
-  const { dish, section, menu, lists, showing, now } = found;
+  const { dish, section, menu, lists, showing, now, availabilityShown } = found;
   const action = saveDishAvailability.bind(null, restaurant.code, dish.id);
   const notice = readNotice((await headers()).get("cookie"), [
     "availability-saved",
@@ -70,6 +70,7 @@ export default async function RestaurantDishAvailabilityPage({
         pendingLabel={en.ui.pending}
         code={restaurant.code}
         dish={dish}
+        shown={availabilityShown}
         showing={showing}
         timeZone={restaurant.timezone}
         lang={en.lang}

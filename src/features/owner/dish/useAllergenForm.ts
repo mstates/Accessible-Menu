@@ -52,7 +52,9 @@ import type { Prepared } from "./useDishForm";
 // (D-148, D-223, D-229): the nine boxes, the other-allergen rows, and the
 // check are the form's state, changed on the press and sent together by
 // Save. The Diners read line and the stamp follow the saved values, not
-// the form, so what diners read is never ahead of what is saved. Blank
+// the form, so what diners read is never ahead of what is saved; saved
+// means what the server held when the page loaded, held from the moment
+// the form mounts (D-237). Blank
 // rows are dropped without a word on Save; the other rules are problems
 // under their rows, in row order (allergens-form.ts). The same-named
 // Apply (D-129) works from the saved lists: while the form holds unsaved
@@ -119,11 +121,23 @@ export function useAllergenForm({
   const [applied, setApplied] = useState<string | null>(null);
   const applying = useRef(false);
 
-  const saved: Adopted = adopted ?? {
-    lists: { allergens: dish.allergens, others: dish.otherAllergens },
+  // What the page showed is fixed when the form mounts, as General's is
+  // (D-237, D-238): the two lists and the check the server held. Apply
+  // ends with a refresh of the page, and a refresh must not put newer
+  // lists under boxes the owner is still looking at: a Save would then
+  // name the newer lists as shown, pass its compare, and drop an allergen
+  // the form never showed. The Save and Apply hand these back untouched;
+  // the Diners read line and the stamp follow them too, so the page stays
+  // one version until it loads again.
+  const [first] = useState<Adopted>(() => ({
+    lists: {
+      allergens: [...dish.allergens],
+      others: [...dish.otherAllergens],
+    },
     checked: dish.check !== null,
     check: dish.check,
-  };
+  }));
+  const saved: Adopted = adopted ?? first;
   const typed = rows.map((row) => row.value);
   const check = validateAllergenForm(typed);
   const dirty =

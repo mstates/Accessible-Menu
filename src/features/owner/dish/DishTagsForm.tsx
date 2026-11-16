@@ -8,7 +8,7 @@ import {
   toggleTag,
   type DietaryCopy,
 } from "@/domain/dietary";
-import type { OwnerDishDetail } from "@/domain/dish";
+import type { DishTagsShown, OwnerDishDetail } from "@/domain/dish";
 import type { DietaryTagId } from "@/domain/types";
 import type { FormError } from "@/ui/Form";
 import {
@@ -48,7 +48,7 @@ type Props = {
 // A dish's Dietary tags page (D-66, D-167, D-222, D-229): one form, the
 // three tags directly under the h1 that names them, Cooked to order under
 // its own heading, and Save dietary tags at the foot. The sentence diners
-// read follows the saved tags. Nothing on the page speaks, so it has no
+// read follows the saved tags, as the page loaded them. Nothing on the page speaks, so it has no
 // log: a tick is heard as the box's state, and Save's outcome is the new
 // page or the focused summary.
 export function DishTagsForm({
@@ -65,9 +65,19 @@ export function DishTagsForm({
     [strings, editingStrings],
   );
   const [errors, setErrors] = useState<FormError[]>([]);
-  const [tags, setTags] = useState<DietaryTagId[]>(() => [...dish.tags]);
-  const [cooked, setCooked] = useState(dish.cookedToOrder);
-  const dirty = !sameTags(tags, dish.tags) || cooked !== dish.cookedToOrder;
+  // What the page showed is fixed when the form mounts, as General's is
+  // (D-237, D-238): the tags in the order the row holds them, and the
+  // Cooked to order mark. A later render of the page must not put newer
+  // values under boxes the owner is still looking at, or a Save would name
+  // a version the form never showed and write over whatever moved. The
+  // Save hands these back untouched.
+  const [first] = useState<DishTagsShown>(() => ({
+    tags: [...dish.tags],
+    cookedToOrder: dish.cookedToOrder,
+  }));
+  const [tags, setTags] = useState<DietaryTagId[]>(() => [...first.tags]);
+  const [cooked, setCooked] = useState(first.cookedToOrder);
+  const dirty = !sameTags(tags, first.tags) || cooked !== first.cookedToOrder;
   const form = useDishForm<TagsPayload>({
     action,
     notice: "tags-saved",
@@ -89,7 +99,7 @@ export function DishTagsForm({
     shown: tags,
     set: (id, on) => setTags((list) => toggleTag(list, id, on)),
     errorOf: () => null,
-    sentence: dietarySentence(dish.tags, dietaryCopy),
+    sentence: dietarySentence(first.tags, dietaryCopy),
   };
   const cookedView: DishCookedToOrderView = {
     id: COOKED_TO_ORDER_ID,
@@ -107,7 +117,14 @@ export function DishTagsForm({
       form={form}
       onSubmit={() =>
         form.submit({
-          payload: { tags, cookedToOrder: cooked, shownTags: [...dish.tags] },
+          payload: {
+            tags,
+            cookedToOrder: cooked,
+            shown: {
+              tags: [...first.tags],
+              cookedToOrder: first.cookedToOrder,
+            },
+          },
         })
       }
     >

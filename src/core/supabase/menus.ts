@@ -13,6 +13,7 @@ import {
   type MenuDraft,
   type MenuSnapshot,
 } from "@/domain/snapshot";
+import { holding, missed } from "./compare";
 import { shaped } from "./log";
 import { listSectionDishes } from "./sections";
 
@@ -49,6 +50,9 @@ const UNIQUE_VIOLATION = "23505";
 export type MenuWriteError =
   | { kind: "name-taken" }
   | { kind: "not-found" }
+  // A write found the menu holding another value than the page showed
+  // (D-237).
+  | { kind: "moved" }
   | { kind: "mismatch" }
   // A delete would have taken more than the owner was told about.
   | { kind: "grew" }
@@ -209,25 +213,45 @@ export async function addOwnerMenu(
     : failed;
 }
 
-// Under row level security a menu the caller does not own matches zero rows
-// without an error, so each write asks for the row back and reads an empty
-// answer as not found.
+// Writes a menu's name, and lands only if the menu still holds the name the
+// page showed (D-237). Under row level security a menu the caller does not
+// own matches zero rows without an error, so the write asks for the row
+// back; an empty answer is then read once more without the compare, which
+// tells a menu that is gone from one whose name moved, and finds a retry
+// whose first try had landed.
 export async function renameOwnerMenu(
   client: SupabaseClient,
   restaurantId: string,
   id: string,
   name: string,
+  shown: string,
 ): Promise<MenuWriteResult<OwnerMenu>> {
-  const { data, error } = await client
+  const update = client
     .from("menus")
     .update({ name })
     .eq("id", id)
     .eq("restaurant_id", restaurantId)
-    .is("deleted_at", null)
+    .is("deleted_at", null);
+  const { data, error } = await holding(update, "name", shown)
     .select(columns)
     .maybeSingle();
   if (error) return refused(error.code);
-  if (!data) return notFound;
+  if (!data) {
+    const now = await missed(
+      client
+        .from("menus")
+        .select(columns)
+        .eq("id", id)
+        .eq("restaurant_id", restaurantId)
+        .is("deleted_at", null)
+        .maybeSingle(),
+      (found) => shaped(rowSchema, found, "menus"),
+      (row) => row.name === name,
+    );
+    if (now.kind === "landed") return { ok: true, value: toMenu(now.row) };
+    if (now.kind === "moved") return { ok: false, error: { kind: "moved" } };
+    return now.kind === "not-found" ? notFound : failed;
+  }
   const row = shaped(rowSchema, data, "menus");
   return row ? { ok: true, value: toMenu(row) } : failed;
 }

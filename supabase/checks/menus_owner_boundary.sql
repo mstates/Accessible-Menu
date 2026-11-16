@@ -672,6 +672,51 @@ begin
 end;
 $$;
 
+-- A rename names the name its page showed, in the write's own statement,
+-- and lands only if the menu still holds it (D-237, rule 2). The statement
+-- the app sends: the menu by id, in its restaurant, not deleted, and the
+-- name as it was read. The stored name here has outer spaces, which the
+-- table allows and no page could have typed: named without them, the
+-- rename lands on no row and rewrites nothing; named as stored, it lands on
+-- one. The menu is marked deleted at the end, so the list is as it was.
+do $$
+declare
+  target uuid := current_setting('boundary.restaurant')::uuid;
+  one uuid;
+  place tid;
+  touched integer;
+begin
+  insert into public.menus (restaurant_id, name, sort)
+  values (target, '  Boundary compare one  ', 9101) returning id into one;
+  select m.ctid into place from public.menus m where m.id = one;
+
+  update public.menus set name = 'Boundary compare two'
+  where id = one and restaurant_id = target and deleted_at is null
+    and name = 'Boundary compare one';
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a rename naming a name the menu does not hold landed on % rows', touched;
+  end if;
+  if (select m.ctid from public.menus m where m.id = one) is distinct from place
+     or (select m.name from public.menus m where m.id = one)
+       <> '  Boundary compare one  ' then
+    raise exception 'FAIL: a refused rename rewrote the menu';
+  end if;
+  raise notice 'ok: a rename that names a name the menu does not hold, its own name without the outer spaces, lands on no row and rewrites nothing';
+
+  update public.menus set name = 'Boundary compare two'
+  where id = one and restaurant_id = target and deleted_at is null
+    and name = '  Boundary compare one  ';
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: a rename naming the name the menu holds landed on % rows', touched;
+  end if;
+  raise notice 'ok: the same rename naming the name as stored lands on one row';
+
+  update public.menus set deleted_at = now() where id = one;
+end;
+$$;
+
 -- A stranger reads, writes, orders, publishes, and unpublishes nothing.
 select set_config('request.jwt.claims',
   format('{"sub":"%s","role":"authenticated"}', gen_random_uuid()), true);

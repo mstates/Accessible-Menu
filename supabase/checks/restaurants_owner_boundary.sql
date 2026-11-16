@@ -183,6 +183,158 @@ begin
 end;
 $$;
 
+-- A Details save names the twelve values its page showed, in the write's
+-- own statement, and lands only if the restaurant still holds all twelve
+-- (D-237, rule 2). The block gives the restaurant values that are easy to
+-- get wrong, reads them back the way the page receives them, and sends the
+-- statement the app sends: by code, a value that is none as is null, every
+-- other as equal, the hours as the column's own text, and a list as a
+-- literal. Each compare that names something the row does not hold lands on
+-- no row and rewrites nothing; the one that names what it holds lands on
+-- one. Everything rolls back.
+do $$
+declare
+  target uuid;
+  target_code text;
+  was public.restaurants;
+  shown record;
+  place tid;
+  touched integer;
+begin
+  select id, code into target, target_code
+  from public.restaurants order by created_at limit 1;
+  select r.* into was from public.restaurants r where r.id = target;
+  -- Outer spaces in a text, a note that is empty and not none, a phone and
+  -- a website that are none, a list out of its enum's order, and hours no
+  -- page wrote: keys out of order and a number past what a browser's JSON
+  -- keeps.
+  update public.restaurants set
+    name = '  Boundary Diner  ', address = '1 Main Street', city = 'Reading',
+    region = 'PA', postal_code = '19601', phone = null, website = null,
+    hours = '{"zebra": [3, 2, 1], "big": 12345678901234567890, "apple": null}',
+    timezone = 'America/Chicago', allergen_note = '',
+    prep_notes = '{shared-kitchen,shared-fryer}', show_icons = false
+  where id = target;
+  select r.name, r.address, r.city, r.region, r.postal_code, r.phone,
+    r.website, r.hours::text as hours_text, r.timezone, r.allergen_note,
+    r.prep_notes::text as prep_notes_text, r.show_icons, r.ctid as place
+  into shown from public.restaurants r where r.id = target;
+  place := shown.place;
+  if shown.hours_text not like '%12345678901234567890%' then
+    raise exception 'FAIL: the hours did not read back with their number whole: %', shown.hours_text;
+  end if;
+
+  -- The note named as none when the row holds an empty one.
+  update public.restaurants set allergen_note = 'Boundary note'
+  where code = target_code
+    and name = shown.name and address = shown.address and city = shown.city
+    and region = shown.region and postal_code = shown.postal_code
+    and phone is null and website is null
+    and hours = shown.hours_text::jsonb and timezone = shown.timezone
+    and allergen_note is null
+    and prep_notes = shown.prep_notes_text::public.prep_note[]
+    and show_icons = shown.show_icons;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a save naming no note landed on a restaurant whose note is empty';
+  end if;
+
+  -- The name named without its outer spaces.
+  update public.restaurants set allergen_note = 'Boundary note'
+  where code = target_code
+    and name = btrim(shown.name) and address = shown.address
+    and city = shown.city and region = shown.region
+    and postal_code = shown.postal_code and phone is null and website is null
+    and hours = shown.hours_text::jsonb and timezone = shown.timezone
+    and allergen_note = shown.allergen_note
+    and prep_notes = shown.prep_notes_text::public.prep_note[]
+    and show_icons = shown.show_icons;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a save naming the name without its outer spaces landed';
+  end if;
+
+  -- The list named in its enum's order when the row holds another.
+  update public.restaurants set allergen_note = 'Boundary note'
+  where code = target_code
+    and name = shown.name and address = shown.address and city = shown.city
+    and region = shown.region and postal_code = shown.postal_code
+    and phone is null and website is null
+    and hours = shown.hours_text::jsonb and timezone = shown.timezone
+    and allergen_note = shown.allergen_note
+    and prep_notes = '{shared-fryer,shared-kitchen}'
+    and show_icons = shown.show_icons;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a save naming the kitchen notes in another order landed';
+  end if;
+
+  -- The box named ticked when it is not.
+  update public.restaurants set allergen_note = 'Boundary note'
+  where code = target_code
+    and name = shown.name and address = shown.address and city = shown.city
+    and region = shown.region and postal_code = shown.postal_code
+    and phone is null and website is null
+    and hours = shown.hours_text::jsonb and timezone = shown.timezone
+    and allergen_note = shown.allergen_note
+    and prep_notes = shown.prep_notes_text::public.prep_note[]
+    and show_icons = true;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a save naming the icons box as ticked landed';
+  end if;
+
+  -- The hours named with their number as a browser's JSON would keep it.
+  update public.restaurants set allergen_note = 'Boundary note'
+  where code = target_code
+    and name = shown.name and address = shown.address and city = shown.city
+    and region = shown.region and postal_code = shown.postal_code
+    and phone is null and website is null
+    and hours = '{"zebra": [3, 2, 1], "big": 12345678901234567000, "apple": null}'
+    and timezone = shown.timezone
+    and allergen_note = shown.allergen_note
+    and prep_notes = shown.prep_notes_text::public.prep_note[]
+    and show_icons = shown.show_icons;
+  get diagnostics touched = row_count;
+  if touched <> 0 then
+    raise exception 'FAIL: a save naming the hours with a rounded number landed';
+  end if;
+
+  if (select r.ctid from public.restaurants r where r.id = target)
+       is distinct from place
+     or (select r.allergen_note from public.restaurants r where r.id = target)
+       <> '' then
+    raise exception 'FAIL: a refused Details save rewrote the restaurant';
+  end if;
+  raise notice 'ok: a Details save that names a value the restaurant does not hold lands on no row and rewrites nothing: an empty note named as none, a name without its outer spaces, a list in another order, the box, and hours with a rounded number';
+
+  -- The twelve as the page received them.
+  update public.restaurants set allergen_note = 'Boundary note'
+  where code = target_code
+    and name = shown.name and address = shown.address and city = shown.city
+    and region = shown.region and postal_code = shown.postal_code
+    and phone is null and website is null
+    and hours = shown.hours_text::jsonb and timezone = shown.timezone
+    and allergen_note = shown.allergen_note
+    and prep_notes = shown.prep_notes_text::public.prep_note[]
+    and show_icons = shown.show_icons;
+  get diagnostics touched = row_count;
+  if touched <> 1 then
+    raise exception 'FAIL: a save naming the twelve values the restaurant holds landed on % rows', touched;
+  end if;
+  raise notice 'ok: the same save naming the twelve values as they were read lands on one row: the hours by their own text, a note that is empty, a phone and a website that are none';
+
+  -- As it was, for the blocks below, which read the restaurant's name.
+  update public.restaurants set
+    name = was.name, address = was.address, city = was.city,
+    region = was.region, postal_code = was.postal_code, phone = was.phone,
+    website = was.website, hours = was.hours, timezone = was.timezone,
+    allergen_note = was.allergen_note, prep_notes = was.prep_notes,
+    show_icons = was.show_icons
+  where id = target;
+end;
+$$;
+
 -- A stranger touches nothing. This also stands in for the cross-owner 404,
 -- which would otherwise need a second user in the browser.
 select set_config('request.jwt.claims',
