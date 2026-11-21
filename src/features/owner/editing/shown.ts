@@ -23,8 +23,9 @@
 //    keystroke records that one. A hold whose field still has typed text
 //    stays, which is the point of it.
 // 5. A save reads its hold when the queue sends it (texts.ts).
-// 6. A text typed back to the text the field showed sends nothing
-//    (commit.ts).
+// 6. A text typed back to its hold's text sends nothing, and the hold's
+//    text alone is compared, never the render's saved value, which can be
+//    older than a save that landed (commit.ts, Q-199).
 
 // A value handed back: a text, a stored number, the two stored numbers of
 // a pair of calories, or nothing.

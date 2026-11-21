@@ -141,13 +141,41 @@ describe("when a field saves (D-111)", () => {
     expect(commitOf({ ...moved, draft: " Soup " }, cleanMenuName)).toEqual({
       kind: "reset",
     });
-    expect(commitOf({ ...moved, draft: "Chowder" }, cleanMenuName)).toEqual({
-      kind: "reset",
-    });
     expect(commitOf({ ...moved, draft: "Soup two" }, cleanMenuName)).toEqual({
       kind: "send",
       value: "Soup two",
     });
+  });
+
+  // Q-199: a commit that finds a hold compares with the hold's text alone.
+  // A save that landed makes the hold the answer's value before the
+  // refreshed rows arrive, so the render's saved value can be the old one:
+  // typed back to it, the owner changed the field, and it is sent. Typed
+  // to a newer value that arrived under the typed text, it is sent too,
+  // and the write that finds its value in place is answered as landed
+  // (missed() in compare.ts, D-239).
+  it("with a hold, compares with the hold's text alone: typed back to a stale saved value is sent", () => {
+    const landed = { ...untouched, saved: "Dinner", shown: "Supper" };
+    expect(commitOf({ ...landed, draft: "Dinner" }, cleanMenuName)).toEqual({
+      kind: "send",
+      value: "Dinner",
+    });
+    expect(commitOf({ ...landed, draft: " Supper " }, cleanMenuName)).toEqual({
+      kind: "reset",
+    });
+    const moved = { ...untouched, saved: "Chowder", shown: "Soup" };
+    expect(commitOf({ ...moved, draft: "Chowder" }, cleanMenuName)).toEqual({
+      kind: "send",
+      value: "Chowder",
+    });
+  });
+
+  it("with no hold, typed back to the saved value still sends nothing", () => {
+    for (const shown of [undefined, null]) {
+      expect(
+        commitOf({ ...untouched, shown, draft: "Dinner" }, cleanMenuName),
+      ).toEqual({ kind: "reset" });
+    }
   });
 
   it("holds no text for a field with no hold, so an emptied field is still sent", () => {

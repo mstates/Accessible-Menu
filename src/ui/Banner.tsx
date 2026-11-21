@@ -34,6 +34,18 @@ import { Button as AriaButton } from "react-aria-components";
 // hydration, so the attribute goes on through the Button's render
 // function, which hands the element React Aria's props and its ref.
 //
+// A flash's alert stays out of React Aria's hide (Q-182, D-240; the
+// Departures register's entry 9). While a list or a dialog is open React
+// Aria makes the page around it inert, or aria-hidden for a ComboBox's
+// list, and gives it back on close, and VoiceOver on iOS reads an alert
+// that comes back as new: "General saved" was heard with nothing saved. So
+// the alert carries the mark React Aria keeps for its own announcer, which
+// Next's route announcer carries too (D-201), and the hide leaves it
+// alone. Its ancestors stay exposed, every sibling around them is hidden.
+// The cost is Q-149's: while a list or a dialog is open, a swipe past the
+// layer can reach the flash's words. The alert holds only its words, so
+// what reads the mark looking for React Aria's logs finds nothing in it.
+//
 // The dismiss button, when there is one, is named by the caller's words, is
 // 44 pixels square (Primer asks 24 or more), and on press moves focus to
 // the element the caller names before the banner goes, so focus is never
@@ -177,7 +189,12 @@ export function Banner({
         {icons[kind]}
       </svg>
       {flash ? (
-        <div role="alert" aria-atomic="true" className={wordsClass}>
+        <div
+          role="alert"
+          aria-atomic="true"
+          data-live-announcer="true"
+          className={wordsClass}
+        >
           {children}
         </div>
       ) : (

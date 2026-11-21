@@ -535,14 +535,17 @@ function leadLine(page: Page, submit: string) {
     .getByText(fill(form.lead, { save: submit }), { exact: true });
 }
 
+// The summary's heading, which takes focus (Q-183), and the box it leads.
+function summaryHeading(page: Page) {
+  return page
+    .locator('main h2[tabindex="-1"]')
+    .and(
+      page.getByRole("heading", { level: 2, name: form.summary, exact: true }),
+    );
+}
+
 function summary(page: Page) {
-  return page.locator('main [tabindex="-1"]').filter({
-    has: page.getByRole("heading", {
-      level: 2,
-      name: form.summary,
-      exact: true,
-    }),
-  });
+  return summaryHeading(page).locator("..");
 }
 
 function summaryLinks(page: Page) {
@@ -1288,7 +1291,10 @@ test("a Cooked to order tick changes the page only, and Save dietary tags sends 
   await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
     1,
   );
-  await expect(summary(page), "the summary takes focus").toBeFocused();
+  await expect(
+    summaryHeading(page),
+    "the summary's heading takes focus",
+  ).toBeFocused();
   await expect(summaryLinks(page), "no field is at fault").toHaveCount(0);
   await expect(cookedBox(page), "the tick is kept").toBeChecked();
   await expect(save, "Save is free again").not.toHaveAttribute("aria-disabled");
@@ -1299,74 +1305,85 @@ test("a Cooked to order tick changes the page only, and Save dietary tags sends 
 
 // Primer's rule on General (D-229, D-237): one problem focuses its field,
 // which is described by its problem alone while it stands, its hint still
-// shown (D-230); three or more focus the summary, whose links lead to each
-// field in page order. Nothing is sent: no expectWrites, so the guard is
-// the proof. No live region says a problem. General's fields save nothing
-// when they are left, so the gate types into them (D-115, refined).
-test("Save general with one problem focuses its field, described by its problem alone; with three it sends nothing and focuses the summary, whose links lead to each field in page order; and a problem whose field leaves the page leaves with it", async ({
-  page,
-}) => {
-  await openDish(page, "one");
-  const calories = caloriesField(page);
-  await calories.fill("lots");
-  await saveButton(page, generalCopy.submit).click();
-  await expect(calories, "the one problem's field takes focus").toBeFocused();
-  await expect(calories).toHaveAttribute("aria-invalid", "true");
-  await expect(
-    calories,
-    "the problem alone while it stands, the hint still shown (D-230)",
-  ).toHaveAccessibleDescription(strings.errors.caloriesFormat);
-  await expect(
-    page.getByText(strings.price.caloriesHint, { exact: true }),
-  ).toBeVisible();
-  await expect(summary(page), "no summary for one problem").toHaveCount(0);
-  await expect(savedStatus(page)).toHaveCount(0);
-  await expect(log(page), "no live region says it").toHaveText("");
-  await expectNoMissingIds(page);
-  await expectNoAxeViolations(page);
+// shown (D-230); three or more focus the summary's heading, so a reader
+// says its words and its level (Q-183), and its links lead to each field
+// in page order, Return on each landing in its field. Nothing is sent: no
+// expectWrites, so the guard is the proof. No live region says a problem.
+// General's fields save nothing when they are left, so the gate types into
+// them (D-115, refined). Tagged for WebKit at the phone size as well, the
+// iPhone's engine, beside Chromium.
+test(
+  "Save general with one problem focuses its field, described by its problem alone; with three it sends nothing and focuses the summary's heading, whose links lead to each field in page order by Return; and a problem whose field leaves the page leaves with it",
+  { tag: "@summary" },
+  async ({ page }) => {
+    await openDish(page, "one");
+    const calories = caloriesField(page);
+    await calories.fill("lots");
+    await saveButton(page, generalCopy.submit).click();
+    await expect(calories, "the one problem's field takes focus").toBeFocused();
+    await expect(calories).toHaveAttribute("aria-invalid", "true");
+    await expect(
+      calories,
+      "the problem alone while it stands, the hint still shown (D-230)",
+    ).toHaveAccessibleDescription(strings.errors.caloriesFormat);
+    await expect(
+      page.getByText(strings.price.caloriesHint, { exact: true }),
+    ).toBeVisible();
+    await expect(summary(page), "no summary for one problem").toHaveCount(0);
+    await expect(savedStatus(page)).toHaveCount(0);
+    await expect(log(page), "no live region says it").toHaveText("");
+    await expectNoMissingIds(page);
+    await expectNoAxeViolations(page);
 
-  await descriptionField(page).fill("x".repeat(501));
-  await noteField(page).fill("y".repeat(121));
-  await saveButton(page, generalCopy.submit).click();
-  await expect(summary(page), "three problems focus the summary").toBeFocused();
-  await expect(
-    summaryLinks(page),
-    "a link per problem, in page order",
-  ).toHaveText([
-    strings.errors.descriptionLength,
-    strings.errors.noteLength,
-    strings.errors.caloriesFormat,
-  ]);
-  await expect(descriptionField(page)).toHaveAccessibleDescription(
-    strings.errors.descriptionLength,
-  );
-  await expect(noteField(page)).toHaveAccessibleDescription(
-    strings.errors.noteLength,
-  );
-  await expect(log(page)).toHaveText("");
-  await expectNoMissingIds(page);
-  await expectNoAxeViolations(page);
-  for (const [index, target] of [
-    descriptionField(page),
-    noteField(page),
-    calories,
-  ].entries()) {
-    await summaryLinks(page).nth(index).focus();
-    await page.keyboard.press("Enter");
-    await expect(target, `link ${index + 1} focuses its field`).toBeFocused();
-  }
+    await descriptionField(page).fill("x".repeat(501));
+    await noteField(page).fill("y".repeat(121));
+    await saveButton(page, generalCopy.submit).click();
+    await expect(
+      summaryHeading(page),
+      "three problems focus the summary's heading",
+    ).toBeFocused();
+    await expect(
+      summaryLinks(page),
+      "a link per problem, in page order",
+    ).toHaveText([
+      strings.errors.descriptionLength,
+      strings.errors.noteLength,
+      strings.errors.caloriesFormat,
+    ]);
+    await expect(descriptionField(page)).toHaveAccessibleDescription(
+      strings.errors.descriptionLength,
+    );
+    await expect(noteField(page)).toHaveAccessibleDescription(
+      strings.errors.noteLength,
+    );
+    await expect(log(page)).toHaveText("");
+    await expectNoMissingIds(page);
+    await expectNoAxeViolations(page);
+    for (const [index, target] of [
+      descriptionField(page),
+      noteField(page),
+      calories,
+    ].entries()) {
+      await summaryLinks(page).nth(index).focus();
+      await page.keyboard.press("Enter");
+      await expect(target, `link ${index + 1} focuses its field`).toBeFocused();
+    }
 
-  // The calories leave the page with their choice, and their problem with
-  // them: two are left, too few for a summary, each still on its field.
-  await page.getByText(strings.price.sizes, { exact: true }).click();
-  await expect(radio(page, strings.price.sizes)).toBeChecked();
-  await expect(caloriesField(page)).toHaveCount(0);
-  await expect(summary(page)).toHaveCount(0);
-  await expect(descriptionField(page)).toHaveAttribute("aria-invalid", "true");
-  await expect(noteField(page)).toHaveAttribute("aria-invalid", "true");
-  await expectNoMissingIds(page);
-  await expectNoAxeViolations(page);
-});
+    // The calories leave the page with their choice, and their problem with
+    // them: two are left, too few for a summary, each still on its field.
+    await page.getByText(strings.price.sizes, { exact: true }).click();
+    await expect(radio(page, strings.price.sizes)).toBeChecked();
+    await expect(caloriesField(page)).toHaveCount(0);
+    await expect(summary(page)).toHaveCount(0);
+    await expect(descriptionField(page)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    await expect(noteField(page)).toHaveAttribute("aria-invalid", "true");
+    await expectNoMissingIds(page);
+    await expectNoAxeViolations(page);
+  },
+);
 
 // Task 5, D-66: the three tags named by the words diners read, each with
 // its own hint and never the others', the group with no description of its
@@ -1533,7 +1550,7 @@ test("a tag tick changes the page only while the sentence diners read follows th
   await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
     1,
   );
-  await expect(summary(page)).toBeFocused();
+  await expect(summaryHeading(page)).toBeFocused();
   await expect(box(page, vegan), "the tick is kept").toBeChecked();
   await expect(tagsLine(page)).toHaveCount(0);
   await expectNoMissingIds(page);
@@ -1562,7 +1579,7 @@ test("Sold out today changes the page only while the group's line follows the sa
   await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
     1,
   );
-  await expect(summary(page)).toBeFocused();
+  await expect(summaryHeading(page)).toBeFocused();
   await expect(
     radio(page, availability.soldOut),
     "the choice is kept",
@@ -1598,7 +1615,7 @@ test("a day tick changes the page only while the sentence diners read follows th
   await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
     1,
   );
-  await expect(summary(page)).toBeFocused();
+  await expect(summaryHeading(page)).toBeFocused();
   await expect(box(page, dayNames.tue), "the tick is kept").toBeChecked();
   await expect(box(page, dayNames.tue)).not.toHaveAttribute("aria-invalid");
   await expect(scheduleLine(page)).toContainText(every);
@@ -1809,7 +1826,10 @@ test("a tick changes the page only while the sentence diners read follows the sa
   await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
     1,
   );
-  await expect(summary(page), "the summary takes focus").toBeFocused();
+  await expect(
+    summaryHeading(page),
+    "the summary's heading takes focus",
+  ).toBeFocused();
   await expect(summaryLinks(page), "no field is at fault").toHaveCount(0);
   await expect(
     box(page, allergens.names.milk),
@@ -1920,7 +1940,7 @@ test("the check changes the page only while the sentence diners read follows the
   await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
     1,
   );
-  await expect(summary(page)).toBeFocused();
+  await expect(summaryHeading(page)).toBeFocused();
   await expect(checkBox(page), "the tick is kept").toBeChecked();
   await expect(checkBox(page)).toHaveAccessibleDescription(notChecked);
   await expectNoMissingIds(page);
@@ -2340,7 +2360,10 @@ test("a size with a price and no name is refused at Save in its name field with 
   await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
     1,
   );
-  await expect(summary(page), "the summary takes focus").toBeFocused();
+  await expect(
+    summaryHeading(page),
+    "the summary's heading takes focus",
+  ).toBeFocused();
   await expect(summaryLinks(page), "no field is at fault").toHaveCount(0);
   await expect(name).not.toHaveAttribute("aria-invalid", "true");
   await expect(sizeRows(page), "every row is kept").toHaveCount(count + 1);
@@ -2428,7 +2451,10 @@ test("Enter on a suggestion in view picks the size's name and sends nothing, and
       exact: true,
     }),
   ).toHaveCount(1);
-  await expect(summary(page), "the summary takes focus").toBeFocused();
+  await expect(
+    summaryHeading(page),
+    "the summary's heading takes focus",
+  ).toBeFocused();
   await expectNoMissingIds(page);
   await expectNoAxeViolations(page);
 });
@@ -2677,10 +2703,13 @@ test("Save allergens with a name that means one of the nine, a name with a comma
   }
   await saveButton(page, allergens.submit).click();
   const box = summary(page);
-  await expect(box, "the summary takes focus").toBeFocused();
+  await expect(
+    summaryHeading(page),
+    "the summary's heading takes focus",
+  ).toBeFocused();
   await expect(
     box.getByRole("heading", { level: 2 }),
-    "named by its heading",
+    "the box under its heading",
   ).toHaveText(form.summary);
   const links = summaryLinks(page);
   await expect(links).toHaveText([
@@ -2739,7 +2768,10 @@ test("Save availability with Starts at 4, First day soon, and Last day later sen
   await first.fill("soon");
   await last.fill("later");
   await save.click();
-  await expect(summary(page), "the summary takes focus").toBeFocused();
+  await expect(
+    summaryHeading(page),
+    "the summary's heading takes focus",
+  ).toBeFocused();
   const links = summaryLinks(page);
   await expect(links).toHaveText([
     schedule.errors.timeAmPmStarts,
@@ -3043,7 +3075,10 @@ test(
     await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
       1,
     );
-    await expect(summary(page), "the summary takes focus").toBeFocused();
+    await expect(
+      summaryHeading(page),
+      "the summary's heading takes focus",
+    ).toBeFocused();
     await expect(box(page, vegan), "the change is kept").toBeChecked();
     await expect(save).not.toHaveAttribute("aria-disabled");
     expect(pathOf(page)).toBe(dishPath("one", "tags"));
@@ -3109,6 +3144,122 @@ test(
       "a second load shows no banner",
     ).toHaveCount(0);
     await expect(page.locator("main").getByRole("alert")).toHaveCount(0);
+  },
+);
+
+// Q-182 (D-240): the flash's alert is kept out of React Aria's hide by the
+// mark Next's route announcer carries (D-201), on our own element, so a
+// list or a dialog that opens over a flash never hides it and its close
+// never exposes it again, which VoiceOver on iOS read as a new alert
+// ("General saved" with nothing saved). A recorder notes any moment the
+// alert sits under inert or aria-hidden. Each layer is shown to have
+// hidden the page, by the h1, before the alert is read, so the test never
+// passes on a hide that did not happen: Move's Select and the leave dialog
+// are modal and make the page inert; the size name's list hides it by
+// aria-hidden and is opened by typing, never by its Show button (Q-181).
+// The alert holds its words and no element, so the readers of the mark
+// that look for React Aria's logs and their messages find nothing in it.
+test(
+  "a flash on General stays exposed while Move's list, a size name's list, and the leave dialog open and close over it: never inert, never hidden, and it holds only its words (Q-182)",
+  { tag: "@saved-banner" },
+  async ({ page }) => {
+    const path = dishPath("sizes");
+    await setNotice(page, "general-saved", path);
+    const response = await open(page, path);
+    const { banner } = await expectFlashArrival(page, response, {
+      kind: "success",
+      words: generalCopy.saved,
+    });
+    const alert = banner.getByRole("alert");
+    await expect(
+      alert.locator("*"),
+      "the alert holds its words and no element",
+    ).toHaveCount(0);
+    await page.evaluate(() => {
+      const w = window as unknown as { __flashHidden: string[] };
+      w.__flashHidden = [];
+      const words = document.querySelector('main [role="alert"]');
+      new MutationObserver(() => {
+        const under = words?.closest('[inert], [aria-hidden="true"]');
+        if (under) w.__flashHidden.push(under.localName);
+      }).observe(document.body, {
+        attributes: true,
+        attributeFilter: ["inert", "aria-hidden"],
+        subtree: true,
+      });
+    });
+    const hiddenSoFar = () =>
+      page.evaluate(
+        () => (window as unknown as { __flashHidden: string[] }).__flashHidden,
+      );
+    const exposed = () =>
+      alert.evaluate(
+        (element) => element.closest('[inert], [aria-hidden="true"]') === null,
+      );
+    const h1 = page.locator("main h1");
+    const under = (selector: string) => () =>
+      h1.evaluate(
+        (element, which) => element.closest(which) !== null,
+        selector,
+      );
+
+    // Move's Select, a modal list.
+    const select = moveSelect(page);
+    await select.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("option").first()).toBeVisible();
+    await expect
+      .poll(under("[inert]"), { message: "the open list makes the h1 inert" })
+      .toBe(true);
+    expect(await exposed(), "the alert is exposed under Move's list").toBe(
+      true,
+    );
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("option")).toHaveCount(0);
+    await expect(
+      page.locator("[inert]"),
+      "the close gives the page back",
+    ).toHaveCount(0);
+
+    // A size name's list, opened by typing.
+    const name = sizeRows(page).first().locator('input[id$="-name"]');
+    await name.focus();
+    await name.fill("");
+    await page.keyboard.type("Pi");
+    await expect(page.getByRole("option", { name: "Pint" })).toBeVisible();
+    await expect
+      .poll(under('[aria-hidden="true"]'), {
+        message: "the open list hides the h1",
+      })
+      .toBe(true);
+    expect(await exposed(), "the alert is exposed under the size's list").toBe(
+      true,
+    );
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("option")).toHaveCount(0);
+
+    // The leave dialog, since the form now holds a change.
+    await nextDishLink(page).focus();
+    await page.keyboard.press("Enter");
+    const dialog = leaveDialog(page);
+    await expect(dialog).toHaveCount(1);
+    await expect
+      .poll(under("[inert]"), { message: "the dialog makes the h1 inert" })
+      .toBe(true);
+    expect(await exposed(), "the alert is exposed under the dialog").toBe(true);
+    await dialog
+      .getByRole("button", { name: form.leave.keep, exact: true })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator("[inert]")).toHaveCount(0);
+
+    expect(
+      await hiddenSoFar(),
+      "the alert was never inert and never hidden",
+    ).toEqual([]);
+    await expect(alert).toHaveText(generalCopy.saved);
+    await expectNoMissingIds(page);
+    await expectNoAxeViolations(page);
   },
 );
 
@@ -3214,7 +3365,10 @@ test(
         exact: true,
       }),
     ).toHaveCount(1);
-    await expect(summary(page), "the summary takes focus").toBeFocused();
+    await expect(
+      summaryHeading(page),
+      "the summary's heading takes focus",
+    ).toBeFocused();
     await expect(summaryLinks(page), "no field is at fault").toHaveCount(0);
     await expect(noteField(page), "the change is kept").toHaveValue(
       "Not saved yet",

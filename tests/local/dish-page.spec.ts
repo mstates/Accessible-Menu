@@ -9,7 +9,7 @@ import { hearLog, heard } from "../a11y/owner-lists";
 import { restaurantName } from "../a11y/pages";
 import { flashBanner } from "../a11y/saved-banner";
 import { chromeName, expectNamedByOneLabel } from "./chrome-name";
-import { saveAndFail, saveAndLand, summary } from "./save";
+import { saveAndFail, saveAndLand, summary, summaryHeading } from "./save";
 
 // A dish's General page as one form that saves by one press (D-237), with
 // saves that land for real against the stand-in: the description, the
@@ -398,7 +398,10 @@ test("a price in the wrong shape is refused in its field with nothing sent, two 
   await calories(page).fill("lots");
   await saveButton(page).click();
   const box = summary(page);
-  await expect(box, "four problems go to the summary").toBeFocused();
+  await expect(
+    summaryHeading(page),
+    "four problems go to the summary's heading",
+  ).toBeFocused();
   await expect(box.getByRole("link")).toHaveText([
     strings.errors.descriptionLength,
     strings.errors.noteLength,

@@ -37,23 +37,29 @@ export async function saveAndLand(
 }
 
 // The summary of the problems a Save found, or of the failure the server
-// answered (D-229): a box named by its heading that takes focus. A dish's
-// form pages name it one way and a menu's Publishing page another (D-231).
+// answered (D-229): a box under its heading, and the heading takes focus
+// (Q-183), so a reader says its words and its level. A dish's form pages
+// name it one way, a menu's Publishing page another (D-231), and Details a
+// third.
+export function summaryHeading(
+  page: Page,
+  heading: string = en.owner.dish.form.summary,
+) {
+  return page
+    .locator('main h2[tabindex="-1"]')
+    .and(page.getByRole("heading", { level: 2, name: heading, exact: true }));
+}
+
+// The box the heading leads.
 export function summary(
   page: Page,
   heading: string = en.owner.dish.form.summary,
 ) {
-  return page.locator('main [tabindex="-1"]').filter({
-    has: page.getByRole("heading", {
-      level: 2,
-      name: heading,
-      exact: true,
-    }),
-  });
+  return summaryHeading(page, heading).locator("..");
 }
 
 // Presses the page's Save expecting it to stay, with the words in the
-// summary and the summary focused. An earlier save's flash may still be on
+// summary and the summary's heading focused. An earlier save's flash may still be on
 // the page; no new one joins it.
 export async function saveAndFail(
   page: Page,
@@ -65,6 +71,9 @@ export async function saveAndFail(
   await page.getByRole("button", { name: submit, exact: true }).click();
   const box = summary(page, heading);
   await expect(box.getByText(words, { exact: true })).toHaveCount(1);
-  await expect(box, "the summary takes focus").toBeFocused();
+  await expect(
+    summaryHeading(page, heading),
+    "the summary's heading takes focus",
+  ).toBeFocused();
   await expect(flashBanner(page, "success")).toHaveCount(flashes);
 }

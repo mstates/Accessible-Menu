@@ -73,6 +73,7 @@ The layout is in the Architecture page. In short: `app/` holds routes (marketing
 12. No helper until the third use. No generic utils folder. No dependency under fifty lines. Every dependency gets a one-line row in Decisions.
 13. Never edit an applied migration. Add a new numbered one.
 14. Every new function in `public` gets an explicit `revoke all ... from public` by name and a grant only to the role that needs it. PUBLIC holds execute on every new function through Postgres's global default, and migration one's per-schema default-privilege revoke cannot remove it.
+15. Every owner write names what its page showed through `src/core/supabase/compare.ts` and lands only if the row still holds it; a call that carries nothing shown is refused, and `tests/unit/compare-guard.test.ts` holds the list of writers with what each compares (D-237, D-239). Architecture's rule 11 is canonical.
 
 ## Commands and gates
 

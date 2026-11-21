@@ -245,6 +245,49 @@ describe("what a text's save hands back (D-237)", () => {
     expect(sent[1]?.shown).toBe("Bisque");
   });
 
+  // Q-199: the field's own save landed, and the refreshed rows have not
+  // arrived, since React holds them while another save is on its way. The
+  // page still renders the first name. Typed back to it, the owner changed
+  // the field, so it is sent, naming what the first save answered.
+  it("typed back to its first value after its own save landed and before the rows arrive, the text is sent against what that save answered", async () => {
+    const sent: Sent[] = [];
+    const state = editingState();
+    const field = () => textOf(state.editing, home(soup, sent), "name");
+    field().onChange("Soup one");
+    field().onCommit();
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    await state.idle();
+    expect(state.live.shown["row:name"]).toEqual({
+      shown: "Soup one",
+      text: "Soup one",
+    });
+    field().onChange("Soup");
+    field().onCommit();
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent.map((each) => [each.value, each.shown])).toEqual([
+      ["Soup one", "Soup"],
+      ["Soup", "Soup one"],
+    ]);
+    await state.idle();
+    expect(state.failField).not.toHaveBeenCalled();
+  });
+
+  it("typed back to what its own landed save answered, before the rows arrive, sends nothing", async () => {
+    const sent: Sent[] = [];
+    const state = editingState();
+    const field = () => textOf(state.editing, home(soup, sent), "name");
+    field().onChange("Soup one");
+    field().onCommit();
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    await state.idle();
+    field().onChange("Soup onex");
+    field().onChange("Soup one");
+    field().onCommit();
+    await state.idle();
+    expect(sent).toHaveLength(1);
+    expect(state.live.drafts).toEqual({});
+  });
+
   it("typed back to the text the field showed, with a newer value under it, sends nothing and lets the hold go", async () => {
     const sent: Sent[] = [];
     const state = editingState();

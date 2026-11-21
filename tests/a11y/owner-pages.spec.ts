@@ -186,7 +186,8 @@ function messagesNaming(page: Page, id: string) {
 
 // React Aria's assertive log, made by the first announce call on a page
 // before that call holds its message back for 100 ms. Next's route
-// announcer carries the mark too (D-201), but it is no div and has no log.
+// announcer carries the mark too (D-201), but it is no div and has no log;
+// so does a flash's alert (D-240), a div with no log, holding only words.
 const reactAriaAssertiveLog =
   'div[data-live-announcer] > [role="log"][aria-live="assertive"]';
 
@@ -194,7 +195,8 @@ const reactAriaAssertiveLog =
 // message naming the Button is taken out with it, never given words of its
 // own. React Aria sets no aria-label on its logs or on a message that names
 // an element, so any aria-label inside a log would be ours. Next's route
-// announcer carries the mark too (D-201), but holds no log.
+// announcer carries the mark too (D-201), and so does a flash's alert
+// (D-240), but neither holds a log.
 async function expectNothingRenamed(page: Page) {
   await expect(
     page.locator('[data-live-announcer] [role="log"] [aria-label]'),

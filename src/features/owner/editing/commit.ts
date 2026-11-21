@@ -35,10 +35,15 @@ export function commitOf(
   if (value === field.inFlight || value === field.failed) {
     return { kind: "nothing" };
   }
-  // Typed back to the saved value, or to the text the field showed before a
-  // newer value arrived under it (D-237): either way the owner changed
-  // nothing, so nothing is sent and the field shows what is saved.
-  if (value === field.saved || value === (field.shown ?? null)) {
+  // Typed back to what the field stands on, the owner changed nothing, so
+  // nothing is sent and the field shows what is saved. With a hold that is
+  // the hold's text alone (Q-199): a save that landed makes the hold the
+  // answer's value before the refreshed rows arrive, so the render's saved
+  // value may be the old one, and typed back to it the owner did change the
+  // field. A text typed to a newer value that arrived under it is sent as
+  // well, and a write that finds its value in place is answered as landed
+  // (missed() in compare.ts, D-239). With no hold, the saved value.
+  if (value === (field.shown ?? field.saved)) {
     return { kind: "reset" };
   }
   return { kind: "send", value };

@@ -12,10 +12,11 @@ import {
 } from "../a11y/checks";
 import { ownerEnv } from "../a11y/owner-env";
 import { chromeName, expectNamedByOneLabel } from "./chrome-name";
+import { summary as summaryBox, summaryHeading } from "./save";
 
 // The restaurant form against the stand-in. The two focus targets (Q-100,
-// D-179): the error summary, which takes focus when a save comes back with
-// errors, and a day's first field, its Open 24 hours box, where the
+// D-179): the error summary's heading, which takes focus when a save comes
+// back with errors (Q-183), and a day's first field, its Open 24 hours box, where the
 // summary's link for a day-level error lands (D-188). The gate never gets
 // an answer with errors, since its saves are answered in the browser
 // (D-108), so they are checked here; a range that opens and closes at the
@@ -35,7 +36,7 @@ async function openDetails(page: Page) {
   await page.waitForLoadState("networkidle");
 }
 
-test("a save with errors sent from the keyboard focuses the error summary, and its link to a day lands on the day's Open 24 hours box; each shows the focus ring", async ({
+test("a save with errors sent from the keyboard focuses the error summary's heading, and its link to a day lands on the day's Open 24 hours box; each shows the focus ring", async ({
   page,
 }) => {
   await openDetails(page);
@@ -51,10 +52,9 @@ test("a save with errors sent from the keyboard focuses the error summary, and i
   await closes.fill("9 am");
   await closes.press("Enter");
 
-  const summary = page.locator("main div[tabindex='-1']").filter({
-    has: page.getByRole("heading", { name: strings.errors.summary }),
-  });
-  await expect(summary).toBeFocused();
+  const heading = summaryHeading(page, strings.errors.summary);
+  const summary = summaryBox(page, strings.errors.summary);
+  await expect(heading, "the summary's heading takes focus").toBeFocused();
   await expectLandedOutline(page);
 
   const link = summary.getByRole("link");
@@ -127,10 +127,10 @@ test("a refused Details save describes each time at fault by its problem alone w
   await wednesdayCloses.fill("9 pm");
   await wednesdayOpens.fill("4");
   await wednesdayOpens.press("Enter");
-  const summary = page.locator("main div[tabindex='-1']").filter({
-    has: page.getByRole("heading", { name: strings.errors.summary }),
-  });
-  await expect(summary).toBeFocused();
+  await expect(
+    summaryHeading(page, strings.errors.summary),
+    "the summary's heading takes focus",
+  ).toBeFocused();
 
   const sameTime = fill(strings.errors.sameTime, { day: monday });
   await expect(mondayOpens).toHaveAttribute("aria-invalid", "true");

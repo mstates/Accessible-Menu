@@ -127,16 +127,20 @@ function breadcrumb(page: Page) {
   });
 }
 
-// The summary a refused press focuses (D-229's shape, D-231): a box named
-// by its heading, with the failure sentence.
-function summary(page: Page) {
-  return page.locator('main [tabindex="-1"]').filter({
-    has: page.getByRole("heading", {
+// The summary a refused press shows (D-229's shape, D-231): a box under its
+// heading, with the failure sentence; the heading takes focus (Q-183).
+function summaryHeading(page: Page) {
+  return page.locator('main h2[tabindex="-1"]').and(
+    page.getByRole("heading", {
       level: 2,
       name: strings.problemHeading,
       exact: true,
     }),
-  });
+  );
+}
+
+function summary(page: Page) {
+  return summaryHeading(page).locator("..");
 }
 
 // The hint a button is described by, read through the ids it points at.
@@ -539,7 +543,10 @@ for (const refused of [
     await expect(
       summary(page).getByText(sentence, { exact: true }),
     ).toHaveCount(1);
-    await expect(summary(page), "the summary takes focus").toBeFocused();
+    await expect(
+      summaryHeading(page),
+      "the summary's heading takes focus",
+    ).toBeFocused();
     expect(writes.answered, "one press, answered in the browser").toHaveLength(
       1,
     );
@@ -619,7 +626,10 @@ test("while a Publish press is on its way the button is held and keeps focus, a 
   await expect(summary(page).getByText(sentence, { exact: true })).toHaveCount(
     1,
   );
-  await expect(summary(page), "the summary takes focus").toBeFocused();
+  await expect(
+    summaryHeading(page),
+    "the summary's heading takes focus",
+  ).toBeFocused();
   await expect(publish).not.toHaveAttribute("aria-disabled");
   expect(new URL(page.url()).pathname).toBe(publishingPath(menu));
   await expectNoMissingIds(page);

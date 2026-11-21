@@ -29,14 +29,16 @@ import { snapshotFromRaw } from "./snapshot-files.mjs";
 // and the switcher.
 //
 // Left out of the read: Vercel's toolbar on a preview (every element whose
-// tag starts with vercel-) and React Aria's announcer under
-// [data-live-announcer], whose contents come and go. Both are hidden from
-// assistive technology for the length of the read and restored before the
-// next step, the way the walk and the controls check already mark what
-// they read. Next's route announcer carries the same mark so that React
-// Aria's hide passes it over (D-201), and it stays in the read: it is empty
-// at every read the gate makes, the "- alert" that ends every file, so the
-// files keep pinning that it is there.
+// tag starts with vercel-) and React Aria's announcer, the div marked
+// [data-live-announcer] that is a child of the body, whose contents come
+// and go. Both are hidden from assistive technology for the length of the
+// read and restored before the next step, the way the walk and the
+// controls check already mark what they read. Two elements of ours carry
+// the same mark so that React Aria's hide passes them over, and both stay
+// in the read: Next's route announcer (D-201), no div, empty at every read
+// the gate makes, the "- alert" that ends every file, so the files keep
+// pinning that it is there; and a flash's alert (D-240), inside main, whose
+// words every flash's file holds.
 //
 // One file per page, named from the page, under tests/a11y/snapshots:
 // snapshotName() derives it from a path, with the restaurant's code read as
@@ -124,7 +126,8 @@ export async function expectAriaSnapshot(
       const ours =
         element.tagName.toLowerCase().startsWith("vercel-") ||
         (element.hasAttribute("data-live-announcer") &&
-          element.localName !== "next-route-announcer");
+          element.localName === "div" &&
+          element.parentElement === document.body);
       if (!ours || element.hasAttribute("aria-hidden")) continue;
       element.setAttribute("aria-hidden", "true");
       element.setAttribute(mark, "");

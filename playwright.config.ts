@@ -187,13 +187,21 @@ const owner = { testMatch: ownerSpecs, dependencies: ["owner-setup"] };
 // Owner screens: Chromium in full at the two phone sizes and the arrival
 // pass at the rest; WebKit's arrival pass at every size, its dialog tests at
 // the two phone sizes, and at the phone size, the iPhone's engine, the walk
-// of arrivals by link, the pending message (D-210), and the flashes after a
-// save and after Checkout (D-214, D-219); Firefox's arrival pass and the
+// of arrivals by link, the pending message (D-210), the flashes after a
+// save and after Checkout (D-214, D-219), and the summary of problems, its
+// heading's focus and a link's Return (Q-183); Firefox's arrival pass and the
 // flashes at desktop, where NVDA with Firefox meets these screens on
 // Windows.
 const webkitOwner: Record<Size, RegExp[]> = {
   "320": [arrival, /@dialog/],
-  phone: [arrival, /@dialog/, /@link-arrival/, /@pending-message/, flash],
+  phone: [
+    arrival,
+    /@dialog/,
+    /@link-arrival/,
+    /@pending-message/,
+    flash,
+    /@summary/,
+  ],
   tablet: [arrival],
   "tablet-landscape": [arrival],
   desktop: [arrival],

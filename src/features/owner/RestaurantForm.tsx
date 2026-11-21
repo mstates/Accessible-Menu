@@ -4,7 +4,6 @@ import {
   startTransition,
   useActionState,
   useEffect,
-  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -34,6 +33,7 @@ import {
 import { PREP_NOTE_IDS } from "@/domain/types";
 import { Button } from "@/ui/Button";
 import { Checkbox, CheckboxGroup } from "@/ui/CheckboxGroup";
+import { FormErrors } from "@/ui/Form";
 import { Select } from "@/ui/Select";
 import { TextField } from "@/ui/TextField";
 import type { RestaurantFormState } from "./actions";
@@ -72,6 +72,8 @@ const initial: RestaurantFormState = { status: "idle" };
 
 // The one hint every time field is described by (D-105).
 const timeHintId = fieldId("hours.hint");
+// The summary's heading, where focus goes after a refused save.
+const SUMMARY_ID = "restaurant-form-summary";
 
 // The browser's zone is a client-only value. Reading it through an external
 // store keeps the server render on the fallback and lets React re-render
@@ -82,7 +84,8 @@ const readServerZone = () => null;
 
 // The restaurant form, for creation and for details. Server errors come back
 // as validationErrors keyed by field name and show in each FieldError; an
-// error summary above the fields takes focus and links to each one. Every
+// error summary above the fields, the shared one in src/ui/Form, takes
+// focus on its heading and links to each one (Q-183). Every
 // rule here is also a table constraint; the database is the boundary (D-95).
 // The fields sit under four headed sections: Location, Contact, Hours, and
 // Allergens, each a fieldset whose legend holds the heading, so the headings
@@ -138,10 +141,11 @@ export function RestaurantForm({
     setPostalCode(parts.zip);
   }
 
-  const summaryRef = useRef<HTMLDivElement>(null);
+  // Every refused save focuses the summary's heading, one problem or many
+  // (D-179), once the render that shows it is on the page.
   useEffect(() => {
     if (state.status === "invalid" || state.status === "error") {
-      summaryRef.current?.focus();
+      document.getElementById(SUMMARY_ID)?.focus();
     }
   }, [state]);
 
@@ -210,11 +214,15 @@ export function RestaurantForm({
         className="flex flex-col gap-6"
       >
         {hasProblems ? (
-          <ErrorSummary
-            ref={summaryRef}
+          <FormErrors
+            id={SUMMARY_ID}
             heading={strings.errors.summary}
-            errors={shown}
+            errors={Object.entries(shown).map(([name, message]) => ({
+              id: fieldId(name),
+              message,
+            }))}
             failure={failure}
+            from={1}
           />
         ) : null}
 
@@ -400,49 +408,6 @@ function Section({ heading, children }: SectionProps) {
       </legend>
       {children}
     </fieldset>
-  );
-}
-
-type SummaryProps = {
-  ref: React.Ref<HTMLDivElement>;
-  heading: string;
-  errors: Record<string, string>;
-  failure: string | null;
-};
-
-// A focusable region, not a live region: moving focus to it announces it
-// once. Each error is a link to its field.
-function ErrorSummary({ ref, heading, errors, failure }: SummaryProps) {
-  const entries = Object.entries(errors);
-  return (
-    <div
-      ref={ref}
-      tabIndex={-1}
-      className="rounded border-2 border-foreground p-4"
-    >
-      <h2 className="text-lg font-bold">{heading}</h2>
-      {failure ? <p className="mt-2">{failure}</p> : null}
-      {entries.length > 0 ? (
-        <ul className="mt-2 list-disc pl-5">
-          {entries.map(([name, message]) => (
-            <li key={name}>
-              <a
-                href={`#${fieldId(name)}`}
-                className="text-link underline"
-                onClick={(event) => {
-                  const target = document.getElementById(fieldId(name));
-                  if (!target) return;
-                  event.preventDefault();
-                  target.focus();
-                }}
-              >
-                {message}
-              </a>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
   );
 }
 

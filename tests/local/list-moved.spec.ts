@@ -34,6 +34,8 @@ import { hearLog, heard } from "../a11y/owner-lists";
 // - a value that arrives in a field with nothing typed is the one its next
 //   save hands back;
 // - typing back to what the field showed sends nothing;
+// - typing back to a field's first value after its own save landed, while
+//   another save holds the refreshed rows back, is sent (Q-199);
 // - a save whose answer was lost has landed, and Try again says so.
 //
 // The gate cannot land a save, so this runs here. Each check makes a menu
@@ -546,6 +548,107 @@ test("a name saved twice in a row, the second typed while the first is on its wa
       `${made.soups.name} three`,
     );
     expect(await failuresSaid(page)).toEqual([]);
+  } finally {
+    await clear(made);
+  }
+});
+
+// Q-199: a commit that finds a hold compares with the hold's text alone.
+// Saves on a page go one at a time, and React holds the refreshed rows
+// back while any save is still on its way. So the first section's rename
+// is held by a route until the second section's rename is pressed behind
+// it; then the first lands, its answer back on the page, and the second is
+// held on its way. The page still renders the first section's first name.
+// Typed back to it, the owner changed the field: it is sent against what
+// the landed save answered, once the second has landed, and lands. Before
+// Q-199 the commit compared with the render's saved value, sent nothing,
+// and the field then showed the first rename.
+test("a name typed back to its first value after its own save landed, while another save holds the refreshed rows back, is sent and lands", async ({
+  page,
+}) => {
+  const made = await scratch("Typed");
+  try {
+    const path = restaurantMenuPath(code, made.menu.id);
+    await open(page, path);
+    const soups = nameField(page, "section", made.soups.id);
+    const mains = nameField(page, "section", made.mains.id);
+    const first = made.soups.name;
+    const renamed = `${first} one`;
+    const held = `${made.mains.name} held`;
+    const gates = new Map<string, { open: () => void; shut: Promise<void> }>();
+    for (const words of [renamed, held]) {
+      let open = () => {};
+      const shut = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      gates.set(words, { open, shut });
+    }
+    const caught: string[] = [];
+    await page.route(
+      (url) => url.pathname === path,
+      async (route: Route) => {
+        const request = route.request();
+        const body = request.method() === "POST" ? request.postData() : null;
+        const words = [renamed, held].find((each) => body?.includes(each));
+        if (words) {
+          caught.push(words);
+          await gates.get(words)?.shut;
+        }
+        await route.fallback();
+      },
+    );
+    const release = () => {
+      for (const gate of gates.values()) gate.open();
+    };
+    try {
+      await soups.fill(renamed);
+      await page.keyboard.press("Enter");
+      await expect
+        .poll(() => caught, {
+          message: "the first rename is held",
+          timeout: 5_000,
+        })
+        .toEqual([renamed]);
+      await mains.fill(held);
+      await page.keyboard.press("Enter");
+      const answered = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          (response.request().postData() ?? "").includes(renamed),
+        { timeout: 10_000 },
+      );
+      gates.get(renamed)?.open();
+      await answered;
+      await expect
+        .poll(() => caught, {
+          message: "the second rename is on its way, held",
+          timeout: 5_000,
+        })
+        .toEqual([renamed, held]);
+      expect((await stored("sections", made.soups.id)).name).toBe(renamed);
+      // Typed back to the first name while the rows are held back.
+      await soups.fill(first);
+      await page.keyboard.press("Enter");
+    } finally {
+      release();
+    }
+    await expect
+      .poll(async () => (await stored("sections", made.mains.id)).name, {
+        message: "the held rename lands once let go",
+      })
+      .toBe(held);
+    await expect
+      .poll(async () => (await stored("sections", made.soups.id)).name, {
+        message: "the name typed back was sent and landed",
+      })
+      .toBe(first);
+    await expect(status(page)).toHaveText(editing.saved);
+    await page.keyboard.press("Tab");
+    await expect(soups, "the field shows the name typed back").toHaveValue(
+      first,
+    );
+    expect(await failuresSaid(page)).toEqual([]);
+    await expect(reloadButton(page)).toHaveCount(0);
   } finally {
     await clear(made);
   }
