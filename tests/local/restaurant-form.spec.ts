@@ -10,7 +10,9 @@ import {
   expectNoMissingIds,
   tabTo,
 } from "../a11y/checks";
+import { FIRST_FOCUS_WAIT_MS } from "../../src/ui/alert-dialog-guard";
 import { ownerEnv } from "../a11y/owner-env";
+import { afterEffects, stopClock } from "../a11y/owner-lists";
 import { chromeName, expectNamedByOneLabel } from "./chrome-name";
 import { summary as summaryBox, summaryHeading } from "./save";
 
@@ -97,6 +99,37 @@ test("a save with errors sent from the keyboard focuses the error summary's head
     page.locator("main fieldset[tabindex]"),
     "no day's fieldset takes focus itself",
   ).toHaveCount(0);
+});
+
+// When the summary's heading takes focus (D-241, Q-202): the dialog's wait
+// after the render that shows the server's answer, through the same hook
+// as a dish's pages and Publishing. On a stopped clock, so the wait is
+// measured to the millisecond. Nothing is written.
+test("a Details save refused with errors shows the summary at once and focuses its heading after the dialog's wait, not a millisecond before", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await openDetails(page);
+  await stopClock(page);
+  const opens = page.getByRole("textbox", {
+    name: timeFieldLabel(strings.fields, monday, 0, "open"),
+    exact: true,
+  });
+  const closes = page.getByRole("textbox", {
+    name: timeFieldLabel(strings.fields, monday, 0, "close"),
+    exact: true,
+  });
+  await opens.fill("9 am");
+  await closes.fill("9 am");
+  await closes.press("Enter");
+  const heading = summaryHeading(page, strings.errors.summary);
+  await expect(heading, "the box shows").toBeVisible();
+  await afterEffects(page);
+  await expect(heading, "not at once").not.toBeFocused();
+  await page.clock.runFor(FIRST_FOCUS_WAIT_MS - 1);
+  await expect(heading, "nor a millisecond before").not.toBeFocused();
+  await page.clock.runFor(1);
+  await expect(heading, "at the wait").toBeFocused();
 });
 
 // While a time is invalid it is described by its problem alone, and the

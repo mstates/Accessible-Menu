@@ -36,6 +36,7 @@ import { Checkbox, CheckboxGroup } from "@/ui/CheckboxGroup";
 import { FormErrors } from "@/ui/Form";
 import { Select } from "@/ui/Select";
 import { TextField } from "@/ui/TextField";
+import { useSummaryFocus } from "@/ui/useSummaryFocus";
 import type { RestaurantFormState } from "./actions";
 import { AddressFinder } from "./address/AddressFinder";
 import {
@@ -142,12 +143,12 @@ export function RestaurantForm({
   }
 
   // Every refused save focuses the summary's heading, one problem or many
-  // (D-179), once the render that shows it is on the page.
-  useEffect(() => {
-    if (state.status === "invalid" || state.status === "error") {
-      document.getElementById(SUMMARY_ID)?.focus();
-    }
-  }, [state]);
+  // (D-179), after the dialog's wait, once the render that shows it is on
+  // the page (D-241).
+  useSummaryFocus(
+    SUMMARY_ID,
+    state.status === "invalid" || state.status === "error" ? state : null,
+  );
 
   // A Details save that lands (D-211, Q-141) loads Details again as a new
   // document, which the browser and every screen reader treat as a fresh

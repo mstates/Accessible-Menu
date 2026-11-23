@@ -41,7 +41,10 @@ type ErrorsProps = {
 // The heading takes focus, not the box (Q-183, Michael's yes, November 15,
 // 2026): a box with no role and no name was silent on the Mac and on the
 // iPhone, and the heading is read with its words and its level, "Check
-// these fields, heading level 2". The next stop is the first link, or the
+// these fields, heading level 2". It takes focus after the dialog's wait,
+// through useSummaryFocus (D-241): placed in the instant the box appears,
+// Safari with VoiceOver kept its cursor on Save and said nothing (Q-202).
+// The next stop is the first link, or the
 // failure sentence when there is no link. Focus is the announcement: no
 // live region (Primer). Each link keeps its href and focuses its field in
 // its own press, as it always has; what makes it heard on iOS is Q-183's

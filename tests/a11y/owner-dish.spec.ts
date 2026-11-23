@@ -55,7 +55,7 @@ import {
 import { US_MAJOR_ALLERGENS } from "../../src/domain/allergens";
 import { ownerEnv, ownerFixture } from "./owner-env";
 import { expectChromeNamesAgree } from "./chrome-names";
-import { hearLog, heard, stopClock } from "./owner-lists";
+import { afterEffects, hearLog, heard, stopClock } from "./owner-lists";
 import { expectInOrder, expectLayout, pageNav } from "./page-nav";
 import { restaurantName } from "./pages";
 import { expectFlashArrival, flashBanner, setNotice } from "./saved-banner";
@@ -1382,6 +1382,133 @@ test(
     await expect(noteField(page)).toHaveAttribute("aria-invalid", "true");
     await expectNoMissingIds(page);
     await expectNoAxeViolations(page);
+  },
+);
+
+// Every focus in the page from here on, named by the focused element's
+// words. The window's own focus is not counted.
+async function recordFocus(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const moves: string[] = [];
+    Object.assign(window, { focusMoves: moves });
+    window.addEventListener(
+      "focus",
+      (event) => {
+        if (!(event.target instanceof Element)) return;
+        moves.push((event.target.textContent ?? "").trim());
+      },
+      true,
+    );
+  });
+}
+
+async function focusMoves(page: Page): Promise<string[]> {
+  return page.evaluate(
+    () => (window as unknown as { focusMoves: string[] }).focusMoves,
+  );
+}
+
+async function giveThreeProblems(page: Page): Promise<void> {
+  await descriptionField(page).fill("x".repeat(501));
+  await noteField(page).fill("y".repeat(121));
+  await caloriesField(page).fill("lots");
+}
+
+// When the summary's heading takes focus (D-241, Q-202): the dialog's wait,
+// FIRST_FOCUS_WAIT_MS after the render that draws the box, so Safari's
+// VoiceOver follows it. Placed in the same instant the box appears, its
+// cursor stayed on Save and nothing was said. Save keeps focus while the
+// wait runs; at the wait, focus moves once, to the heading, and stays. On a
+// stopped clock, so the wait is measured to the millisecond and the second
+// after it is watched whole. Nothing is sent.
+test(
+  "three problems found in the browser show the summary at once and focus its heading after the dialog's wait, not a millisecond before, once, and it keeps focus",
+  { tag: "@summary" },
+  async ({ page }) => {
+    await page.clock.install();
+    await openDish(page, "one");
+    await stopClock(page);
+    await giveThreeProblems(page);
+    const save = saveButton(page, generalCopy.submit);
+    await save.focus();
+    await recordFocus(page);
+    await page.keyboard.press("Enter");
+    await expect(summaryHeading(page), "the box shows at once").toBeVisible();
+    await afterEffects(page);
+    await expect(save, "Save keeps focus while the wait runs").toBeFocused();
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS - 1);
+    await expect(save, "and a millisecond before it ends").toBeFocused();
+    await page.clock.runFor(1);
+    await expect(summaryHeading(page), "at the wait").toBeFocused();
+    await page.clock.runFor(1000);
+    await expect(summaryHeading(page), "and keeps it").toBeFocused();
+    expect(await focusMoves(page), "one move, to the heading").toEqual([
+      form.summary,
+    ]);
+  },
+);
+
+// A move inside the wait is the owner's (D-136's rule, D-241): Shift+Tab
+// from Save to the field before it, and the end of the wait leaves focus
+// there.
+test(
+  "a Shift+Tab inside the summary's wait keeps focus where it went, and the wait's end moves nothing",
+  { tag: "@summary" },
+  async ({ page }) => {
+    await page.clock.install();
+    await openDish(page, "one");
+    await stopClock(page);
+    await giveThreeProblems(page);
+    const save = saveButton(page, generalCopy.submit);
+    await save.focus();
+    await page.keyboard.press("Enter");
+    await expect(summaryHeading(page)).toBeVisible();
+    await afterEffects(page);
+    await page.keyboard.press("Shift+Tab");
+    await expect(caloriesField(page), "Shift+Tab goes back").toBeFocused();
+    await recordFocus(page);
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS + 1000);
+    await expect(
+      caloriesField(page),
+      "focus stays where it went",
+    ).toBeFocused();
+    expect(await focusMoves(page), "the wait moved nothing").toEqual([]);
+  },
+);
+
+// A save the server refuses draws the box anew with its answer (Save
+// clears it at the press), so the heading takes focus after the same wait,
+// counted from the render that shows the answer. The guard answers the
+// write as an action the server does not know.
+test(
+  "a General save refused in the browser shows the failure in the summary at once and focuses its heading after the dialog's wait, not a millisecond before",
+  { tag: "@summary" },
+  async ({ page }) => {
+    await page.clock.install();
+    const writes = expectWrites(page);
+    await openDish(page, "one");
+    await stopClock(page);
+    await noteField(page).fill("Not saved yet");
+    const save = saveButton(page, generalCopy.submit);
+    await save.focus();
+    await page.keyboard.press("Enter");
+    await expect(summaryHeading(page), "the box shows").toBeVisible();
+    expect(writes.answered, "one write, answered in the browser").toHaveLength(
+      1,
+    );
+    await afterEffects(page);
+    await expect(summaryHeading(page), "not at once").not.toBeFocused();
+    await recordFocus(page);
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS - 1);
+    await expect(
+      summaryHeading(page),
+      "nor a millisecond before",
+    ).not.toBeFocused();
+    await page.clock.runFor(1);
+    await expect(summaryHeading(page), "at the wait").toBeFocused();
+    expect(await focusMoves(page), "one move, to the heading").toEqual([
+      form.summary,
+    ]);
   },
 );
 
@@ -3075,9 +3202,11 @@ test(
     await expect(summary(page).getByText(failure, { exact: true })).toHaveCount(
       1,
     );
+    await afterEffects(page);
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
     await expect(
       summaryHeading(page),
-      "the summary's heading takes focus",
+      "the summary's heading takes focus after the dialog's wait (D-241)",
     ).toBeFocused();
     await expect(box(page, vegan), "the change is kept").toBeChecked();
     await expect(save).not.toHaveAttribute("aria-disabled");
@@ -3365,9 +3494,11 @@ test(
         exact: true,
       }),
     ).toHaveCount(1);
+    await afterEffects(page);
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
     await expect(
       summaryHeading(page),
-      "the summary's heading takes focus",
+      "the summary's heading takes focus after the dialog's wait (D-241)",
     ).toBeFocused();
     await expect(summaryLinks(page), "no field is at fault").toHaveCount(0);
     await expect(noteField(page), "the change is kept").toHaveValue(

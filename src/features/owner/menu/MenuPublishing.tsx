@@ -1,12 +1,13 @@
 "use client";
 
 import { unstable_isUnrecognizedActionError } from "next/navigation";
-import { useEffect, useId, useState, useTransition } from "react";
+import { useId, useState, useTransition } from "react";
 import type { Copy } from "@/copy";
 import { noticeCookie } from "@/core/notice";
 import { Button } from "@/ui/Button";
 import { FormErrors } from "@/ui/Form";
 import { PageLink } from "@/ui/PageLink";
+import { useSummaryFocus } from "@/ui/useSummaryFocus";
 import { useUnsaved } from "../editing/useUnsaved";
 import {
   refusedSentence,
@@ -131,12 +132,9 @@ export function MenuPublishing({
   const view = held ?? latest;
   const busy = pending || leaving;
 
-  // Focus is placed after the render that shows the summary, so it is on
-  // the page when it takes it.
-  useEffect(() => {
-    if (refusals === 0) return;
-    document.getElementById(PUBLISH_SUMMARY_ID)?.focus();
-  }, [refusals]);
+  // Each refusal focuses the summary's heading after the dialog's wait,
+  // once the render that shows it is on the page (D-241).
+  useSummaryFocus(PUBLISH_SUMMARY_ID, refusals === 0 ? null : refusals);
 
   function press(action: Press) {
     if (busy) return;

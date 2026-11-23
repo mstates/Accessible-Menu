@@ -312,6 +312,22 @@ export async function stopClock(page: Page): Promise<void> {
   await page.clock.pauseAt(now + 1000);
 }
 
+// React's scheduler runs the effects of a render that was not a press's own
+// in a MessageChannel task, which Playwright's clock does not stop. One turn
+// of our own, posted once the render shows on the page, comes after that
+// task, so a wait the effect starts has started, at the stopped clock's now,
+// before the test moves the clock (D-241).
+export async function afterEffects(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => resolve();
+        channel.port2.postMessage(null);
+      }),
+  );
+}
+
 // The row tests every editing list runs. The gate never writes and never
 // types into a field that saves when it is left (D-108, D-111, D-115).
 // Most of these only read. One presses Enter and Tab in fields it does not

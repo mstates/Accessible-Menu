@@ -29,7 +29,9 @@ import {
   landedMenuPublishingControls,
   menuPublishingControls,
 } from "./owner-controls";
+import { FIRST_FOCUS_WAIT_MS } from "../../src/ui/alert-dialog-guard";
 import { ownerEnv, ownerFixture } from "./owner-env";
+import { afterEffects, stopClock } from "./owner-lists";
 import { expectInOrder, expectLayout, pageNav } from "./page-nav";
 import { restaurantName } from "./pages";
 import { expectFlashArrival, flashBanner, setNotice } from "./saved-banner";
@@ -576,6 +578,41 @@ for (const refused of [
     await expectNoAxeViolations(page);
   });
 }
+
+// When the summary's heading takes focus (D-241, Q-202): the dialog's wait
+// after the render that shows the refusal, as on a dish's pages, through
+// the same hook. On a stopped clock, so the wait is measured to the
+// millisecond. Tagged for WebKit at the phone size, the iPhone's engine.
+test(
+  "a refused Publish shows the summary at once and focuses its heading after the dialog's wait, not a millisecond before",
+  { tag: "@summary" },
+  async ({ page }) => {
+    const menu = dinner();
+    await page.clock.install();
+    const writes = expectWrites(page);
+    await open(page, publishingPath(menu));
+    await page.waitForLoadState("networkidle");
+    await stopClock(page);
+    const publish = button(page, strings.publish);
+    await publish.focus();
+    await page.keyboard.press("Enter");
+    await expect(summaryHeading(page), "the box shows").toBeVisible();
+    expect(writes.answered, "one press, answered in the browser").toHaveLength(
+      1,
+    );
+    await afterEffects(page);
+    await expect(summaryHeading(page), "not at once").not.toBeFocused();
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS - 1);
+    await expect(
+      summaryHeading(page),
+      "nor a millisecond before",
+    ).not.toBeFocused();
+    await page.clock.runFor(1);
+    await expect(summaryHeading(page), "at the wait").toBeFocused();
+    await page.clock.runFor(1000);
+    await expect(summaryHeading(page), "and keeps it").toBeFocused();
+  },
+);
 
 // The hold while a press is on its way (D-209, D-231): the pressed button
 // is held at once and keeps focus, a second press on either button sends

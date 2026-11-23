@@ -11,6 +11,7 @@ import {
 import { noticeCookie, type DishNotice } from "@/core/notice";
 import type { FormError } from "@/ui/Form";
 import { focusTarget, type FocusTarget } from "@/ui/form-focus";
+import { useSummaryFocus } from "@/ui/useSummaryFocus";
 import { useUnsaved } from "../editing/useUnsaved";
 import type { SaveRefused, SaveResult } from "./form-result";
 
@@ -90,14 +91,18 @@ export function useDishForm<Payload, Detail = never>({
     headingId,
   });
 
-  // Focus is placed after the render that shows the outcome, so the
-  // summary or the field is on the page when it takes it.
+  // Focus is placed after the render that shows the outcome. The summary,
+  // drawn in that render, takes it after the dialog's wait (D-241). The
+  // first invalid field takes it at once: it was on the page before the
+  // press, and its own changes, aria-invalid and its problem as its
+  // description (D-230), land on an element VoiceOver already knows.
+  useSummaryFocus(
+    FORM_SUMMARY_ID,
+    landing.focus === "summary" ? landing : null,
+  );
   useEffect(() => {
-    if (landing.count === 0) return;
-    const id = landing.focus === "summary" ? FORM_SUMMARY_ID : landing.fieldId;
-    if (landing.focus !== null && id !== null) {
-      document.getElementById(id)?.focus();
-    }
+    if (landing.focus !== "field" || landing.fieldId === null) return;
+    document.getElementById(landing.fieldId)?.focus();
   }, [landing]);
 
   function land(problems: readonly FormError[], failed: boolean) {
