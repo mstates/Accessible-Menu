@@ -3218,6 +3218,20 @@ test(
       leaveDialog(page),
       "with the save answered, the link asks",
     ).toHaveCount(1);
+    // The dialog settles before axe reads it (Q-158, Q-180). On a touch
+    // device React Aria keeps a new dialog hidden for two animation frames,
+    // and the stopped clock holds frames. Axe finds our dialog by what is on
+    // the screen, so a read begun before those frames ran saw the inert page
+    // with no dialog over it, and asked for a main landmark and a heading.
+    // The dialog's wait runs the frames, and Keep editing's focus says the
+    // dialog is there.
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
+    await expect(
+      leaveDialog(page).getByRole("button", {
+        name: form.leave.keep,
+        exact: true,
+      }),
+    ).toBeFocused();
     // Axe runs on timers, so the clock runs again for its reading.
     await page.clock.resume();
     await expectNoMissingIds(page);
@@ -3514,6 +3528,17 @@ test(
       leaveDialog(page),
       "with the save answered, the link asks",
     ).toHaveCount(1);
+    // The dialog settles before axe reads it, as in the Dietary tags test
+    // above (Q-158, Q-180). This dialog was not hidden only because the test
+    // fills a text field and then runs the clock past the 600 ms React Aria
+    // waits for a keyboard, after which it shows a dialog at once.
+    await page.clock.runFor(FIRST_FOCUS_WAIT_MS);
+    await expect(
+      leaveDialog(page).getByRole("button", {
+        name: form.leave.keep,
+        exact: true,
+      }),
+    ).toBeFocused();
     // Axe runs on timers, so the clock runs again for its reading.
     await page.clock.resume();
     await expectNoMissingIds(page);
